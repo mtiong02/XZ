@@ -1,7 +1,12 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard, type AuthenticatedUser } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { ConfirmVoiceJobSchema, CreateTextVoiceJobSchema, VoiceService } from './voice.service';
+import {
+  ConfirmVoiceJobSchema,
+  CreateTextVoiceJobSchema,
+  ReplyVoiceJobSchema,
+  VoiceService,
+} from './voice.service';
 
 /**
  * Voice API（docs/03 §5）。
@@ -31,6 +36,16 @@ export class VoiceController {
     @Body() body: unknown,
   ) {
     return this.voice.confirm(id, user.userId, ConfirmVoiceJobSchema.parse(body ?? {}));
+  }
+
+  /** 多轮语音对话推进：用户对系统播报的口头回应（"对"/"不对"/"改成三盒"）。 */
+  @Post(':id/reply')
+  async reply(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: unknown,
+  ) {
+    return this.voice.reply(id, user.userId, ReplyVoiceJobSchema.parse(body));
   }
 
   @Post(':id/cancel')

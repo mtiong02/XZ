@@ -41,12 +41,16 @@ const INTENT_RULES: { intent: ParsedIntent; patterns: RegExp[]; weight: number }
   },
   {
     intent: 'CONSUME_INVENTORY',
-    patterns: [/用了|用掉|吃了|吃掉|喝了|喝掉|做饭用|消耗|煮了|炒了|used|ate|drank/i],
+    // 含裸"用/吃/喝"（"用两个鸡蛋"），排除"用来/用于"等非消耗动词
+    patterns: [/用(?!来|于)|吃|喝(?!彩)|消耗|做饭|煮了|炒了|used|ate|drank/i],
     weight: 0.95,
   },
   {
     intent: 'ADD_INVENTORY',
-    patterns: [/买了|新买|购入|添加|加了|放了|放进|存了|入库|带回|bought|add(ed)?|got/i],
+    // 含裸"加"（"加两盒牛奶"），但排除"加热"等非入库动词
+    patterns: [
+      /买了|新买|购入|添加|加了|放了|放进|存了|入库|带回|加(?!热|工)|bought|add(ed)?|got/i,
+    ],
     weight: 0.95,
   },
   {
@@ -82,6 +86,40 @@ const UNIT_WORDS: Record<string, string> = {
 
 const QUANTITY_PATTERN =
   /(\d+(?:\.\d+)?)\s*(千克|公斤|毫升|克|盒|瓶|包|袋|把|个|只|颗|枚|根|斤|升|kg|ml|g|l)/gi;
+
+/** 抽取文本中所有「数量+单位」，按出现顺序返回（含 斤->500g）。 */
+export function extractQuantities(normalized: string): { quantity: string; unit: string }[] {
+  const results: { quantity: string; unit: string }[] = [];
+  for (const match of normalized.matchAll(new RegExp(QUANTITY_PATTERN.source, 'gi'))) {
+    const rawUnit = (match[2] ?? '').toLowerCase();
+    let unit = UNIT_WORDS[rawUnit] ?? rawUnit;
+    let quantity = match[1] ?? '1';
+    if (unit === 'jin-special') {
+      unit = 'g';
+      quantity = String(Number(quantity) * 500);
+    }
+    results.push({ quantity, unit });
+  }
+  return results;
+}
+
+/** 抽取第一个「数量+单位」。无则 null。 */
+export function extractFirstQuantity(
+  normalized: string,
+): { quantity: string; unit: string } | null {
+  return extractQuantities(normalized)[0] ?? null;
+}
+
+/**
+ * 抽取修正回复的目标数量：取最后一个（"不是两盒是三盒" -> 三盒）。
+ * 修正话术惯例是先旧后新。无则 null。
+ */
+export function extractCorrectionQuantity(
+  normalized: string,
+): { quantity: string; unit: string } | null {
+  const all = extractQuantities(normalized);
+  return all[all.length - 1] ?? null;
+}
 
 export function detectIntent(normalized: string): { intent: ParsedIntent; confidence: number } {
   for (const rule of INTENT_RULES) {
