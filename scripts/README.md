@@ -25,6 +25,7 @@ node scripts/smoke-sprint1.mjs       # 库存命令：FEFO、幂等、修正、�
 node scripts/smoke-sprint3.mjs       # 语音解析、确认执行、注入防护
 node scripts/smoke-sprint4.mjs       # Outbox 排空 + 实时广播（会临时拉起 worker）
 node scripts/smoke-sprint5.mjs       # 临期状态 + 本周统计
+node scripts/smoke-dialogue.mjs      # 多轮语音对话（确认/修正/追问/拒绝/食材修正）
 node scripts/smoke-e2e.mjs           # 端到端主旅程 + 安全（IDOR/限流/导出/删除）
 ```
 

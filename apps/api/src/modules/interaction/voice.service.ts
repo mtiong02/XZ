@@ -357,8 +357,10 @@ export class VoiceService {
     }
 
     if (interp.kind === 'CONFIRM') {
-      const result = await this.executeCandidate(job, userId, undefined, turns);
-      return { ...result, voice_job_id: job.id };
+      // 执行后返回"呈现后的任务"（含 status=COMPLETED、spoken_prompt、executed_transaction_id），
+      // 供前端对话循环判断终态并播报"好的，已添加。"
+      await this.executeCandidate(job, userId, undefined, turns);
+      return this.getJob(job.id, userId);
     }
 
     if (interp.kind === 'CORRECTION' && candidate?.command_type) {

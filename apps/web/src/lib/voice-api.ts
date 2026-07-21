@@ -10,10 +10,24 @@ export interface VoiceCandidate {
   };
 }
 
+export interface DialogueTurn {
+  role: 'user' | 'system';
+  text: string;
+  at: string;
+}
+
+export type VoiceJobStatus =
+  | 'PROCESSING'
+  | 'AWAITING_CONFIRMATION'
+  | 'AWAITING_CLARIFICATION'
+  | 'COMPLETED'
+  | 'CANCELLED'
+  | 'FAILED';
+
 export interface VoiceJob {
   voice_job_id: string;
   household_id: string;
-  status: 'PROCESSING' | 'AWAITING_CONFIRMATION' | 'COMPLETED' | 'CANCELLED' | 'FAILED';
+  status: VoiceJobStatus;
   transcript: { raw: string; normalized: string } | null;
   candidate_command: VoiceCandidate | null;
   confidence: {
@@ -24,6 +38,20 @@ export interface VoiceJob {
   } | null;
   requires_confirmation: boolean;
   error_code: string | null;
+  // 系统要"说出来"的话（前端用 TTS 合成播报）
+  spoken_prompt: string | null;
+  turn_count: number;
+  dialogue_turns: DialogueTurn[];
+}
+
+/** 语音多轮对话推进：用户对系统播报的口头回应（"对"/"不对"/"改成三盒"）。 */
+export function replyVoiceJob(jobId: string, text: string): Promise<VoiceJob> {
+  return apiPost<VoiceJob>(`/voice-jobs/${jobId}/reply`, { text });
+}
+
+/** 该状态是否还在等待用户下一轮回应。 */
+export function isAwaitingReply(status: VoiceJobStatus): boolean {
+  return status === 'AWAITING_CONFIRMATION' || status === 'AWAITING_CLARIFICATION';
 }
 
 /** 文本通道：把识别到的文本交给服务端解析流水线（docs/03 §5）。 */

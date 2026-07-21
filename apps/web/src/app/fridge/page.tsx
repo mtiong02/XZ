@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { InventoryView } from '@xz/contracts';
 import { ActionModal, type ActionKind } from '../../components/action-modal';
-import { VoiceModal } from '../../components/voice-modal';
+import { ConversationModal } from '../../components/conversation-modal';
 import { fetchInventory } from '../../lib/api';
 import { EXPIRY_CLASS, EXPIRY_LABEL, formatDate, unitLabel } from '../../lib/format';
 import { signOut, useHousehold } from '../../lib/use-household';
@@ -194,13 +194,10 @@ export default function FridgePage() {
       ) : null}
 
       {voiceOpen ? (
-        <VoiceModal
+        <ConversationModal
           householdId={household.id}
           onClose={() => setVoiceOpen(false)}
-          onDone={() => {
-            setVoiceOpen(false);
-            reload();
-          }}
+          onExecuted={() => reload()}
         />
       ) : null}
     </>

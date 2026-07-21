@@ -69,7 +69,12 @@ check(
   job.spoken_prompt,
 );
 let done = (await reply(job.voice_job_id, '对')).body;
-check('1c 回"对"后执行', done.transaction_id !== undefined || done.status === 'COMPLETED');
+// 回复必须返回"呈现后的任务"：含 COMPLETED 状态 + 已执行交易 + 执行播报（前端据此判终态）
+check(
+  '1c 回"对"后返回 COMPLETED 任务',
+  done.status === 'COMPLETED' && done.executed_transaction_id && done.spoken_prompt?.includes('已'),
+  `status=${done.status} txn=${done.executed_transaction_id}`,
+);
 let inv = (await api('GET', `/households/${hh}/inventory`)).body;
 check('1d 牛奶入库 2 盒', qty(inv, milk.id) === 2, `qty=${qty(inv, milk.id)}`);
 
