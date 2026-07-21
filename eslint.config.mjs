@@ -36,5 +36,21 @@ export default tseslint.config(
     files: ['**/*.{js,mjs,cjs}'],
     ...tseslint.configs.disableTypeChecked,
   },
+  {
+    // 冒烟/运维脚本：Node 运行时全局可用，console 是预期输出方式
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        fetch: 'readonly',
+        URL: 'readonly',
+        setTimeout: 'readonly',
+      },
+    },
+    rules: {
+      'no-console': 'off',
+    },
+  },
   prettier,
 );

@@ -10,8 +10,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "pnpm -r run typecheck",
-    "test": "pnpm -r run test",
+    "typecheck": "pnpm --filter @xz/contracts run build && pnpm -r run typecheck",
+    "test": "pnpm --filter @xz/contracts run build && pnpm -r run test",
     "build": "pnpm -r run build",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
