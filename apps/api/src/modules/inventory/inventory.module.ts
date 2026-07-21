@@ -8,5 +8,6 @@ import { InventoryController } from './inventory.controller';
   imports: [HouseholdModule],
   controllers: [InventoryController],
   providers: [InventoryCommandService, InventoryQueryService],
+  exports: [InventoryCommandService, InventoryQueryService],
 })
 export class InventoryModule {}

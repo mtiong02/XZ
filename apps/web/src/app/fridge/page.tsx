@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { InventoryView } from '@xz/contracts';
 import { ActionModal, type ActionKind } from '../../components/action-modal';
+import { VoiceModal } from '../../components/voice-modal';
 import { fetchInventory } from '../../lib/api';
 import { EXPIRY_CLASS, EXPIRY_LABEL, formatDate, unitLabel } from '../../lib/format';
 import { signOut, useHousehold } from '../../lib/use-household';
@@ -14,6 +15,7 @@ export default function FridgePage() {
   const [inventory, setInventory] = useState<InventoryView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [action, setAction] = useState<ActionKind | null>(null);
+  const [voiceOpen, setVoiceOpen] = useState(false);
 
   const reload = useCallback(async () => {
     if (!household) return;
@@ -162,6 +164,14 @@ export default function FridgePage() {
         <button title="使用食材" aria-label="使用食材" onClick={() => setAction('CONSUME')}>
           🍳
         </button>
+        <button
+          className="primary"
+          title="语音操作"
+          aria-label="语音操作"
+          onClick={() => setVoiceOpen(true)}
+        >
+          🎤
+        </button>
       </div>
 
       {action ? (
@@ -172,6 +182,17 @@ export default function FridgePage() {
           onClose={() => setAction(null)}
           onDone={() => {
             setAction(null);
+            reload();
+          }}
+        />
+      ) : null}
+
+      {voiceOpen ? (
+        <VoiceModal
+          householdId={household.id}
+          onClose={() => setVoiceOpen(false)}
+          onDone={() => {
+            setVoiceOpen(false);
             reload();
           }}
         />
