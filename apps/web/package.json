@@ -9,6 +9,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.7",
     "@xz/contracts": "workspace:*",
     "next": "^15.3.0",
     "react": "^19.1.0",
