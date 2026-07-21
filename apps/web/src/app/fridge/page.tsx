@@ -8,6 +8,7 @@ import { VoiceModal } from '../../components/voice-modal';
 import { fetchInventory } from '../../lib/api';
 import { EXPIRY_CLASS, EXPIRY_LABEL, formatDate, unitLabel } from '../../lib/format';
 import { signOut, useHousehold } from '../../lib/use-household';
+import { useRealtimeInventory } from '../../lib/use-realtime';
 
 /** 数字冰箱首页（docs/01 §7.1）。 */
 export default function FridgePage() {
@@ -30,6 +31,9 @@ export default function FridgePage() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  // 多端实时同步（docs/01 FR-015）：其他终端的变更 1 秒内反映到本页
+  useRealtimeInventory(household?.id ?? null, reload);
 
   const stats = useMemo(() => {
     if (!inventory) return { total: 0, expiring: 0, expired: 0 };
