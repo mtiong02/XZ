@@ -1,11 +1,17 @@
 import Big from 'big.js';
 import { describe, expect, it } from 'vitest';
-import { convertQuantity, parseQuantity, type UnitMap } from './quantity';
+import {
+  convertQuantity,
+  normalizeQuantityForStorage,
+  parseQuantity,
+  type UnitMap,
+} from './quantity';
 import { DomainError, UnitMismatchError } from './errors';
 
 const units: UnitMap = new Map([
   ['g', { code: 'g', kind: 'MASS', baseFactor: '1' }],
   ['kg', { code: 'kg', kind: 'MASS', baseFactor: '1000' }],
+  ['jin', { code: 'jin', kind: 'MASS', baseFactor: '500' }],
   ['ml', { code: 'ml', kind: 'VOLUME', baseFactor: '1' }],
   ['l', { code: 'l', kind: 'VOLUME', baseFactor: '1000' }],
   ['piece', { code: 'piece', kind: 'COUNT', baseFactor: '1' }],
@@ -22,6 +28,20 @@ describe('parseQuantity', () => {
     for (const bad of ['-1', 'abc', '1,5', '1.12345', '']) {
       expect(() => parseQuantity(bad)).toThrow(DomainError);
     }
+  });
+});
+
+describe('normalizeQuantityForStorage', () => {
+  it('stores 3 斤 as 1500 克', () => {
+    const result = normalizeQuantityForStorage(new Big('3'), 'jin', units);
+    expect(result.unit).toBe('g');
+    expect(result.quantity.toString()).toBe('1500');
+  });
+
+  it('keeps non-convertible count units independent', () => {
+    const result = normalizeQuantityForStorage(new Big('2'), 'box', units);
+    expect(result.unit).toBe('box');
+    expect(result.quantity.toString()).toBe('2');
   });
 });
 

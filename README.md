@@ -12,6 +12,7 @@ xz-platform/
 ├── apps/
 │   ├── web/             # 响应式 PWA（Next.js）
 │   ├── api/             # 模块化单体 API（NestJS）
+│   ├── speech/          # Sherpa KWS 唤醒词 + MiniMax Realtime 语音代理
 │   └── worker/          # Outbox 轮询、提醒等异步任务
 ├── packages/
 │   └── contracts/       # 共享契约：Command Envelope、Channel 等
@@ -43,10 +44,14 @@ cp .env.example .env    # 用 supabase start 输出的 keys 替换占位值
 # 4. 质量门（与 CI 相同）
 pnpm verify             # lint + typecheck + test + build
 
-# 5. 启动应用
+# 5. 首次下载本地量化语音模型（ASR + TTS）
+pnpm --filter @xz/speech setup:model
+
+# 6. 启动应用
 pnpm --filter @xz/api dev      # API: http://localhost:3001/api/v1/health
 pnpm --filter @xz/web dev      # Web: http://localhost:3000
 pnpm --filter @xz/worker dev   # Worker 心跳
+pnpm --filter @xz/speech dev   # 本地语音: http://127.0.0.1:6010/health
 ```
 
 ## 质量门

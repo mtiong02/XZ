@@ -7,12 +7,22 @@
 export interface FoodCatalogEntry {
   id: string;
   canonicalName: string;
+  category?: string;
   defaultUnitCode: string;
+  preferredUnitCodes?: string[];
   aliases: string[];
 }
 
 export type ParsedIntent =
-  'ADD_INVENTORY' | 'CONSUME_INVENTORY' | 'DISCARD_INVENTORY' | 'QUERY_INVENTORY' | 'UNKNOWN';
+  | 'ADD_INVENTORY'
+  | 'CONSUME_INVENTORY'
+  | 'DISCARD_INVENTORY'
+  | 'QUERY_INVENTORY'
+  | 'CREATE_REMINDER'
+  | 'EXTERNAL_PURCHASE'
+  | 'ADD_SHOPPING_ITEM'
+  | 'QUERY_SHOPPING_LIST'
+  | 'UNKNOWN';
 
 export interface ParsedItem {
   food_id: string;
@@ -20,6 +30,8 @@ export interface ParsedItem {
   quantity: string;
   unit: string;
   quantity_explicit: boolean;
+  unit_reasonable: boolean;
+  suggested_units: string[];
 }
 
 export interface ParseResult {
@@ -77,7 +89,7 @@ const UNIT_WORDS: Record<string, string> = {
   千克: 'kg',
   公斤: 'kg',
   kg: 'kg',
-  斤: 'jin-special',
+  斤: 'jin',
   毫升: 'ml',
   ml: 'ml',
   升: 'l',
@@ -87,17 +99,21 @@ const UNIT_WORDS: Record<string, string> = {
 const QUANTITY_PATTERN =
   /(\d+(?:\.\d+)?)\s*(千克|公斤|毫升|克|盒|瓶|包|袋|把|个|只|颗|枚|根|斤|升|kg|ml|g|l)/gi;
 
-/** 抽取文本中所有「数量+单位」，按出现顺序返回（含 斤->500g）。 */
+const INFORMATION_REQUEST = /请用\d+句|怎么|怎样|如何|做什么|介绍|告诉我|能否|能不能|是否|可以.+吗/;
+const INVENTORY_CATEGORY_QUERY =
+  /(?:有|剩)(?:哪些|什么)(?:肉类?|荤菜|蔬菜|青菜|菜类|水果|海鲜|水产|鱼虾|龙虾|贝类|蛋奶|奶制品|乳制品|蛋类|豆制品|主食|粮食|谷物|菌菇|蘑菇|调味料|调料|佐料)|(?:肉类?|荤菜|蔬菜|青菜|菜类|水果|海鲜|水产|鱼虾|龙虾|贝类|蛋奶|奶制品|乳制品|蛋类|豆制品|主食|粮食|谷物|菌菇|蘑菇|调味料|调料|佐料)(?:有|剩)(?:哪些|什么|多少)/;
+const INVENTORY_QUERY_REQUEST =
+  /(?:冰箱|冷藏|冷冻|常温|库存|家里).*(?:有|剩|哪些|什么)|(?:我|我们)?(?:有|剩)(?:哪些|什么)食材|(?:有哪些|有什么|列出|盘点|查找|查询).*(?:食材|东西|菜)|(?:哪些|什么).*(?:快过期|临期|已经过期)|(?:快过期|临期|过期).*(?:哪些|什么)|(?:今天|今晚|中午).*(?:吃什么|做什么菜|做点什么)|(?:这些|现有|冰箱里|库存里).*(?:能做|可以做|吃什么|怎么吃|美食|菜谱|减脂餐)|(?:减脂|减肥).*(?:餐|吃什么|怎么吃|推荐)/;
+const EXPLICIT_COMPLETED_ACTION =
+  /用了|用掉|吃了|吃掉|喝了|喝掉|买了|新买|购入|添加|加了|放进|入库|扔了|扔掉|丢了|丢掉|倒掉/;
+
+/** 抽取文本中所有「数量+单位」，按出现顺序返回；斤保留为可播报单位，执行时再换算。 */
 export function extractQuantities(normalized: string): { quantity: string; unit: string }[] {
   const results: { quantity: string; unit: string }[] = [];
   for (const match of normalized.matchAll(new RegExp(QUANTITY_PATTERN.source, 'gi'))) {
     const rawUnit = (match[2] ?? '').toLowerCase();
-    let unit = UNIT_WORDS[rawUnit] ?? rawUnit;
-    let quantity = match[1] ?? '1';
-    if (unit === 'jin-special') {
-      unit = 'g';
-      quantity = String(Number(quantity) * 500);
-    }
+    const unit = UNIT_WORDS[rawUnit] ?? rawUnit;
+    const quantity = match[1] ?? '1';
     results.push({ quantity, unit });
   }
   return results;
@@ -122,6 +138,28 @@ export function extractCorrectionQuantity(
 }
 
 export function detectIntent(normalized: string): { intent: ParsedIntent; confidence: number } {
+  if (/(?:提醒(?:一|1)?下?我|到时候提醒|记得提醒|别忘了提醒)/.test(normalized)) {
+    return { intent: 'CREATE_REMINDER', confidence: 0.98 };
+  }
+  if (/(?:加入|加到|添加到).{0,20}购物清单|购物清单.{0,10}(?:加|添加)/.test(normalized)) {
+    return { intent: 'ADD_SHOPPING_ITEM', confidence: 0.98 };
+  }
+  if (
+    /(?:看看|查看|查询|读一下)?购物清单.*(?:有什么|有哪些|是什么|内容)|购物清单$/.test(normalized)
+  ) {
+    return { intent: 'QUERY_SHOPPING_LIST', confidence: 0.98 };
+  }
+  if (/(?:帮我|替我|给我).*(?:下单|购买)|(?:下单|网购|外卖).*(?:买|购买)?/.test(normalized)) {
+    return { intent: 'EXTERNAL_PURCHASE', confidence: 0.98 };
+  }
+  if (INVENTORY_QUERY_REQUEST.test(normalized) || INVENTORY_CATEGORY_QUERY.test(normalized)) {
+    return { intent: 'QUERY_INVENTORY', confidence: 0.95 };
+  }
+  // “请用三句话介绍…”、“怎么用鸡蛋做菜”属于知识/闲聊请求，不是库存扣减。
+  // 只有同时出现明确的已完成动作（如“用了两个鸡蛋”）才允许进入写操作解析。
+  if (INFORMATION_REQUEST.test(normalized) && !EXPLICIT_COMPLETED_ACTION.test(normalized)) {
+    return { intent: 'UNKNOWN', confidence: 0 };
+  }
   for (const rule of INTENT_RULES) {
     if (rule.patterns.some((pattern) => pattern.test(normalized))) {
       return { intent: rule.intent, confidence: rule.weight };
@@ -173,11 +211,25 @@ interface QuantityMatch {
 
 function normalizeUnit(rawUnit: string, quantity: string): { unit: string; quantity: string } {
   const unit = UNIT_WORDS[rawUnit.toLowerCase()] ?? rawUnit;
-  if (unit === 'jin-special') {
-    // 1 斤 = 500g
-    return { unit: 'g', quantity: String(Number(quantity) * 500) };
-  }
   return { unit, quantity };
+}
+
+const CATEGORY_UNIT_DEFAULTS: Record<string, string[]> = {
+  VEGETABLE: ['jin', 'g', 'kg', 'piece', 'bunch'],
+  FRUIT: ['piece', 'jin', 'kg'],
+  MEAT: ['jin', 'g', 'kg'],
+  SEAFOOD: ['jin', 'g', 'kg'],
+  GRAIN: ['jin', 'kg', 'g', 'bag', 'pack'],
+};
+
+export function suggestedUnitsForFood(entry: FoodCatalogEntry): string[] {
+  const configured = entry.preferredUnitCodes?.filter(Boolean) ?? [];
+  if (configured.length > 0) return configured;
+  return CATEGORY_UNIT_DEFAULTS[entry.category ?? ''] ?? [entry.defaultUnitCode];
+}
+
+export function isReasonableUnitForFood(entry: FoodCatalogEntry, unit: string): boolean {
+  return suggestedUnitsForFood(entry).includes(unit);
 }
 
 function collectQuantityMatches(normalized: string): QuantityMatch[] {
@@ -257,12 +309,15 @@ function buildItem(
   unit: string,
   explicit: boolean,
 ): ParsedItem {
+  const suggestedUnits = suggestedUnitsForFood(match.entry);
   return {
     food_id: match.entry.id,
     food_name: match.entry.canonicalName,
     quantity,
     unit,
     quantity_explicit: explicit,
+    unit_reasonable: suggestedUnits.includes(unit),
+    suggested_units: suggestedUnits,
   };
 }
 

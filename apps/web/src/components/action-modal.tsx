@@ -63,10 +63,10 @@ export function ActionModal({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiGet<FoodSummary[]>(`/foods?q=${encodeURIComponent(query)}`)
+    apiGet<FoodSummary[]>(`/households/${householdId}/foods?q=${encodeURIComponent(query)}`)
       .then(setFoods)
       .catch(() => setFoods([]));
-  }, [query]);
+  }, [householdId, query]);
 
   useEffect(() => {
     apiGet<UnitSummary[]>('/units')
@@ -75,6 +75,15 @@ export function ActionModal({
   }, []);
 
   const selectedFood = useMemo(() => foods.find((f) => f.id === foodId), [foods, foodId]);
+
+  const orderedUnits = useMemo(() => {
+    const preferred = new Set(selectedFood?.preferred_unit_codes ?? []);
+    return [...units].sort((left, right) => {
+      const leftRank = preferred.has(left.code) ? 0 : 1;
+      const rightRank = preferred.has(right.code) ? 0 : 1;
+      return leftRank - rightRank;
+    });
+  }, [selectedFood, units]);
 
   useEffect(() => {
     if (selectedFood && !unit) setUnit(selectedFood.default_unit_code);
@@ -169,7 +178,7 @@ export function ActionModal({
                   <label htmlFor="food-search">搜索食材</label>
                   <input
                     id="food-search"
-                    placeholder="例如：鸡蛋 / 番茄 / milk"
+                    placeholder="例如：鸡蛋 / 番茄 / 牛奶"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                   />
@@ -179,12 +188,20 @@ export function ActionModal({
                   <select
                     id="food-select"
                     value={foodId}
-                    onChange={(e) => setFoodId(e.target.value)}
+                    onChange={(e) => {
+                      const nextFoodId = e.target.value;
+                      setFoodId(nextFoodId);
+                      const nextFood = foods.find((food) => food.id === nextFoodId);
+                      setUnit(nextFood?.default_unit_code ?? '');
+                    }}
                   >
                     <option value="">请选择</option>
                     {foods.map((food) => (
                       <option key={food.id} value={food.id}>
                         {food.canonical_name}
+                        {food.category_path?.length
+                          ? ` · ${food.category_path.slice(1).join(' / ')}`
+                          : ''}
                       </option>
                     ))}
                   </select>
@@ -208,12 +225,17 @@ export function ActionModal({
             <div className="field">
               <label htmlFor="unit">单位</label>
               <select id="unit" value={unit} onChange={(e) => setUnit(e.target.value)}>
-                {units.map((u) => (
+                {orderedUnits.map((u) => (
                   <option key={u.code} value={u.code}>
                     {u.name_zh}
                   </option>
                 ))}
               </select>
+              {selectedFood?.preferred_unit_codes.length ? (
+                <small style={{ color: 'var(--gray-500)' }}>
+                  常用：{selectedFood.preferred_unit_codes.map(unitLabel).join('、')}
+                </small>
+              ) : null}
             </div>
 
             {kind === 'ADD' && inventory ? (
@@ -221,7 +243,7 @@ export function ActionModal({
                 <div className="field">
                   <label htmlFor="zone">存放区域</label>
                   <select id="zone" value={zoneId} onChange={(e) => setZoneId(e.target.value)}>
-                    <option value="">默认（冷藏室）</option>
+                    <option value="">智能推荐储存区域</option>
                     {inventory.zones.map((zone) => (
                       <option key={zone.zone_id} value={zone.zone_id}>
                         {zone.name}

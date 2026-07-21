@@ -80,6 +80,13 @@ export const CorrectInventoryPayloadSchema = z.object({
 });
 export type CorrectInventoryPayload = z.infer<typeof CorrectInventoryPayloadSchema>;
 
+export const MoveInventoryPayloadSchema = z.object({
+  lot_ids: z.array(z.string().uuid()).min(1).max(100),
+  target_storage_zone_id: z.string().uuid(),
+  reason: z.enum(['STORAGE_RECOMMENDATION', 'USER_CHOICE']),
+});
+export type MoveInventoryPayload = z.infer<typeof MoveInventoryPayloadSchema>;
+
 export const ReverseTransactionPayloadSchema = z.object({
   transaction_id: z.string().uuid(),
   reason: z.enum(['USER_UNDO', 'DATA_CORRECTION', 'OTHER']),
@@ -91,5 +98,6 @@ export const COMMAND_PAYLOAD_SCHEMAS = {
   CONSUME_INVENTORY: ConsumeInventoryPayloadSchema,
   DISCARD_INVENTORY: DiscardInventoryPayloadSchema,
   CORRECT_INVENTORY: CorrectInventoryPayloadSchema,
+  MOVE_INVENTORY: MoveInventoryPayloadSchema,
   REVERSE_TRANSACTION: ReverseTransactionPayloadSchema,
 } as const;

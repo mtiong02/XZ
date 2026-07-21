@@ -52,3 +52,20 @@ export function convertQuantity(value: Big, fromUnit: string, toUnit: string, un
   }
   return value.times(new Big(from.baseFactor)).div(new Big(to.baseFactor));
 }
+
+/**
+ * 库存允许同一食材同时存在不同计量维度（例如土豆既有“个”也有“克”）。
+ * 重量统一存克、体积统一存毫升；不可换算的计数单位按原单位分别保存。
+ */
+export function normalizeQuantityForStorage(
+  value: Big,
+  fromUnit: string,
+  units: UnitMap,
+): { quantity: Big; unit: string } {
+  const source = units.get(fromUnit);
+  if (!source) {
+    throw new DomainError('VALIDATION', 'UNKNOWN_UNIT', `Unknown unit '${fromUnit}'.`);
+  }
+  const targetUnit = source.kind === 'MASS' ? 'g' : source.kind === 'VOLUME' ? 'ml' : fromUnit;
+  return { quantity: convertQuantity(value, fromUnit, targetUnit, units), unit: targetUnit };
+}

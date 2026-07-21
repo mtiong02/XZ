@@ -29,7 +29,7 @@ export default function OnboardingPage() {
     <div className="auth-page">
       <div className="auth-card">
         <h1>创建你的家庭</h1>
-        <p className="sub">系统会自动为你创建默认冰箱：冷藏室、冷冻室、常温区</p>
+        <p className="sub">先创建家庭空间，我们会准备好冷藏、冷冻和常温存放区</p>
         <form onSubmit={handleSubmit}>
           <div className="field">
             <label htmlFor="name">家庭名称</label>

@@ -219,6 +219,15 @@ Multipart：
 
 `POST /api/v1/voice-jobs/{id}/cancel`
 
+### 5.5 定时提醒 API
+
+定时提醒与临期/过期通知是两类独立资源。冰箱首页和提醒页都读取同一组待执行任务，避免出现“首页有提醒、提醒页找不到”的状态分叉。
+
+- `GET /api/v1/households/{householdId}/notifications/reminders`：列出当前家庭待执行的定时提醒。
+- `DELETE /api/v1/households/{householdId}/notifications/reminders/{reminderId}`：取消一条待执行提醒，将任务标记为 `CANCELLED`；保留历史记录，不扣减或改变库存。
+
+取消操作必须经过家庭成员权限校验，只允许取消当前家庭且状态为 `PENDING` 的任务。已触发、已完成或已取消的任务不会被删除或重复修改。
+
 ## 6. Inventory API
 
 - `GET /households/{id}/inventory`
@@ -242,6 +251,8 @@ Multipart：
         {
           "food_id": "food_egg",
           "name": "鸡蛋",
+          "category": "EGG_DAIRY",
+          "category_code": "EGG",
           "total_quantity": "14",
           "unit": "piece",
           "earliest_expiry": "2026-07-29T00:00:00Z",
@@ -253,6 +264,17 @@ Multipart：
   ]
 }
 ```
+
+### 6.2 Food Category Taxonomy
+
+`GET /api/v1/food-categories` 返回 Food Knowledge 的只读分类树。每个节点包含：
+
+- `code`、`parent_code`、`name_zh`、`name_en`
+- `depth`
+- `code_path`、`name_path`：从根节点到当前节点的完整路径
+- `aliases`：语音分类查询可识别的中文别名
+
+`food_catalog.category_code` 指向最具体节点。查询父类时，服务端通过 recursive CTE 包含全部后代；例如查询 `AQUATIC` 会覆盖 `FISH`、`LOBSTER`、`SHRIMP` 和 `ABALONE`。旧 `category` 字段仅用于向后兼容。
 
 ## 7. Realtime 事件
 
@@ -445,6 +467,41 @@ Agent 不能直接访问数据库。Tool 示例：
   "output": { "proposal_id": "prop_1", "status": "PENDING_CONFIRMATION" }
 }
 ```
+
+## 10.1 当前基础菜谱与购物清单 API
+
+- `GET /households/:householdId/meal-suggestions`：返回菜谱配料、库存覆盖率、缺料和临期配料数量。
+- `POST /households/:householdId/meal-suggestions/:recipeId/add-missing`：幂等地加入该菜谱当前缺料。
+- `GET /households/:householdId/shopping-list`：返回待购项目。
+- `POST /households/:householdId/shopping-list`：加入待购食材；数量与单位必须同时提供或同时省略。
+- `POST /households/:householdId/shopping-list/:itemId/status`：状态仅允许 `PURCHASED` 或 `CANCELLED`。
+
+菜谱候选与购物清单都不代表个人摄入，也不得自动扣减库存或触发第三方交易。
+
+## 10.2 当前成员健康档案 API
+
+- `GET|POST /households/:householdId/wellness/me/profile`：读取或保存当前登录成员自己的档案、目标、过敏原与分享授权。
+- `DELETE /households/:householdId/wellness/me/profile`：删除当前成员档案；体重记录随档案删除。
+- `GET|POST /households/:householdId/wellness/me/weight`：读取体重趋势或添加手工记录。
+- `DELETE /households/:householdId/wellness/me/weight/:measurementId`：删除自己的单条记录。
+- `GET /households/:householdId/wellness/me/meal-suggestions`：用当前库存生成候选菜谱，并对已录入过敏原做强制排除。
+
+成人成员健康数据默认仅本人可见；家庭角色不会覆盖这一边界。成员主动开启
+`share_with_household` 后，同家庭成员才具备数据库读取权限。目标标签不等于营养结论；在营养成分和实际摄入不完整时，接口不得计算精确热量、疗效或减重结果。
+
+## 10.3 食材存放审计与移动
+
+- `GET /households/:householdId/inventory/storage-audit`：返回有证据支持、但当前区域不是首选区域的活动批次。
+- `MOVE_INVENTORY`：确认后把指定批次移动到同一家庭的目标区域；记录原区域、目标区域、操作者和理由。
+- 移动交易可以通过 `REVERSE_TRANSACTION` 撤销；若批次之后已再次移动，拒绝撤销旧移动。
+- 自动入库优先选择 `RECOMMENDED`；`PROHIBITED` 必须拒绝；包装说明和用户确认的具体状态高于目录默认。
+
+## 10.4 家庭营养结构
+
+- `GET /households/:householdId/nutrition/structure`：基于当前活动库存的食材分类生成家庭营养结构概览。
+- 结果包含蛋白质、蔬菜、水果、主食、奶类、豆类、坚果/脂肪等分组，以及可追溯的观察项和营养资料完整度。
+- 该接口只分析库存结构，不推断成员实际摄入，不计算医疗结论；营养资料缺失时降级为类别级分析。
+- 后续成员个性化建议通过健康档案授权后叠加，不改变家庭库存事实。
 
 ## 11. Schema 兼容原则
 

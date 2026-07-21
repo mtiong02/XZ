@@ -36,7 +36,7 @@ const DEFAULT_ZONES = [
 export class HouseholdService {
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
-    private readonly membership: MembershipService,
+    @Inject(MembershipService) private readonly membership: MembershipService,
   ) {}
 
   /** 创建家庭 + Owner 成员 + 默认冰箱与三个分区（FR-002、FR-004），单事务。 */

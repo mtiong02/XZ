@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { interpretReply } from './reply-interpreter';
+import { interpretReply, relativeInventoryFraction } from './reply-interpreter';
 import type { FoodCatalogEntry } from '../parser/intent-parser';
 
 const catalog: FoodCatalogEntry[] = [
@@ -50,4 +50,11 @@ describe('interpretReply', () => {
   it('returns UNCLEAR for unrelated speech', () => {
     expect(interpretReply('今天天气不错', catalog).kind).toBe('UNCLEAR');
   });
+
+  it.each(['用掉一半吧', '吃掉半数', '使用50%'])(
+    'recognizes half of current inventory: %s',
+    (text) => {
+      expect(relativeInventoryFraction(text)).toBe('0.5');
+    },
+  );
 });

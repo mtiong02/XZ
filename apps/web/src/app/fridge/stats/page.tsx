@@ -1,7 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
+import { AppHeader } from '../../../components/app-header';
 import { fetchWeeklyStats, type WeeklyStats } from '../../../lib/api';
 import { unitLabel } from '../../../lib/format';
 import { useHousehold } from '../../../lib/use-household';
@@ -33,14 +33,7 @@ export default function StatsPage() {
 
   return (
     <>
-      <header className="topbar">
-        <h1>
-          <Link href="/fridge" style={{ textDecoration: 'none' }}>
-            ←
-          </Link>{' '}
-          本周概览
-        </h1>
-      </header>
+      <AppHeader title="本周概览" subtitle="只基于已确认的库存变化，不推断个人摄入" />
       <main className="container">
         {error ? <div className="error-box">{error}</div> : null}
         {stats ? (

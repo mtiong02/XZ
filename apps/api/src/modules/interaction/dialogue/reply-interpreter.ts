@@ -34,6 +34,12 @@ const CONFIRM_PATTERN =
   /(对|对的|对对|是的|没错|好的|确认|可以|嗯|行|ok|yes|correct|right|yep|sure)/i;
 const REJECT_PATTERN = /(不对|不是的|不要|取消|算了|错了|不用了|重来|no|cancel|wrong|nope)/i;
 
+/** 相对库存数量。当前先支持最常见且无歧义的“一半”。 */
+export function relativeInventoryFraction(rawReply: string): string | null {
+  const normalized = normalizeTranscript(rawReply);
+  return /一半|半数|0\.5数?|百分之50|50%/.test(normalized) ? '0.5' : null;
+}
+
 /**
  * 探测回复中是否携带"新数量/新食材"——这类回复即便含"不"字也是修正而非纯拒绝。
  * 复用意图解析器的食材/数量抽取。

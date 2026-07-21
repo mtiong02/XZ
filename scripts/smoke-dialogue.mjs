@@ -57,6 +57,7 @@ token = await signIn(email);
 const hh = (await api('POST', '/households', { name: 'DLG', owner_display_name: 'A' })).body.id;
 const milk = (await api('GET', '/foods?q=牛奶')).body[0];
 const egg = (await api('GET', '/foods?q=鸡蛋')).body[0];
+const pork = (await api('GET', '/foods?q=猪肉')).body[0];
 const qty = (inv, id) =>
   Number(inv.zones.flatMap((z) => z.items).find((i) => i.food_id === id)?.total_quantity ?? '0');
 
@@ -144,6 +145,76 @@ check(
   '6b 含用户与系统两种角色',
   finalJob.dialogue_turns.some((t) => t.role === 'user') &&
     finalJob.dialogue_turns.some((t) => t.role === 'system'),
+);
+
+// ---- 7. 提醒独立多轮状态机 + ASR 语境纠错 ----
+job = (await say(hh, '明天提醒我吃掉')).body;
+check(
+  '7a 缺食材时追问食材而非确认或追问库存数量',
+  job.status === 'AWAITING_CLARIFICATION' && job.spoken_prompt.includes('哪种食材'),
+  `${job.status} ${job.spoken_prompt}`,
+);
+step = (await reply(job.voice_job_id, '民间中午十二点提醒我吃掉一千克的猪肉')).body;
+check(
+  '7b ASR 将“民间中午”按提醒语境纠正为明天中午',
+  step.status === 'AWAITING_CONFIRMATION' && step.spoken_prompt.includes('12:00'),
+  `${step.status} ${step.spoken_prompt}`,
+);
+check(
+  '7c 提醒保留食材与明确数量，不路由成库存扣减',
+  step.candidate_command?.command_type === 'CREATE_REMINDER' &&
+    step.candidate_command?.payload?.food_id === pork.id &&
+    step.candidate_command?.payload?.reminder_text?.includes('1千克猪肉'),
+  JSON.stringify(step.candidate_command),
+);
+await api('POST', `/voice-jobs/${job.voice_job_id}/cancel`, {});
+
+// ---- 8. 提醒中的“一半”按真实库存换算，不能被“可以了”误判为确认 ----
+await api('POST', '/commands', {
+  command_type: 'ADD_INVENTORY',
+  household_id: hh,
+  source: { channel: 'WEB_MANUAL' },
+  idempotency_key: `dlg-pork-${runId}`,
+  payload: { items: [{ food_id: pork.id, quantity: '1400', unit: 'g' }] },
+});
+job = (await say(hh, '明天中午十二点提醒我吃掉猪肉')).body;
+step = (await reply(job.voice_job_id, '我只要吃掉一半就可以了')).body;
+check(
+  '8a 后续说“一半”会更新候选而非直接创建提醒',
+  step.status === 'AWAITING_CONFIRMATION',
+  `${step.status} ${step.spoken_prompt}`,
+);
+check(
+  '8b 猪肉1400克的一半换算为700克',
+  step.candidate_command?.payload?.reminder_text === '吃掉700克猪肉' &&
+    step.spoken_prompt.includes('700克猪肉'),
+  JSON.stringify(step.candidate_command),
+);
+await api('POST', `/voice-jobs/${job.voice_job_id}/cancel`, {});
+
+// ---- 9. “把原提醒改成”必须更新旧任务，不能再新建一条 ----
+job = (await say(hh, '明天中午十二点提醒我把猪肉吃完')).body;
+await reply(job.voice_job_id, '对');
+let reminders = (await api('GET', `/households/${hh}/notifications/reminders`)).body;
+const originalReminder = reminders.find((reminder) => reminder.food_name === '猪肉');
+job = (await say(hh, '我明天不是说要提醒我把猪肉吃完吗把它改成只吃一半的猪肉')).body;
+check(
+  '9a “改成”路由为更新原提醒',
+  job.candidate_command?.command_type === 'UPDATE_REMINDER' &&
+    job.candidate_command?.payload?.reminder_id === originalReminder?.id,
+  JSON.stringify(job.candidate_command),
+);
+step = (await reply(job.voice_job_id, '不对是明天中午十二点把那个猪肉吃完改成只吃一半的猪肉')).body;
+await reply(job.voice_job_id, '对');
+reminders = (await api('GET', `/households/${hh}/notifications/reminders`)).body;
+const porkReminders = reminders.filter((reminder) => reminder.food_name === '猪肉');
+check('9b 修改后仍只有一条猪肉提醒', porkReminders.length === 1, `count=${porkReminders.length}`);
+check(
+  '9c 原提醒被更新为700克且时间为中午十二点',
+  porkReminders[0]?.id === originalReminder?.id &&
+    porkReminders[0]?.reminder_text === '吃掉700克猪肉' &&
+    new Date(porkReminders[0]?.scheduled_for).toISOString().includes('T04:00:00.000Z'),
+  JSON.stringify(porkReminders[0]),
 );
 
 console.log(failures === 0 ? '\nALL DIALOGUE SMOKE CHECKS PASSED' : `\n${failures} CHECKS FAILED`);

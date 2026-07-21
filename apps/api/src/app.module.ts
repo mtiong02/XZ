@@ -6,6 +6,10 @@ import { HouseholdModule } from './modules/household/household.module';
 import { InteractionModule } from './modules/interaction/interaction.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { PrivacyModule } from './modules/privacy/privacy.module';
+import { NotificationModule } from './modules/notification/notification.module';
+import { MealPlanningModule } from './modules/meal-planning/meal-planning.module';
+import { MemberWellnessModule } from './modules/member-wellness/member-wellness.module';
+import { NutritionModule } from './modules/nutrition/nutrition.module';
 
 /**
  * 模块化单体入口（docs/02 §7）。
@@ -19,6 +23,10 @@ import { PrivacyModule } from './modules/privacy/privacy.module';
     InventoryModule,
     InteractionModule,
     PrivacyModule,
+    NotificationModule,
+    MealPlanningModule,
+    MemberWellnessModule,
+    NutritionModule,
   ],
 })
 export class AppModule {}

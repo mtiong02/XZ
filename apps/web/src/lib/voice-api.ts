@@ -5,8 +5,19 @@ import { apiPost } from './api';
 export interface VoiceCandidate {
   command_type: string;
   payload: {
-    items?: { food_id: string; display_text?: string; quantity: string; unit: string }[];
+    items?: {
+      food_id: string;
+      display_text?: string;
+      quantity: string;
+      unit: string;
+      quantity_explicit?: boolean;
+    }[];
     food_ids?: string[];
+    food_id?: string;
+    food_name?: string;
+    reminder_text?: string;
+    scheduled_for?: string;
+    reminder_id?: string;
   };
 }
 

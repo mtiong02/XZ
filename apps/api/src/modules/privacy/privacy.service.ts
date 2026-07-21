@@ -14,7 +14,7 @@ import { DomainError } from '../inventory/domain/errors';
 export class PrivacyService {
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
-    private readonly membership: MembershipService,
+    @Inject(MembershipService) private readonly membership: MembershipService,
   ) {}
 
   /** 导出家庭全部数据为结构化 JSON（成员、库存、交易、语音任务元数据）。 */

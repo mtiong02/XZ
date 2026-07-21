@@ -4,6 +4,7 @@ node_modules/
 # builds
 dist/
 .next/
+.next-build/
 out/
 *.tsbuildinfo
 
@@ -22,3 +23,6 @@ supabase/.branches/
 
 # test artifacts
 coverage/
+
+# downloaded local speech models
+local-models/

@@ -97,6 +97,34 @@ importers:
         specifier: ^3.2.0
         version: 3.2.7(@types/node@22.20.1)(supports-color@7.2.0)(tsx@4.23.1)
 
+  apps/speech:
+    dependencies:
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
+      sherpa-onnx-node:
+        specifier: 1.13.2
+        version: 1.13.2
+      ws:
+        specifier: ^8.18.3
+        version: 8.21.1
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.1
+        version: 22.20.1
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.1
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@22.20.1)(supports-color@7.2.0)(tsx@4.23.1)
+
   apps/web:
     dependencies:
       '@supabase/supabase-js':
@@ -1002,6 +1030,9 @@ packages:
   '@types/serve-static@2.2.0':
     resolution: {integrity: sha512-8mam4H1NHLtu7nmtalF7eyBH14QyOASmcxHhSfEoRyr0nP/YdoesEtU+uSRvMe96TW/HPTtkoKqQLl53N7UXMQ==}
 
+  '@types/ws@8.18.1':
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
+
   '@typescript-eslint/eslint-plugin@8.64.0':
     resolution: {integrity: sha512-CGvQPBxN3wZLu6Rz2kFUpZeoCm78xUic92ck39KPePkO1NPOwjCqdQnm5Q87tpWw9vcBvW8XLrDXjH9PWYtJ3Q==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
@@ -1855,6 +1886,34 @@ packages:
     resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
     engines: {node: '>=8'}
 
+  sherpa-onnx-darwin-arm64@1.13.4:
+    resolution: {integrity: sha512-QcYKzyrTzGSx6aKCD6hUODgRS1LetqfG57Z/+i5LCyfMlrgCvDc1lRcl9cdB+TozBsLha9QwLTlI0vmDcf5JKg==}
+    cpu: [arm64]
+    os: [darwin]
+
+  sherpa-onnx-linux-arm64@1.13.4:
+    resolution: {integrity: sha512-RMjMRqT82BgTXypNNGmLe6ZFYhc3WEvnAGl3DdkK7qB/kuXwkL3iHhV31wAecbnWPsnEpUoD+8cFovWSBzsCuw==}
+    cpu: [arm64]
+    os: [linux]
+
+  sherpa-onnx-linux-x64@1.13.4:
+    resolution: {integrity: sha512-WZh5NCkGPFHHpYSd78iN4OnmxQeSTGyt9uZskH+im/NFHQ7elQ7B0sLzCMeRpvJxiIKvd9C6WxIJ4hYaxClfsQ==}
+    cpu: [x64]
+    os: [linux]
+
+  sherpa-onnx-node@1.13.2:
+    resolution: {integrity: sha512-uIH6SA5Or4pb8HlCYWB3K54XkMtzdef4/tkw1amtIf8GB1tt6hQLpur9p2jSFNfTYRyzZ8XrXofxefXQ0A7EUA==}
+
+  sherpa-onnx-win-ia32@1.13.4:
+    resolution: {integrity: sha512-/JbPjldrfNv+t+uIS3MlkuhfIf5l3FHUGkRC2oRXgjRqOaVmEyP3vLlQ7dTa4J7raG5oB8c3GoPjuSWSqT9GOQ==}
+    cpu: [ia32]
+    os: [win32]
+
+  sherpa-onnx-win-x64@1.13.4:
+    resolution: {integrity: sha512-R0PWby1VxC14TDZPq7GcfSyXSY6SAFO8Y4JwdCdqouFmeXkZ1L7Is9m98C9KxQ0dN7ZtDzhAmE/43FUs/elXRQ==}
+    cpu: [x64]
+    os: [win32]
+
   side-channel-list@1.0.1:
     resolution: {integrity: sha512-mjn/0bi/oUURjc5Xl7IaWi/OJJJumuoJFQJfDDyO46+hBWsfaVM65TBHq2eoZBhzl9EchxOijpkbRC8SVBQU0w==}
     engines: {node: '>= 0.4'}
@@ -2124,6 +2183,18 @@ packages:
 
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
+
+  ws@8.21.1:
+    resolution: {integrity: sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
 
   xtend@4.0.2:
     resolution: {integrity: sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ==}
@@ -2728,6 +2799,10 @@ snapshots:
   '@types/serve-static@2.2.0':
     dependencies:
       '@types/http-errors': 2.0.5
+      '@types/node': 22.20.1
+
+  '@types/ws@8.18.1':
+    dependencies:
       '@types/node': 22.20.1
 
   '@typescript-eslint/eslint-plugin@8.64.0(@typescript-eslint/parser@8.64.0(eslint@9.39.5(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3))(eslint@9.39.5(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)':
@@ -3687,6 +3762,29 @@ snapshots:
 
   shebang-regex@3.0.0: {}
 
+  sherpa-onnx-darwin-arm64@1.13.4:
+    optional: true
+
+  sherpa-onnx-linux-arm64@1.13.4:
+    optional: true
+
+  sherpa-onnx-linux-x64@1.13.4:
+    optional: true
+
+  sherpa-onnx-node@1.13.2:
+    optionalDependencies:
+      sherpa-onnx-darwin-arm64: 1.13.4
+      sherpa-onnx-linux-arm64: 1.13.4
+      sherpa-onnx-linux-x64: 1.13.4
+      sherpa-onnx-win-ia32: 1.13.4
+      sherpa-onnx-win-x64: 1.13.4
+
+  sherpa-onnx-win-ia32@1.13.4:
+    optional: true
+
+  sherpa-onnx-win-x64@1.13.4:
+    optional: true
+
   side-channel-list@1.0.1:
     dependencies:
       es-errors: 1.3.0
@@ -3940,6 +4038,8 @@ snapshots:
   word-wrap@1.2.5: {}
 
   wrappy@1.0.2: {}
+
+  ws@8.21.1: {}
 
   xtend@4.0.2: {}
 

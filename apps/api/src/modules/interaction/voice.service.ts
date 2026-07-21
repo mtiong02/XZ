@@ -1,17 +1,34 @@
 import { Inject, Injectable } from '@nestjs/common';
+import Big from 'big.js';
 import type { Pool } from 'pg';
 import { z } from 'zod';
 import { ChannelSchema, COMMAND_PAYLOAD_SCHEMAS } from '@xz/contracts';
 import { PG_POOL } from '../../infra/db/database.module';
+import { FoodCategoryService } from '../food-knowledge/food-category.service';
 import { MembershipService } from '../household/membership.service';
 import { InventoryCommandService } from '../inventory/application/inventory-command.service';
+import { InventoryQueryService } from '../inventory/application/inventory-query.service';
 import { DomainError } from '../inventory/domain/errors';
+import { MealPlanningService } from '../meal-planning/meal-planning.service';
+import { NutritionStructureService } from '../nutrition/nutrition.service';
+import {
+  NotificationService,
+  normalizeReminderSpeech,
+  parseReminderSchedule,
+} from '../notification/notification.service';
 import { normalizeTranscript } from './parser/normalizer';
-import { parseTranscript, type FoodCatalogEntry, type ParseResult } from './parser/intent-parser';
-import { interpretReply } from './dialogue/reply-interpreter';
+import {
+  isReasonableUnitForFood,
+  parseTranscript,
+  suggestedUnitsForFood,
+  type FoodCatalogEntry,
+  type ParseResult,
+} from './parser/intent-parser';
+import { interpretReply, relativeInventoryFraction } from './dialogue/reply-interpreter';
 import {
   CANCELLED_PROMPT,
   clarifyQuantityPrompt,
+  clarifyUnitPrompt,
   confirmPrompt,
   correctedPrompt,
   executedPrompt,
@@ -19,6 +36,7 @@ import {
   UNRECOGNIZED_PROMPT,
   type SpokenItem,
 } from './dialogue/prompts';
+import { unitSpokenLabel } from './dialogue/units-spoken';
 
 export const CreateTextVoiceJobSchema = z.object({
   household_id: z.string().uuid(),
@@ -41,6 +59,7 @@ export interface CandidateItem {
   display_text?: string;
   quantity: string;
   unit: string;
+  quantity_explicit?: boolean;
 }
 
 export interface DialogueTurn {
@@ -57,7 +76,14 @@ interface VoiceJobRow {
   transcript_normalized: string | null;
   candidate_command_json: {
     command_type?: string;
-    payload?: { items?: CandidateItem[] };
+    payload?: {
+      items?: CandidateItem[];
+      food_id?: string;
+      food_name?: string;
+      reminder_text?: string;
+      scheduled_for?: string;
+      reminder_id?: string;
+    };
   } | null;
   confidence_json: unknown;
   requires_confirmation: boolean;
@@ -88,8 +114,13 @@ const INTENT_TO_COMMAND: Record<string, string> = {
 export class VoiceService {
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
-    private readonly membership: MembershipService,
-    private readonly commands: InventoryCommandService,
+    @Inject(MembershipService) private readonly membership: MembershipService,
+    @Inject(InventoryCommandService) private readonly commands: InventoryCommandService,
+    @Inject(InventoryQueryService) private readonly queries: InventoryQueryService,
+    @Inject(FoodCategoryService) private readonly foodCategories: FoodCategoryService,
+    @Inject(NotificationService) private readonly notifications: NotificationService,
+    @Inject(MealPlanningService) private readonly meals: MealPlanningService,
+    @Inject(NutritionStructureService) private readonly nutrition: NutritionStructureService,
   ) {}
 
   /**
@@ -111,7 +142,20 @@ export class VoiceService {
     const normalized = normalizeTranscript(input.transcript_text);
     const catalog = await this.loadCatalog(input.household_id);
     const parsed = parseTranscript(normalized, catalog);
-    const outcome = this.buildOutcome(parsed);
+    const outcome =
+      parsed.intent === 'CREATE_REMINDER'
+        ? await this.buildReminderOutcome(input.household_id, userId, input.transcript_text, parsed)
+        : parsed.intent === 'QUERY_SHOPPING_LIST'
+          ? await this.buildShoppingListQueryOutcome(input.household_id, userId)
+          : this.buildOutcome(parsed);
+    if (parsed.intent === 'QUERY_INVENTORY') {
+      outcome.spokenPrompt = await this.buildInventoryQueryPrompt(
+        input.household_id,
+        userId,
+        normalized,
+        parsed,
+      );
+    }
     const firstTurn: DialogueTurn[] = [{ role: 'user', text: input.transcript_text, at: nowIso() }];
     if (outcome.spokenPrompt) {
       firstTurn.push({ role: 'system', text: outcome.spokenPrompt, at: nowIso() });
@@ -135,7 +179,7 @@ export class VoiceService {
         normalized,
         outcome.candidate ? JSON.stringify(outcome.candidate) : null,
         JSON.stringify(parsed.confidence),
-        outcome.candidate !== null,
+        outcome.candidate !== null && outcome.candidate.command_type !== 'QUERY_INVENTORY',
         outcome.errorCode,
         input.client_request_id ?? null,
         outcome.spokenPrompt,
@@ -153,16 +197,36 @@ export class VoiceService {
     errorCode: string | null;
     spokenPrompt: string | null;
   } {
-    if (parsed.intent === 'QUERY_INVENTORY') {
-      // 查询必须有明确食材主体；否则无法回答（也避免注入式文本因命中"库存"字样而被接受）
-      if (parsed.items.length === 0) {
+    if (parsed.intent === 'ADD_SHOPPING_ITEM') {
+      const item = parsed.items[0];
+      if (!item) {
         return {
           status: 'FAILED',
           candidate: null,
-          errorCode: 'AMBIGUOUS_COMMAND',
-          spokenPrompt: UNRECOGNIZED_PROMPT,
+          errorCode: 'SHOPPING_FOOD_MISSING',
+          spokenPrompt: '请告诉我要把哪种食材加入购物清单。',
         };
       }
+      return {
+        status: 'AWAITING_CONFIRMATION',
+        candidate: {
+          command_type: 'ADD_SHOPPING_ITEM',
+          payload: { items: [toCandidateItem(item)] },
+        },
+        errorCode: null,
+        spokenPrompt: `你是说，把${item.quantity_explicit ? `${item.quantity}${unitSpokenLabel(item.unit)}` : ''}${item.food_name}加入购物清单，对吗？`,
+      };
+    }
+    if (parsed.intent === 'EXTERNAL_PURCHASE') {
+      return {
+        status: 'COMPLETED',
+        candidate: null,
+        errorCode: null,
+        spokenPrompt:
+          '我目前还不能代你向外部商家下单，也不会把尚未购买的商品记入库存。购物清单功能接通后，我可以先帮你加入清单。',
+      };
+    }
+    if (parsed.intent === 'QUERY_INVENTORY') {
       return {
         status: 'COMPLETED',
         candidate: {
@@ -188,14 +252,28 @@ export class VoiceService {
     const candidate = { command_type: commandType, payload };
 
     // 追问：单食材且数量未显式（"加牛奶" 未说几盒）-> 先问清楚再确认，不擅自默认（AGENTS.md §6）
-    const ambiguous = parsed.items.length === 1 && !parsed.items[0]?.quantity_explicit;
-    if (ambiguous) {
+    const parsedItem = parsed.items.length === 1 ? parsed.items[0] : undefined;
+    if (parsedItem && !parsedItem.quantity_explicit) {
       const foodName = items[0]?.display_text ?? '这个';
       return {
         status: 'AWAITING_CLARIFICATION',
         candidate,
         errorCode: null,
-        spokenPrompt: clarifyQuantityPrompt(commandType, foodName),
+        spokenPrompt: clarifyQuantityPrompt(commandType, foodName, parsedItem.suggested_units),
+      };
+    }
+
+    if (parsedItem && !parsedItem.unit_reasonable) {
+      return {
+        status: 'AWAITING_CLARIFICATION',
+        candidate,
+        errorCode: null,
+        spokenPrompt: clarifyUnitPrompt(
+          parsedItem.food_name,
+          parsedItem.quantity,
+          parsedItem.unit,
+          parsedItem.suggested_units,
+        ),
       };
     }
 
@@ -206,6 +284,207 @@ export class VoiceService {
       errorCode: null,
       spokenPrompt: confirmPrompt(commandType, toSpokenItems(items)),
     };
+  }
+
+  private async buildShoppingListQueryOutcome(householdId: string, userId: string) {
+    const items = await this.meals.listShoppingItems(householdId, userId);
+    const spokenPrompt = items.length
+      ? `购物清单里有：${items
+          .slice(0, 8)
+          .map((item: { food_name: string; quantity: string | null; unit_code: string | null }) =>
+            item.quantity && item.unit_code
+              ? `${item.food_name}${item.quantity}${unitSpokenLabel(item.unit_code)}`
+              : item.food_name,
+          )
+          .join('、')}。`
+      : '购物清单还是空的。';
+    return {
+      status: 'COMPLETED',
+      candidate: null,
+      errorCode: null,
+      spokenPrompt,
+    };
+  }
+
+  private async buildReminderOutcome(
+    householdId: string,
+    userId: string,
+    rawText: string,
+    parsed: ParseResult,
+  ): Promise<{
+    status: string;
+    candidate: {
+      command_type: string;
+      payload: {
+        food_id?: string;
+        food_name?: string;
+        reminder_text?: string;
+        scheduled_for?: string;
+      };
+    } | null;
+    errorCode: string | null;
+    spokenPrompt: string | null;
+  }> {
+    const scheduled = parseReminderSchedule(rawText);
+    const item = parsed.items[0];
+    const relativeFraction = relativeInventoryFraction(rawText);
+    const relativeFoodText =
+      item && relativeFraction
+        ? await this.resolveRelativeReminderText(
+            householdId,
+            userId,
+            item.food_id,
+            item.food_name,
+            relativeFraction,
+          )
+        : null;
+    const foodText = item ? (relativeFoodText ?? reminderFoodText(item)) : undefined;
+    const editsExisting = /改成|改为|修改|调整/.test(rawText);
+    const existingReminder =
+      editsExisting && item
+        ? await this.notifications.findPendingReminderForFood(householdId, userId, item.food_id)
+        : null;
+    const candidate = {
+      command_type: existingReminder ? 'UPDATE_REMINDER' : 'CREATE_REMINDER',
+      payload: {
+        ...(item ? { food_id: item.food_id, food_name: item.food_name } : {}),
+        ...(foodText ? { reminder_text: foodText } : {}),
+        ...(scheduled ? { scheduled_for: scheduled.toISOString() } : {}),
+        ...(existingReminder ? { reminder_id: existingReminder.id } : {}),
+      },
+    };
+    if (editsExisting && item && !existingReminder) {
+      return {
+        status: 'FAILED',
+        candidate: null,
+        errorCode: 'REMINDER_NOT_FOUND',
+        spokenPrompt: `我没有找到待处理的${item.food_name}提醒。你可以让我新建一条。`,
+      };
+    }
+    if (!scheduled) {
+      return {
+        status: 'AWAITING_CLARIFICATION',
+        candidate,
+        errorCode: null,
+        spokenPrompt: '你希望我在什么时候提醒？',
+      };
+    }
+    if (!item) {
+      return {
+        status: 'AWAITING_CLARIFICATION',
+        candidate,
+        errorCode: null,
+        spokenPrompt: '你想让我提醒你处理哪种食材？',
+      };
+    }
+    if (relativeFraction && !relativeFoodText) {
+      return {
+        status: 'AWAITING_CLARIFICATION',
+        candidate,
+        errorCode: null,
+        spokenPrompt: `我暂时无法按当前库存换算${item.food_name}的一半。请告诉我要提醒你吃掉多少。`,
+      };
+    }
+    return {
+      status: 'AWAITING_CONFIRMATION',
+      candidate,
+      errorCode: null,
+      spokenPrompt: reminderConfirmationPrompt(
+        scheduled.toISOString(),
+        foodText ?? reminderFoodText(item),
+      ),
+    };
+  }
+
+  private async resolveRelativeReminderText(
+    householdId: string,
+    userId: string,
+    foodId: string,
+    foodName: string,
+    fraction: string,
+  ): Promise<string | null> {
+    const inventory = await this.queries.getInventoryView(householdId, userId);
+    const matching = inventory.zones
+      .flatMap((zone) => zone.items)
+      .filter((item) => item.food_id === foodId);
+    const units = new Set(matching.map((item) => item.unit));
+    if (matching.length === 0 || units.size !== 1) return null;
+    const quantity = matching
+      .reduce((total, item) => total.plus(item.total_quantity), new Big(0))
+      .times(fraction);
+    const unit = matching[0]?.unit;
+    if (!unit || quantity.lte(0)) return null;
+    return `吃掉${quantity.toString()}${unitSpokenLabel(unit)}${foodName}`;
+  }
+
+  private async buildInventoryQueryPrompt(
+    householdId: string,
+    userId: string,
+    normalized: string,
+    parsed: ParseResult,
+  ): Promise<string> {
+    const inventory = await this.queries.getInventoryView(householdId, userId);
+    let items = inventory.zones.flatMap((zone) => zone.items);
+    const requestedIds = new Set(parsed.items.map((item) => item.food_id));
+    if (requestedIds.size > 0) items = items.filter((item) => requestedIds.has(item.food_id));
+
+    const categoryRequest =
+      requestedIds.size === 0 ? await this.foodCategories.resolveSpokenQuery(normalized) : null;
+    if (categoryRequest) {
+      items = items.filter((item) => categoryRequest.descendantCodes.has(item.category_code));
+    }
+
+    const asksExpiry = /快过期|临期|过期/.test(normalized);
+    const asksMealIdea =
+      /(?:今天|今晚|中午).*(?:吃什么|做什么菜|做点什么)|(?:能做|可以做|吃什么|怎么吃|美食|菜谱|减脂餐)|(?:减脂|减肥)/.test(
+        normalized,
+      );
+    if (asksExpiry) {
+      items = items.filter(
+        (item) => item.expiry_status === 'EXPIRING' || item.expiry_status === 'EXPIRED',
+      );
+    }
+
+    if (items.length === 0) {
+      if (requestedIds.size > 0) {
+        const names = parsed.items.map((item) => item.food_name).join('、');
+        return `目前库存里没有${names}。`;
+      }
+      if (categoryRequest) return `目前库存里没有${categoryRequest.label}。`;
+      return asksExpiry ? '目前没有临期或已经过期的食材。' : '目前库存还是空的。';
+    }
+
+    if (asksMealIdea) {
+      const prioritized = [...items].sort((left, right) => {
+        const rank = (status: string) => (status === 'EXPIRED' ? 0 : status === 'EXPIRING' ? 1 : 2);
+        return rank(left.expiry_status) - rank(right.expiry_status);
+      });
+      const names = prioritized
+        .slice(0, 5)
+        .map((item) => item.name)
+        .join('、');
+      const goalNote = /减脂|减肥/.test(normalized)
+        ? '如果目标是控制体重，可以优先采用蒸、煮、炖等少油做法，具体份量仍需结合个人情况。'
+        : '可以优先采用蒸、煮、炖等简单做法。';
+      const structure = await this.nutrition.householdStructure(householdId, userId);
+      const attention = structure.observations
+        .filter((observation) => observation.severity === 'ATTENTION')
+        .slice(0, 1)
+        .map((observation) => `另外，${observation.detail}`)
+        .join('');
+      return `根据当前库存，可以优先用${names}搭配一餐。${goalNote}${attention}${'这只是基于库存结构的餐食建议，不会自动扣减食材。'}`;
+    }
+
+    const descriptions = items
+      .slice(0, 8)
+      .map((item) => `${item.name}${item.total_quantity}${unitSpokenLabel(item.unit)}`);
+    const suffix = items.length > 8 ? `等${items.length}种食材` : '';
+    if (asksExpiry)
+      return `需要优先处理的有：${descriptions.join('、')}${suffix ? `，${suffix}` : ''}。`;
+    if (requestedIds.size > 0) return `目前有${descriptions.join('、')}。`;
+    if (categoryRequest)
+      return `你现在有${categoryRequest.label}：${descriptions.join('、')}${suffix ? `，${suffix}` : ''}。`;
+    return `你现在有：${descriptions.join('、')}${suffix ? `，${suffix}` : ''}。`;
   }
 
   async getJob(jobId: string, userId: string) {
@@ -275,10 +554,110 @@ export class VoiceService {
       { role: 'user' as const, text: input.text, at: nowIso() },
     ];
 
+    if (
+      job.candidate_command_json?.command_type === 'CREATE_REMINDER' ||
+      job.candidate_command_json?.command_type === 'UPDATE_REMINDER'
+    ) {
+      return this.advanceReminder(job, userId, input.text, catalog, turns);
+    }
+
     if (job.status === 'AWAITING_CLARIFICATION') {
       return this.advanceClarification(job, userId, input.text, catalog, turns);
     }
     return this.advanceConfirmation(job, userId, input.text, catalog, turns);
+  }
+
+  private async advanceReminder(
+    job: VoiceJobRow,
+    userId: string,
+    replyText: string,
+    catalog: FoodCatalogEntry[],
+    turns: DialogueTurn[],
+  ) {
+    const candidate = job.candidate_command_json;
+    const payload = candidate?.payload ?? {};
+    const interp = interpretReply(replyText, catalog);
+    const relativeFraction = relativeInventoryFraction(replyText);
+
+    if (interp.kind === 'REJECT') {
+      turns.push({ role: 'system', text: CANCELLED_PROMPT, at: nowIso() });
+      await this.pool.query(
+        `update voice_jobs set status='CANCELLED',spoken_prompt=$2,turn_count=turn_count+1,dialogue_turns=$3,completed_at=now() where id=$1`,
+        [job.id, CANCELLED_PROMPT, JSON.stringify(turns)],
+      );
+      return this.getJob(job.id, userId);
+    }
+
+    if (
+      !relativeFraction &&
+      interp.kind === 'CONFIRM' &&
+      payload.reminder_text &&
+      payload.scheduled_for &&
+      payload.food_id
+    ) {
+      await this.executeCandidate(job, userId, undefined, turns);
+      return this.getJob(job.id, userId);
+    }
+
+    if (interp.kind !== 'CONFIRM' || relativeFraction) {
+      const normalizedReply = normalizeReminderSpeech(replyText);
+      const scheduled = parseReminderSchedule(normalizedReply);
+      if (scheduled) payload.scheduled_for = scheduled.toISOString();
+
+      const parsed = parseTranscript(normalizeTranscript(normalizedReply), catalog);
+      const item = parsed.items[0];
+      if (item) {
+        payload.food_id = item.food_id;
+        payload.food_name = item.food_name;
+        payload.reminder_text = reminderFoodText(item);
+      }
+      if (relativeFraction && payload.food_id && payload.food_name) {
+        const relativeText = await this.resolveRelativeReminderText(
+          job.household_id,
+          userId,
+          payload.food_id,
+          payload.food_name,
+          relativeFraction,
+        );
+        if (!relativeText) {
+          return this.persistTurn(job, {
+            status: 'AWAITING_CLARIFICATION',
+            candidate,
+            spokenPrompt: `我暂时无法按当前库存换算${payload.food_name}的一半。请告诉我要提醒你吃掉多少。`,
+            turns,
+            userId,
+          });
+        }
+        payload.reminder_text = relativeText;
+      }
+    }
+
+    if (!payload.scheduled_for) {
+      return this.persistTurn(job, {
+        status: 'AWAITING_CLARIFICATION',
+        candidate,
+        spokenPrompt: '你希望我在什么时候提醒？',
+        turns,
+        userId,
+      });
+    }
+    if (!payload.food_id || !payload.reminder_text) {
+      return this.persistTurn(job, {
+        status: 'AWAITING_CLARIFICATION',
+        candidate,
+        spokenPrompt: '你想让我提醒你处理哪种食材？',
+        turns,
+        userId,
+      });
+    }
+
+    return this.persistTurn(job, {
+      status: 'AWAITING_CONFIRMATION',
+      candidate,
+      spokenPrompt: reminderConfirmationPrompt(payload.scheduled_for, payload.reminder_text),
+      turns,
+      userId,
+    });
   }
 
   private async advanceClarification(
@@ -293,7 +672,32 @@ export class VoiceService {
     const interp = interpretReply(replyText, catalog);
 
     let filled = false;
-    if (interp.kind === 'CORRECTION') {
+    let relativePrompt = '';
+    const relativeFraction = relativeInventoryFraction(replyText);
+    if (
+      relativeFraction &&
+      items.length === 1 &&
+      items[0] &&
+      (candidate?.command_type === 'CONSUME_INVENTORY' ||
+        candidate?.command_type === 'DISCARD_INVENTORY')
+    ) {
+      const inventory = await this.queries.getInventoryView(job.household_id, userId);
+      const matching = inventory.zones
+        .flatMap((zone) => zone.items)
+        .filter((item) => item.food_id === items[0]?.food_id);
+      const units = new Set(matching.map((item) => item.unit));
+      if (matching.length > 0 && units.size === 1) {
+        const quantity = matching
+          .reduce((total, item) => total.plus(item.total_quantity), new Big(0))
+          .times(relativeFraction);
+        items[0].quantity = quantity.toString();
+        items[0].unit = matching[0]?.unit ?? items[0].unit;
+        relativePrompt = `按当前库存计算，一半是${items[0].quantity}${unitSpokenLabel(items[0].unit)}。`;
+        filled = true;
+      }
+    }
+
+    if (!filled && interp.kind === 'CORRECTION') {
       if (interp.hasFood && interp.items[0]) {
         // 用户直接补了"两盒牛奶"
         const first = interp.items[0];
@@ -311,9 +715,11 @@ export class VoiceService {
 
     if (!filled || !candidate?.command_type) {
       // 没听清数量，继续追问
+      const food = catalog.find((entry) => entry.id === items[0]?.food_id);
       const prompt = clarifyQuantityPrompt(
         candidate?.command_type ?? 'ADD_INVENTORY',
         items[0]?.display_text ?? '这个',
+        food ? suggestedUnitsForFood(food) : [],
       );
       return this.persistTurn(job, {
         status: 'AWAITING_CLARIFICATION',
@@ -324,7 +730,29 @@ export class VoiceService {
       });
     }
 
-    const prompt = confirmPrompt(candidate.command_type, toSpokenItems(items));
+    const correctedItem = items[0];
+    const correctedFood = catalog.find((entry) => entry.id === correctedItem?.food_id);
+    if (
+      correctedItem &&
+      correctedFood &&
+      !isReasonableUnitForFood(correctedFood, correctedItem.unit)
+    ) {
+      const prompt = clarifyUnitPrompt(
+        correctedItem.display_text ?? correctedFood.canonicalName,
+        correctedItem.quantity,
+        correctedItem.unit,
+        suggestedUnitsForFood(correctedFood),
+      );
+      return this.persistTurn(job, {
+        status: 'AWAITING_CLARIFICATION',
+        candidate,
+        spokenPrompt: prompt,
+        turns,
+        userId,
+      });
+    }
+
+    const prompt = `${relativePrompt}${confirmPrompt(candidate.command_type, toSpokenItems(items))}`;
     return this.persistTurn(job, {
       status: 'AWAITING_CONFIRMATION',
       candidate,
@@ -427,8 +855,64 @@ export class VoiceService {
     overridePayload: unknown,
     turns?: DialogueTurn[],
   ) {
-    const commandType = job.candidate_command_json?.command_type as
-      keyof typeof COMMAND_PAYLOAD_SCHEMAS | undefined;
+    const rawCommandType = job.candidate_command_json?.command_type;
+    if (rawCommandType === 'ADD_SHOPPING_ITEM') {
+      const item = job.candidate_command_json?.payload?.items?.[0];
+      if (!item) {
+        throw new DomainError('CONFLICT', 'VOICE_JOB_INVALID_CANDIDATE', '购物清单候选缺少食材。');
+      }
+      const result = await this.meals.addShoppingItem(job.household_id, userId, {
+        food_id: item.food_id,
+        ...(item.quantity_explicit ? { quantity: item.quantity, unit_code: item.unit } : {}),
+        source: 'VOICE',
+        idempotency_key: `voice-${job.id}`,
+      });
+      const spoken = '好的，已经加入购物清单。这里只记录待购事项，不会自动下单。';
+      const finalTurns = turns
+        ? [...turns, { role: 'system' as const, text: spoken, at: nowIso() }]
+        : null;
+      await this.pool.query(
+        `update voice_jobs set status='COMPLETED',completed_at=now(),spoken_prompt=$2,dialogue_turns=coalesce($3,dialogue_turns),turn_count=turn_count+case when $3 is null then 0 else 1 end where id=$1`,
+        [job.id, spoken, finalTurns ? JSON.stringify(finalTurns) : null],
+      );
+      return result;
+    }
+    if (rawCommandType === 'CREATE_REMINDER' || rawCommandType === 'UPDATE_REMINDER') {
+      const payload = job.candidate_command_json?.payload;
+      if (!payload?.reminder_text || !payload.scheduled_for)
+        throw new DomainError(
+          'CONFLICT',
+          'VOICE_JOB_INVALID_CANDIDATE',
+          '提醒候选缺少时间或内容。',
+        );
+      const reminder =
+        rawCommandType === 'UPDATE_REMINDER' && payload.reminder_id
+          ? await this.notifications.updateReminder(job.household_id, payload.reminder_id, userId, {
+              ...(payload.food_id ? { food_id: payload.food_id } : {}),
+              reminder_text: payload.reminder_text,
+              scheduled_for: payload.scheduled_for,
+            })
+          : await this.notifications.createReminder(job.household_id, userId, {
+              ...(payload.food_id ? { food_id: payload.food_id } : {}),
+              reminder_text: payload.reminder_text,
+              scheduled_for: payload.scheduled_for,
+              idempotency_key: `voice-${job.id}`,
+              source_channel: job.source_channel,
+            });
+      const spoken =
+        rawCommandType === 'UPDATE_REMINDER'
+          ? '好的，原来的提醒已经修改。到点后我会提醒你，库存不会自动扣减。'
+          : '好的，提醒已经设置。到点后我会提醒你，库存不会自动扣减。';
+      const finalTurns = turns
+        ? [...turns, { role: 'system' as const, text: spoken, at: nowIso() }]
+        : null;
+      await this.pool.query(
+        `update voice_jobs set status='COMPLETED',completed_at=now(),spoken_prompt=$2,dialogue_turns=coalesce($3,dialogue_turns),turn_count=turn_count+case when $3 is null then 0 else 1 end where id=$1`,
+        [job.id, spoken, finalTurns ? JSON.stringify(finalTurns) : null],
+      );
+      return reminder;
+    }
+    const commandType = rawCommandType as keyof typeof COMMAND_PAYLOAD_SCHEMAS | undefined;
     if (!commandType || !(commandType in COMMAND_PAYLOAD_SCHEMAS)) {
       throw new DomainError('CONFLICT', 'VOICE_JOB_INVALID_CANDIDATE', 'No executable candidate.');
     }
@@ -493,10 +977,13 @@ export class VoiceService {
     const result = await this.pool.query<{
       id: string;
       canonical_name: string;
+      category: string;
       default_unit_code: string;
+      preferred_unit_codes: string[];
       aliases: string[];
     }>(
-      `select fc.id, fc.canonical_name, fc.default_unit_code,
+      `select fc.id, fc.canonical_name, fc.category, fc.default_unit_code,
+              fc.preferred_unit_codes,
               coalesce(array_agg(fa.alias) filter (where fa.alias is not null), '{}') as aliases
        from food_catalog fc
        left join food_aliases fa on fa.food_id = fc.id
@@ -507,7 +994,9 @@ export class VoiceService {
     return result.rows.map((row) => ({
       id: row.id,
       canonicalName: row.canonical_name,
+      category: row.category,
       defaultUnitCode: row.default_unit_code,
+      preferredUnitCodes: row.preferred_unit_codes,
       aliases: row.aliases,
     }));
   }
@@ -517,17 +1006,43 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function reminderFoodText(item: {
+  food_name: string;
+  quantity: string;
+  unit: string;
+  quantity_explicit: boolean;
+}): string {
+  if (item.quantity_explicit) {
+    return `吃掉${item.quantity}${unitSpokenLabel(item.unit)}${item.food_name}`;
+  }
+  return `把${item.food_name}吃完`;
+}
+
+function reminderConfirmationPrompt(scheduledFor: string, reminderText: string): string {
+  const label = new Date(scheduledFor).toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  return `你是说，${label}提醒你${reminderText}，对吗？`;
+}
+
 function toCandidateItem(item: {
   food_id: string;
   food_name: string;
   quantity: string;
   unit: string;
+  quantity_explicit?: boolean;
 }): CandidateItem {
   return {
     food_id: item.food_id,
     display_text: item.food_name,
     quantity: item.quantity,
     unit: item.unit,
+    ...(item.quantity_explicit === undefined ? {} : { quantity_explicit: item.quantity_explicit }),
   };
 }
 

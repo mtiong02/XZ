@@ -1,0 +1,48 @@
+- generic [active] [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e22] [cursor=pointer]
+  - alert [ref=e16]
+  - banner [ref=e26]:
+    - heading "🥬 UI Session" [level=1] [ref=e27]
+    - navigation [ref=e28]:
+      - link "本周" [ref=e29] [cursor=pointer]:
+        - /url: /fridge/stats
+      - link "动态" [ref=e30] [cursor=pointer]:
+        - /url: /fridge/timeline
+      - link "提醒" [ref=e31] [cursor=pointer]:
+        - /url: /fridge/notifications
+      - link "食材库" [ref=e32] [cursor=pointer]:
+        - /url: /fridge/foods
+      - link "设置" [ref=e33] [cursor=pointer]:
+        - /url: /fridge/settings
+      - button "退出" [ref=e34] [cursor=pointer]
+  - main [ref=e35]:
+    - generic [ref=e36]:
+      - generic [ref=e37]:
+        - generic [ref=e38]: "0"
+        - generic [ref=e39]: 在库食材
+      - generic [ref=e40]:
+        - generic [ref=e41]: "0"
+        - generic [ref=e42]: 临期
+      - generic [ref=e43]:
+        - generic [ref=e44]: "0"
+        - generic [ref=e45]: 已过期
+    - generic [ref=e46]:
+      - heading "🧊 冷藏室" [level=2] [ref=e47]
+      - paragraph [ref=e48]: 空空如也
+    - generic [ref=e49]:
+      - heading "❄️ 冷冻室" [level=2] [ref=e50]
+      - paragraph [ref=e51]: 空空如也
+    - generic [ref=e52]:
+      - heading "🗄️ 常温区" [level=2] [ref=e53]
+      - paragraph [ref=e54]: 空空如也
+    - generic [ref=e55]:
+      - paragraph [ref=e56]: 🧺
+      - paragraph [ref=e57]: 冰箱还是空的，点右下角 ＋ 添加第一样食材吧
+  - generic [ref=e58]:
+    - button "添加食材" [ref=e59] [cursor=pointer]: ＋
+    - button "使用食材" [ref=e60] [cursor=pointer]: 🍳
+  - button "打开小知语音助手" [ref=e61] [cursor=pointer]:
+    - img "小知语音助手" [ref=e63]
+    - generic [ref=e64]:
+      - strong [ref=e65]: 小知
+      - generic [ref=e66]: 正在理解…

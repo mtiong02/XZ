@@ -6,6 +6,7 @@ const SPOKEN: Record<string, string> = {
   pack: '包',
   bag: '袋',
   bunch: '把',
+  jin: '斤',
   g: '克',
   kg: '千克',
   ml: '毫升',

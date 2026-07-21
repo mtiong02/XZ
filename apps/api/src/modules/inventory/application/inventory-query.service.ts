@@ -9,7 +9,7 @@ import { computeExpiryStatus } from '../domain/expiry';
 export class InventoryQueryService {
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
-    private readonly membership: MembershipService,
+    @Inject(MembershipService) private readonly membership: MembershipService,
   ) {}
 
   /** 数字冰箱首页视图（docs/03 §6.1）：分区 -> 食材聚合。 */
@@ -31,19 +31,21 @@ export class InventoryQueryService {
         food_id: string;
         name: string;
         category: string;
+        category_code: string;
         total_quantity: string;
         unit: string;
         earliest_expiry: Date | null;
         lot_count: string;
       }>(
         `select l.storage_zone_id as zone_id, l.food_id, fc.canonical_name as name,
-                fc.category, sum(l.remaining_quantity)::text as total_quantity,
+                fc.category, fc.category_code, sum(l.remaining_quantity)::text as total_quantity,
                 l.unit_code as unit, min(l.expires_at) as earliest_expiry,
                 count(*)::text as lot_count
          from inventory_lots l
          join food_catalog fc on fc.id = l.food_id
          where l.household_id = $1 and l.status = 'ACTIVE' and l.remaining_quantity > 0
-         group by l.storage_zone_id, l.food_id, fc.canonical_name, fc.category, l.unit_code
+         group by l.storage_zone_id, l.food_id, fc.canonical_name, fc.category,
+                  fc.category_code, l.unit_code
          order by min(l.expires_at) asc nulls last`,
         [householdId],
       ),
@@ -60,6 +62,7 @@ export class InventoryQueryService {
           food_id: item.food_id,
           name: item.name,
           category: item.category,
+          category_code: item.category_code,
           total_quantity: item.total_quantity,
           unit: item.unit,
           earliest_expiry: item.earliest_expiry?.toISOString() ?? null,
@@ -73,6 +76,55 @@ export class InventoryQueryService {
       revision: Number(revisionResult.rows[0]?.revision ?? 0),
       zones,
     };
+  }
+
+  /** 现有库存的存放审计：只报告有证据支持且当前区域不是首选的批次。 */
+  async getStorageAudit(householdId: string, userId: string) {
+    await this.membership.assertMembership(householdId, userId);
+    const result = await this.pool.query<{
+      food_id: string;
+      food_name: string;
+      current_zone_id: string;
+      current_zone_code: string;
+      current_zone_name: string;
+      recommended_zone_id: string;
+      recommended_zone_name: string;
+      suitability: string;
+      condition_note: string;
+      source_reference: string;
+      lot_ids: string[];
+      quantity: string;
+      unit: string;
+    }>(
+      `select l.food_id,fc.canonical_name as food_name,
+        current_zone.id as current_zone_id,current_zone.code as current_zone_code,
+        current_zone.name as current_zone_name,recommended_zone.id as recommended_zone_id,
+        recommended_zone.name as recommended_zone_name,
+        coalesce(current_rule.suitability,'UNKNOWN') as suitability,
+        recommended_rule.condition_note,recommended_rule.source_reference,
+        array_agg(l.id order by l.expires_at nulls last) as lot_ids,
+        sum(l.remaining_quantity)::text as quantity,l.unit_code as unit
+       from inventory_lots l
+       join food_catalog fc on fc.id=l.food_id
+       join storage_zones current_zone on current_zone.id=l.storage_zone_id
+       join food_storage_rules recommended_rule on recommended_rule.food_id=l.food_id
+         and recommended_rule.suitability='RECOMMENDED'
+       join storage_zones recommended_zone on recommended_zone.household_id=l.household_id
+         and recommended_zone.refrigerator_id=l.refrigerator_id
+         and recommended_zone.code=recommended_rule.storage_zone_code
+       left join food_storage_rules current_rule on current_rule.food_id=l.food_id
+         and current_rule.storage_zone_code=current_zone.code
+       where l.household_id=$1 and l.status='ACTIVE' and l.remaining_quantity>0
+         and current_zone.id<>recommended_zone.id
+       group by l.food_id,fc.canonical_name,current_zone.id,current_zone.code,current_zone.name,
+         recommended_zone.id,recommended_zone.name,current_rule.suitability,
+         recommended_rule.condition_note,recommended_rule.source_reference,l.unit_code
+       order by case coalesce(current_rule.suitability,'UNKNOWN')
+         when 'PROHIBITED' then 0 when 'NOT_RECOMMENDED' then 1 when 'ACCEPTABLE' then 2 else 3 end,
+         fc.canonical_name`,
+      [householdId],
+    );
+    return result.rows;
   }
 
   /** 临期列表（FR-012）：按到期日排序，含已过期。 */

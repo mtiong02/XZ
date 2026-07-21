@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Inject,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard, type AuthenticatedUser } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import {
@@ -16,7 +25,7 @@ import {
 @Controller('voice-jobs')
 @UseGuards(AuthGuard)
 export class VoiceController {
-  constructor(private readonly voice: VoiceService) {}
+  constructor(@Inject(VoiceService) private readonly voice: VoiceService) {}
 
   @Post()
   async create(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {

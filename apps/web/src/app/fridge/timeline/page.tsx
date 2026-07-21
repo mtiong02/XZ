@@ -1,7 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
+import { AppHeader } from '../../../components/app-header';
 import type { TransactionView } from '@xz/contracts';
 import { apiGet, executeCommand } from '../../../lib/api';
 import { formatDateTime, TRANSACTION_LABEL } from '../../../lib/format';
@@ -61,14 +61,7 @@ export default function TimelinePageView() {
 
   return (
     <>
-      <header className="topbar">
-        <h1>
-          <Link href="/fridge" style={{ textDecoration: 'none' }}>
-            ←
-          </Link>{' '}
-          家庭动态
-        </h1>
-      </header>
+      <AppHeader title="家庭动态" subtitle="每次库存变化都有记录，错误操作可以撤销" />
       <main className="container">
         {error ? <div className="error-box">{error}</div> : null}
         {items.length === 0 ? <p className="empty">还没有任何操作记录</p> : null}

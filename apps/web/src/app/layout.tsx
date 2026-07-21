@@ -4,7 +4,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'XZ 鲜知',
-  description: 'AI 数字冰箱与家庭饮食数据平台',
+  description: '家庭食材、提醒与饮食管理',
   manifest: '/manifest.webmanifest',
 };
 

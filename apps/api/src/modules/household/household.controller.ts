@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard, type AuthenticatedUser } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AddMemberSchema, CreateHouseholdSchema, HouseholdService } from './household.service';
@@ -6,7 +6,7 @@ import { AddMemberSchema, CreateHouseholdSchema, HouseholdService } from './hous
 @Controller('households')
 @UseGuards(AuthGuard)
 export class HouseholdController {
-  constructor(private readonly households: HouseholdService) {}
+  constructor(@Inject(HouseholdService) private readonly households: HouseholdService) {}
 
   @Post()
   async create(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {

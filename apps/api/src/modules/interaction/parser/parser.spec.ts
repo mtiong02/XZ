@@ -17,8 +17,31 @@ const catalog: FoodCatalogEntry[] = [
     defaultUnitCode: 'piece',
     aliases: ['番茄', 'tomato'],
   },
-  { id: 'f-spinach', canonicalName: '菠菜', defaultUnitCode: 'g', aliases: ['spinach'] },
-  { id: 'f-pork', canonicalName: '猪肉', defaultUnitCode: 'g', aliases: ['pork'] },
+  {
+    id: 'f-spinach',
+    canonicalName: '菠菜',
+    category: 'VEGETABLE',
+    defaultUnitCode: 'g',
+    preferredUnitCodes: ['bunch', 'jin', 'g', 'kg'],
+    aliases: ['spinach'],
+  },
+  {
+    id: 'f-pork',
+    canonicalName: '猪肉',
+    category: 'MEAT',
+    defaultUnitCode: 'g',
+    preferredUnitCodes: ['jin', 'g', 'kg'],
+    aliases: ['pork'],
+  },
+  {
+    id: 'f-potato',
+    canonicalName: '土豆',
+    category: 'VEGETABLE',
+    defaultUnitCode: 'piece',
+    preferredUnitCodes: ['piece', 'jin', 'g', 'kg'],
+    aliases: ['马铃薯'],
+  },
+  { id: 'f-bread', canonicalName: '面包', defaultUnitCode: 'pack', aliases: ['吐司'] },
 ];
 
 interface EvalCase {
@@ -62,11 +85,26 @@ const cases: EvalCase[] = [
     intent: 'CONSUME_INVENTORY',
     items: [{ food_id: 'f-milk', quantity: '1', unit: 'box' }],
   },
-  // 斤 -> 500g
+  // 斤保留在候选中以便自然复述，执行库存命令时统一换算为克
   {
     text: '买了一斤猪肉',
     intent: 'ADD_INVENTORY',
-    items: [{ food_id: 'f-pork', quantity: '500', unit: 'g' }],
+    items: [{ food_id: 'f-pork', quantity: '1', unit: 'jin' }],
+  },
+  {
+    text: '土豆买了三斤',
+    intent: 'ADD_INVENTORY',
+    items: [{ food_id: 'f-potato', quantity: '3', unit: 'jin' }],
+  },
+  {
+    text: '买了两把菠菜',
+    intent: 'ADD_INVENTORY',
+    items: [{ food_id: 'f-spinach', quantity: '2', unit: 'bunch' }],
+  },
+  {
+    text: '买了2000克菠菜',
+    intent: 'ADD_INVENTORY',
+    items: [{ food_id: 'f-spinach', quantity: '2000', unit: 'g' }],
   },
   // 丢弃
   {
@@ -76,6 +114,28 @@ const cases: EvalCase[] = [
   },
   // 查询
   { text: '看看还有多少鸡蛋', intent: 'QUERY_INVENTORY' },
+  { text: '我有哪些食材', intent: 'QUERY_INVENTORY' },
+  { text: '冰箱里有什么', intent: 'QUERY_INVENTORY' },
+  { text: '我们现在还有哪些肉', intent: 'QUERY_INVENTORY' },
+  { text: '还剩什么蔬菜', intent: 'QUERY_INVENTORY' },
+  { text: '现在还有哪些调味料', intent: 'QUERY_INVENTORY' },
+  { text: '哪些东西快过期了', intent: 'QUERY_INVENTORY' },
+  { text: '今天吃什么', intent: 'QUERY_INVENTORY' },
+  { text: '这些食材能够做什么美食', intent: 'QUERY_INVENTORY' },
+  { text: '结合冰箱现有食物推荐一些减脂餐', intent: 'QUERY_INVENTORY' },
+  { text: '这些食物可以吃什么样的减脂餐', intent: 'QUERY_INVENTORY' },
+  { text: '帮我下单买一些面包', intent: 'EXTERNAL_PURCHASE' },
+  { text: '帮我下单买一些面包冰箱里面没有面包', intent: 'EXTERNAL_PURCHASE' },
+  { text: '把面包加入购物清单', intent: 'ADD_SHOPPING_ITEM' },
+  { text: '购物清单加一包面包', intent: 'ADD_SHOPPING_ITEM' },
+  { text: '查看购物清单有什么', intent: 'QUERY_SHOPPING_LIST' },
+  { text: '请提醒一下我明天要把猪肉全部吃完', intent: 'CREATE_REMINDER' },
+  { text: '提醒我明天中午把猪肉吃了', intent: 'CREATE_REMINDER' },
+  {
+    text: '民天中午十二点提醒我吃掉一千克的猪肉',
+    intent: 'CREATE_REMINDER',
+    items: [{ food_id: 'f-pork', quantity: '1', unit: 'kg' }],
+  },
   // 英文
   {
     text: 'bought 6 eggs',
@@ -90,6 +150,8 @@ const cases: EvalCase[] = [
   },
   // 无法识别
   { text: '今天天气不错', intent: 'UNKNOWN' },
+  { text: '请用三句话介绍你能怎样管理土豆、菠菜和牛奶', intent: 'UNKNOWN' },
+  { text: '怎么用两个鸡蛋做菜', intent: 'UNKNOWN' },
 ];
 
 describe('normalizeTranscript', () => {
@@ -132,5 +194,11 @@ describe('parseTranscript evaluation set', () => {
   it('never returns high overall confidence without a food match', () => {
     const result = parseTranscript(normalizeTranscript('买了一些东西'), catalog);
     expect(result.confidence.overall).toBeLessThan(0.5);
+  });
+
+  it('marks an implausible food/unit pair for clarification', () => {
+    const result = parseTranscript(normalizeTranscript('买了三瓶土豆'), catalog);
+    expect(result.items[0]?.unit_reasonable).toBe(false);
+    expect(result.items[0]?.suggested_units).toEqual(['piece', 'jin', 'g', 'kg']);
   });
 });

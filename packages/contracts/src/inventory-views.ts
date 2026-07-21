@@ -8,6 +8,7 @@ export interface InventoryItemView {
   food_id: string;
   name: string;
   category: string;
+  category_code: string;
   total_quantity: string;
   unit: string;
   earliest_expiry: string | null;
@@ -30,7 +31,7 @@ export interface InventoryView {
 
 export interface TransactionView {
   id: string;
-  transaction_type: 'ADD' | 'CONSUME' | 'DISCARD' | 'CORRECT' | 'REVERSAL';
+  transaction_type: 'ADD' | 'CONSUME' | 'DISCARD' | 'CORRECT' | 'MOVE' | 'REVERSAL';
   food_id: string;
   food_name: string;
   quantity_delta: string;

@@ -41,7 +41,7 @@ export default function LoginPage() {
     <div className="auth-page">
       <div className="auth-card">
         <h1>XZ 鲜知</h1>
-        <p className="sub">你家冰箱的数字大脑</p>
+        <p className="sub">把家里的食材、提醒和饮食安排得清清楚楚</p>
         <form onSubmit={handleSubmit}>
           <div className="field">
             <label htmlFor="email">邮箱</label>

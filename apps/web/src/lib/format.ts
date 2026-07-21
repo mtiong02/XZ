@@ -21,6 +21,7 @@ export const UNIT_LABEL: Record<string, string> = {
   pack: '包',
   bag: '袋',
   bunch: '把',
+  jin: '斤',
   g: '克',
   kg: '千克',
   ml: '毫升',
@@ -54,5 +55,6 @@ export const TRANSACTION_LABEL: Record<string, string> = {
   CONSUME: '使用',
   DISCARD: '丢弃',
   CORRECT: '修正',
+  MOVE: '移动',
   REVERSAL: '撤销',
 };

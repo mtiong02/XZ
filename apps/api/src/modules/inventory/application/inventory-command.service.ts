@@ -7,6 +7,7 @@ import {
   ConsumeInventoryPayloadSchema,
   CorrectInventoryPayloadSchema,
   DiscardInventoryPayloadSchema,
+  MoveInventoryPayloadSchema,
   ReverseTransactionPayloadSchema,
   type CommandResult,
 } from '@xz/contracts';
@@ -16,7 +17,12 @@ import { withTransaction } from '../../../infra/db/transaction';
 import { MembershipService } from '../../household/membership.service';
 import { AlreadyReversedError, DomainError, NotReversibleError } from '../domain/errors';
 import { allocateFefo, type LotSnapshot } from '../domain/fefo';
-import { convertQuantity, formatQuantity, parseQuantity, type UnitMap } from '../domain/quantity';
+import {
+  formatQuantity,
+  normalizeQuantityForStorage,
+  parseQuantity,
+  type UnitMap,
+} from '../domain/quantity';
 import type { CommandRequest } from './command-request';
 
 interface CommandContext {
@@ -53,7 +59,7 @@ export class InventoryCommandService {
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
     @Inject(ENV) private readonly env: Env,
-    private readonly membership: MembershipService,
+    @Inject(MembershipService) private readonly membership: MembershipService,
   ) {}
 
   async execute(request: CommandRequest, userId: string): Promise<CommandResult> {
@@ -113,6 +119,8 @@ export class InventoryCommandService {
         return this.handleConsumeOrDiscard(ctx, request, 'DISCARD');
       case 'CORRECT_INVENTORY':
         return this.handleCorrect(ctx, request);
+      case 'MOVE_INVENTORY':
+        return this.handleMove(ctx, request);
       case 'REVERSE_TRANSACTION':
         return this.handleReverse(ctx, request);
     }
@@ -126,18 +134,19 @@ export class InventoryCommandService {
     const events: OutboxEventDraft[] = [];
     const entries: { lotId: string; delta: Big; unit: string }[] = [];
 
-    const defaultZoneId = await this.getDefaultZoneId(ctx);
-
     for (const item of payload.items) {
       const food = await this.resolveFood(ctx, item.food_id);
-      const quantity = convertQuantity(
+      const defaultZoneId = await this.getDefaultZoneId(ctx, food.id);
+      const normalized = normalizeQuantityForStorage(
         parseQuantity(item.quantity),
         item.unit,
-        food.default_unit_code,
         ctx.units,
       );
+      const quantity = normalized.quantity;
+      const storageUnit = normalized.unit;
       const zoneId = item.storage_zone_id ?? defaultZoneId;
       await this.assertZoneInHousehold(ctx, zoneId);
+      await this.assertStorageRule(ctx, food, zoneId);
 
       let expiresAt: Date | null = item.expires_at ? new Date(item.expires_at) : null;
       let expirySource = item.expiry_source;
@@ -161,7 +170,7 @@ export class InventoryCommandService {
             ctx.householdId,
             food.id,
             formatQuantity(quantity),
-            food.default_unit_code,
+            storageUnit,
             expiresAt,
             expirySource,
             ctx.actorMemberId,
@@ -171,7 +180,7 @@ export class InventoryCommandService {
       ).rows[0];
       if (!lot) throw new Error('lot insert returned no row');
 
-      entries.push({ lotId: lot.id, delta: quantity, unit: food.default_unit_code });
+      entries.push({ lotId: lot.id, delta: quantity, unit: storageUnit });
       events.push({
         eventType: 'InventoryLotCreated',
         aggregateType: 'inventory_lot',
@@ -181,7 +190,7 @@ export class InventoryCommandService {
           food_id: food.id,
           food_name: food.canonical_name,
           quantity: formatQuantity(quantity),
-          unit: food.default_unit_code,
+          unit: storageUnit,
           expires_at: expiresAt?.toISOString() ?? null,
           expiry_source: expirySource,
         },
@@ -214,23 +223,24 @@ export class InventoryCommandService {
 
     for (const item of payload.items) {
       const food = await this.resolveFood(ctx, item.food_id);
-      const requested = convertQuantity(
+      const normalized = normalizeQuantityForStorage(
         parseQuantity(item.quantity),
         item.unit,
-        food.default_unit_code,
         ctx.units,
       );
+      const requested = normalized.quantity;
+      const storageUnit = normalized.unit;
 
       const targetLotId = 'lot_id' in item ? item.lot_id : undefined;
-      const lots = await this.lockActiveLots(ctx, food.id, targetLotId);
-      const allocations = allocateFefo(food.id, food.default_unit_code, lots, requested);
+      const lots = await this.lockActiveLots(ctx, food.id, storageUnit, targetLotId);
+      const allocations = allocateFefo(food.id, storageUnit, lots, requested);
 
       for (const allocation of allocations) {
         await this.applyLotDelta(ctx, allocation.lotId, allocation.quantity.neg());
         entries.push({
           lotId: allocation.lotId,
           delta: allocation.quantity.neg(),
-          unit: food.default_unit_code,
+          unit: storageUnit,
         });
       }
 
@@ -242,7 +252,7 @@ export class InventoryCommandService {
           food_id: food.id,
           food_name: food.canonical_name,
           quantity: formatQuantity(requested),
-          unit: food.default_unit_code,
+          unit: storageUnit,
           ...(type === 'CONSUME'
             ? { purpose: (payload as { purpose?: string }).purpose ?? 'UNKNOWN' }
             : { reason: (payload as { reason: string }).reason }),
@@ -278,20 +288,21 @@ export class InventoryCommandService {
   ): Promise<HandlerOutcome> {
     const payload = CorrectInventoryPayloadSchema.parse(request.payload);
     const food = await this.resolveFood(ctx, payload.food_id);
-    const target = convertQuantity(
+    const normalized = normalizeQuantityForStorage(
       new Big(payload.target_total_quantity),
       payload.unit,
-      food.default_unit_code,
       ctx.units,
     );
+    const target = normalized.quantity;
+    const storageUnit = normalized.unit;
 
-    const lots = await this.lockActiveLots(ctx, food.id);
+    const lots = await this.lockActiveLots(ctx, food.id, storageUnit);
     const current = lots.reduce((sum, lot) => sum.plus(lot.remainingQuantity), new Big(0));
     const delta = target.minus(current);
     const entries: { lotId: string; delta: Big; unit: string }[] = [];
 
     if (delta.gt(0)) {
-      const defaultZoneId = await this.getDefaultZoneId(ctx);
+      const defaultZoneId = await this.getDefaultZoneId(ctx, food.id);
       const lot = (
         await ctx.client.query<{ id: string }>(
           `insert into inventory_lots
@@ -305,22 +316,22 @@ export class InventoryCommandService {
             ctx.householdId,
             food.id,
             formatQuantity(delta),
-            food.default_unit_code,
+            storageUnit,
             ctx.actorMemberId,
             defaultZoneId,
           ],
         )
       ).rows[0];
       if (!lot) throw new Error('correction lot insert returned no row');
-      entries.push({ lotId: lot.id, delta, unit: food.default_unit_code });
+      entries.push({ lotId: lot.id, delta, unit: storageUnit });
     } else if (delta.lt(0)) {
-      const allocations = allocateFefo(food.id, food.default_unit_code, lots, delta.abs());
+      const allocations = allocateFefo(food.id, storageUnit, lots, delta.abs());
       for (const allocation of allocations) {
         await this.applyLotDelta(ctx, allocation.lotId, allocation.quantity.neg());
         entries.push({
           lotId: allocation.lotId,
           delta: allocation.quantity.neg(),
-          unit: food.default_unit_code,
+          unit: storageUnit,
         });
       }
     }
@@ -332,7 +343,7 @@ export class InventoryCommandService {
         reason: payload.reason,
         before_total: formatQuantity(current),
         after_total: formatQuantity(target),
-        unit: food.default_unit_code,
+        unit: storageUnit,
       },
     });
     await this.insertEntries(ctx, transactionId, entries);
@@ -349,9 +360,67 @@ export class InventoryCommandService {
             food_name: food.canonical_name,
             before_total: formatQuantity(current),
             after_total: formatQuantity(target),
-            unit: food.default_unit_code,
+            unit: storageUnit,
             reason: payload.reason,
           },
+        },
+      ],
+    };
+  }
+
+  // ---------- MOVE ----------
+
+  private async handleMove(ctx: CommandContext, request: CommandRequest): Promise<HandlerOutcome> {
+    const payload = MoveInventoryPayloadSchema.parse(request.payload);
+    await this.assertZoneInHousehold(ctx, payload.target_storage_zone_id);
+    const lots = (
+      await ctx.client.query<{
+        id: string;
+        food_id: string;
+        storage_zone_id: string;
+      }>(
+        `select id,food_id,storage_zone_id from inventory_lots
+         where id=any($1::uuid[]) and household_id=$2 and status='ACTIVE' and remaining_quantity>0
+         for update`,
+        [payload.lot_ids, ctx.householdId],
+      )
+    ).rows;
+    if (lots.length !== new Set(payload.lot_ids).size) {
+      throw new DomainError('NOT_FOUND', 'LOT_NOT_FOUND', '部分库存批次不存在或已用完。');
+    }
+
+    const moves: Array<{ lot_id: string; from_zone_id: string; to_zone_id: string }> = [];
+    const foodIds = new Set<string>();
+    for (const lot of lots) {
+      const food = await this.resolveFood(ctx, lot.food_id);
+      await this.assertStorageRule(ctx, food, payload.target_storage_zone_id);
+      foodIds.add(food.id);
+      if (lot.storage_zone_id === payload.target_storage_zone_id) continue;
+      await ctx.client.query(
+        `update inventory_lots set storage_zone_id=$2,version=version+1,updated_at=now() where id=$1`,
+        [lot.id, payload.target_storage_zone_id],
+      );
+      moves.push({
+        lot_id: lot.id,
+        from_zone_id: lot.storage_zone_id,
+        to_zone_id: payload.target_storage_zone_id,
+      });
+    }
+    if (moves.length === 0) {
+      throw new DomainError('VALIDATION', 'ALREADY_IN_STORAGE_ZONE', '这些食材已在目标区域。');
+    }
+    const transactionId = await this.insertTransaction(ctx, request, 'MOVE', {
+      foodId: foodIds.size === 1 ? [...foodIds][0] : undefined,
+      metadata: { reason: payload.reason, moves },
+    });
+    return {
+      transactionId,
+      events: [
+        {
+          eventType: 'InventoryLotsMoved',
+          aggregateType: 'inventory',
+          aggregateId: ctx.householdId,
+          payload: { lot_ids: moves.map((move) => move.lot_id) },
         },
       ],
     };
@@ -371,8 +440,9 @@ export class InventoryCommandService {
         transaction_type: string;
         food_id: string | null;
         created_at: Date;
+        metadata_json: Record<string, unknown>;
       }>(
-        `select id, transaction_type, food_id, created_at
+        `select id, transaction_type, food_id, created_at, metadata_json
          from inventory_transactions
          where id = $1 and household_id = $2
          for update`,
@@ -398,6 +468,47 @@ export class InventoryCommandService {
         original.id,
         `Reversal window of ${this.env.REVERSAL_WINDOW_HOURS}h has passed.`,
       );
+    }
+
+    if (original.transaction_type === 'MOVE') {
+      const moves = original.metadata_json.moves;
+      if (!Array.isArray(moves)) {
+        throw new NotReversibleError(original.id, 'Move history is incomplete.');
+      }
+      for (const value of moves) {
+        const move = value as { lot_id?: unknown; from_zone_id?: unknown; to_zone_id?: unknown };
+        if (
+          typeof move.lot_id !== 'string' ||
+          typeof move.from_zone_id !== 'string' ||
+          typeof move.to_zone_id !== 'string'
+        ) {
+          throw new NotReversibleError(original.id, 'Move history is invalid.');
+        }
+        const result = await ctx.client.query(
+          `update inventory_lots set storage_zone_id=$2,version=version+1,updated_at=now()
+           where id=$1 and household_id=$3 and storage_zone_id=$4`,
+          [move.lot_id, move.from_zone_id, ctx.householdId, move.to_zone_id],
+        );
+        if ((result.rowCount ?? 0) !== 1) {
+          throw new NotReversibleError(original.id, '该批次已再次移动，无法撤销本次移动。');
+        }
+      }
+      const transactionId = await this.insertTransaction(ctx, request, 'REVERSAL', {
+        foodId: original.food_id ?? undefined,
+        reversedTransactionId: original.id,
+        metadata: { reason: payload.reason, original_type: original.transaction_type },
+      });
+      return {
+        transactionId,
+        events: [
+          {
+            eventType: 'InventoryMoveReversed',
+            aggregateType: 'inventory_transaction',
+            aggregateId: original.id,
+            payload: { original_transaction_id: original.id },
+          },
+        ],
+      };
     }
 
     const originalEntries = (
@@ -486,18 +597,36 @@ export class InventoryCommandService {
     return food;
   }
 
-  private async getDefaultZoneId(ctx: CommandContext): Promise<string> {
+  private async getDefaultZoneId(ctx: CommandContext, foodId: string): Promise<string> {
     const result = await ctx.client.query<{ id: string }>(
       `select sz.id from storage_zones sz
-       where sz.household_id = $1 and sz.code = 'FRIDGE'
-       order by sz.position limit 1`,
-      [ctx.householdId],
+       left join food_storage_rules fsr on fsr.food_id=$2 and fsr.storage_zone_code=sz.code
+       where sz.household_id=$1 and (fsr.suitability='RECOMMENDED' or sz.code='FRIDGE')
+       order by case when fsr.suitability='RECOMMENDED' then 0 else 1 end, sz.position limit 1`,
+      [ctx.householdId, foodId],
     );
     const zone = result.rows[0];
     if (!zone) {
       throw new DomainError('NOT_FOUND', 'ZONE_NOT_FOUND', 'No default storage zone.');
     }
     return zone.id;
+  }
+
+  private async assertStorageRule(ctx: CommandContext, food: FoodRow, zoneId: string) {
+    const result = await ctx.client.query<{ suitability: string; condition_note: string }>(
+      `select fsr.suitability,fsr.condition_note from storage_zones sz
+       join food_storage_rules fsr on fsr.food_id=$2 and fsr.storage_zone_code=sz.code
+       where sz.id=$1 and sz.household_id=$3`,
+      [zoneId, food.id, ctx.householdId],
+    );
+    const rule = result.rows[0];
+    if (rule?.suitability === 'PROHIBITED') {
+      throw new DomainError(
+        'VALIDATION',
+        'FOOD_STORAGE_ZONE_PROHIBITED',
+        `${food.canonical_name}不适合放在这个区域。${rule.condition_note}`,
+      );
+    }
   }
 
   private async assertZoneInHousehold(ctx: CommandContext, zoneId: string): Promise<void> {
@@ -513,6 +642,7 @@ export class InventoryCommandService {
   private async lockActiveLots(
     ctx: CommandContext,
     foodId: string,
+    unitCode: string,
     lotId?: string,
   ): Promise<LotSnapshot[]> {
     const result = await ctx.client.query<{
@@ -524,11 +654,11 @@ export class InventoryCommandService {
       `select id, remaining_quantity, expires_at, created_at
        from inventory_lots
        where household_id = $1 and food_id = $2 and status = 'ACTIVE'
-         and remaining_quantity > 0
-         and ($3::uuid is null or id = $3)
+         and remaining_quantity > 0 and unit_code = $3
+         and ($4::uuid is null or id = $4)
        order by id
        for update`,
-      [ctx.householdId, foodId, lotId ?? null],
+      [ctx.householdId, foodId, unitCode, lotId ?? null],
     );
     return result.rows.map((row) => ({
       id: row.id,
@@ -557,7 +687,7 @@ export class InventoryCommandService {
   private async insertTransaction(
     ctx: CommandContext,
     request: CommandRequest,
-    type: 'ADD' | 'CONSUME' | 'DISCARD' | 'CORRECT' | 'REVERSAL',
+    type: 'ADD' | 'CONSUME' | 'DISCARD' | 'CORRECT' | 'MOVE' | 'REVERSAL',
     options: {
       foodId?: string | undefined;
       reversedTransactionId?: string | undefined;

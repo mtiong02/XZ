@@ -1,0 +1,16 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - heading "XZ 鲜知" [level=1] [ref=e4]
+    - paragraph [ref=e5]: 你家冰箱的数字大脑
+    - generic [ref=e6]:
+      - generic [ref=e7]:
+        - generic [ref=e8]: 邮箱
+        - textbox "邮箱" [ref=e9]
+      - generic [ref=e10]:
+        - generic [ref=e11]: 密码
+        - textbox "密码" [ref=e12]
+      - button "登录" [ref=e13] [cursor=pointer]
+    - paragraph [ref=e14]:
+      - text: 还没有账号？
+      - button "注册" [ref=e15] [cursor=pointer]
+  - alert [ref=e16]

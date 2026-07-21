@@ -30,9 +30,29 @@ export function confirmPrompt(commandType: string, items: SpokenItem[]): string 
 }
 
 /** 追问播报（缺数量）："请问要添加多少牛奶?" */
-export function clarifyQuantityPrompt(commandType: string, foodName: string): string {
+export function clarifyQuantityPrompt(
+  commandType: string,
+  foodName: string,
+  suggestedUnits: string[] = [],
+): string {
   const verb = ACTION_VERB[commandType] ?? '记录';
-  return `请问要${verb}多少${foodName}？`;
+  const choices = unitChoices(suggestedUnits);
+  return choices
+    ? `${foodName}可以按${choices}记录。请问要${verb}多少？`
+    : `请问要${verb}多少${foodName}？`;
+}
+
+export function clarifyUnitPrompt(
+  foodName: string,
+  quantity: string,
+  unit: string,
+  suggestedUnits: string[],
+): string {
+  return `${foodName}通常按${unitChoices(suggestedUnits)}记录。你说的是${quantity}${unitSpokenLabel(unit)}吗？请直接说正确的数量和单位。`;
+}
+
+function unitChoices(units: string[]): string {
+  return units.slice(0, 3).map(unitSpokenLabel).join('、');
 }
 
 /** 修正被采纳后重新确认 */
@@ -47,4 +67,5 @@ export function executedPrompt(commandType: string): string {
 
 export const CANCELLED_PROMPT = '好的，已取消。';
 export const UNCLEAR_PROMPT = '抱歉没听清，请说"对"确认，或直接说正确的数量。';
-export const UNRECOGNIZED_PROMPT = '抱歉，没太明白你要做什么，可以换种说法，比如"加两盒牛奶"。';
+export const UNRECOGNIZED_PROMPT =
+  '我听清了，但当前离线模式只会处理库存操作。你可以说“加两盒牛奶”或“土豆还有多少”。';

@@ -1,0 +1,4 @@
+interface:
+  display_name: '鲜知语音库存 Agent'
+  short_description: '规范鲜知实时语音、库存工具、食材分类树与回归验证流程'
+  default_prompt: '使用 $xz-voice-inventory-agent 设计或修改鲜知的语音库存交互，并完成规定的回归验证。'

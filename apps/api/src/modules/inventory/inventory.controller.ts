@@ -3,6 +3,7 @@ import {
   Controller,
   DefaultValuePipe,
   Get,
+  Inject,
   Param,
   ParseIntPipe,
   ParseUUIDPipe,
@@ -22,8 +23,8 @@ import { DomainError } from './domain/errors';
 @UseGuards(AuthGuard)
 export class InventoryController {
   constructor(
-    private readonly commands: InventoryCommandService,
-    private readonly queries: InventoryQueryService,
+    @Inject(InventoryCommandService) private readonly commands: InventoryCommandService,
+    @Inject(InventoryQueryService) private readonly queries: InventoryQueryService,
   ) {}
 
   /** 统一命令入口（docs/03 §6）。写操作限流。 */
@@ -52,6 +53,14 @@ export class InventoryController {
       throw new DomainError('VALIDATION', 'INVALID_RANGE', 'days must be between 0 and 30.');
     }
     return this.queries.getExpiring(householdId, user.userId, days);
+  }
+
+  @Get('households/:householdId/inventory/storage-audit')
+  async getStorageAudit(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('householdId', ParseUUIDPipe) householdId: string,
+  ) {
+    return this.queries.getStorageAudit(householdId, user.userId);
   }
 
   @Get('households/:householdId/transactions')

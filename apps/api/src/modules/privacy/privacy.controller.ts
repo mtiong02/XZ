@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, Param, ParseUUIDPipe, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, Inject, Param, ParseUUIDPipe, UseGuards } from '@nestjs/common';
 import { AuthGuard, type AuthenticatedUser } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { PrivacyService } from './privacy.service';
@@ -6,7 +6,7 @@ import { PrivacyService } from './privacy.service';
 @Controller('households')
 @UseGuards(AuthGuard)
 export class PrivacyController {
-  constructor(private readonly privacy: PrivacyService) {}
+  constructor(@Inject(PrivacyService) private readonly privacy: PrivacyService) {}
 
   @Get(':householdId/export')
   async export(

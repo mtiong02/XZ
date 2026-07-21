@@ -1,10 +1,10 @@
 'use client';
 
-import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import type { InventoryView } from '@xz/contracts';
 import { ActionModal, type ActionKind } from '../../../../components/action-modal';
+import { AppHeader } from '../../../../components/app-header';
 import { apiGet, executeCommand, fetchInventory } from '../../../../lib/api';
 import {
   EXPIRY_CLASS,
@@ -95,17 +95,10 @@ export default function FoodDetailPage() {
 
   return (
     <>
-      <header className="topbar">
-        <h1>
-          <Link href="/fridge" style={{ textDecoration: 'none' }}>
-            ←
-          </Link>{' '}
-          {detail?.food.canonical_name ?? '…'}
-        </h1>
-        <span style={{ fontWeight: 600 }}>
-          共 {total} {detail ? unitLabel(detail.food.default_unit_code) : ''}
-        </span>
-      </header>
+      <AppHeader
+        title={detail?.food.canonical_name ?? '食材详情'}
+        subtitle={`当前共 ${total} ${detail ? unitLabel(detail.food.default_unit_code) : ''}`}
+      />
 
       <main className="container">
         {error ? <div className="error-box">{error}</div> : null}
