@@ -63,6 +63,7 @@ export default function FridgePage() {
         <nav>
           <Link href="/fridge/stats">本周</Link>
           <Link href="/fridge/timeline">动态</Link>
+          <Link href="/fridge/settings">设置</Link>
           <button className="ghost" onClick={() => signOut()}>
             退出
           </button>

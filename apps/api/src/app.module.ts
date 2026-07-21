@@ -5,10 +5,10 @@ import { HealthModule } from './modules/health/health.module';
 import { HouseholdModule } from './modules/household/household.module';
 import { InteractionModule } from './modules/interaction/interaction.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
+import { PrivacyModule } from './modules/privacy/privacy.module';
 
 /**
  * 模块化单体入口（docs/02 §7）。
- * realtime-notification 在 Sprint 4-5 加入。
  */
 @Module({
   imports: [
@@ -18,6 +18,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
     FoodModule,
     InventoryModule,
     InteractionModule,
+    PrivacyModule,
   ],
 })
 export class AppModule {}

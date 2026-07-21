@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard, type AuthenticatedUser } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { WriteRateLimitGuard } from '../../shared/rate-limit.guard';
 import { CommandRequestSchema } from './application/command-request';
 import { InventoryCommandService } from './application/inventory-command.service';
 import { InventoryQueryService } from './application/inventory-query.service';
@@ -25,8 +26,9 @@ export class InventoryController {
     private readonly queries: InventoryQueryService,
   ) {}
 
-  /** 统一命令入口（docs/03 §6）。 */
+  /** 统一命令入口（docs/03 §6）。写操作限流。 */
   @Post('commands')
+  @UseGuards(WriteRateLimitGuard)
   async executeCommand(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const request = CommandRequestSchema.parse(body);
     return this.commands.execute(request, user.userId);
