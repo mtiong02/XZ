@@ -99,6 +99,89 @@ export class InventoryQueryService {
     }));
   }
 
+  /**
+   * 本周基础统计（FR-018、docs/04 Sprint 5）：使用量、丢弃量、临期处理率。
+   * 全部基于真实交易流水，确定性计算，不含 AI 推断。
+   */
+  async getWeeklyStats(householdId: string, userId: string) {
+    await this.membership.assertMembership(householdId, userId);
+
+    const [txnAgg, activeAgg, handledAgg] = await Promise.all([
+      // 近 7 天各类交易的净变化量（按 |delta| 汇总消耗/丢弃）
+      this.pool.query<{ transaction_type: string; total: string; count: string }>(
+        `select t.transaction_type,
+                coalesce(sum(abs(e.quantity_delta)), 0)::text as total,
+                count(distinct t.id)::text as count
+         from inventory_transactions t
+         join inventory_transaction_entries e on e.transaction_id = t.id
+         where t.household_id = $1 and t.created_at >= now() - interval '7 days'
+         group by t.transaction_type`,
+        [householdId],
+      ),
+      // 当前在库食材数与临期/过期数
+      this.pool.query<{ active_items: string; expiring: string; expired: string }>(
+        `select
+           count(distinct food_id) filter (where remaining_quantity > 0) as active_items,
+           count(*) filter (
+             where expires_at is not null and expires_at > now()
+               and expires_at <= now() + interval '2 days' and remaining_quantity > 0
+           ) as expiring,
+           count(*) filter (
+             where expires_at is not null and expires_at <= now() and remaining_quantity > 0
+           ) as expired
+         from inventory_lots
+         where household_id = $1 and status = 'ACTIVE'`,
+        [householdId],
+      ),
+      // 临期处理率：近 7 天曾临期的批次中，已被使用/丢弃处理掉的比例
+      this.pool.query<{ handled: string; total: string }>(
+        `with expiring_lots as (
+           select distinct l.id
+           from inventory_lots l
+           where l.household_id = $1
+             and l.expires_at is not null
+             and l.expires_at >= now() - interval '7 days'
+             and l.expires_at <= now() + interval '2 days'
+         )
+         select
+           count(*) filter (
+             where exists (
+               select 1 from inventory_transaction_entries e
+               join inventory_transactions t on t.id = e.transaction_id
+               where e.lot_id = el.id and t.transaction_type in ('CONSUME', 'DISCARD')
+             )
+           )::text as handled,
+           count(*)::text as total
+         from expiring_lots el`,
+        [householdId],
+      ),
+    ]);
+
+    const byType = new Map(txnAgg.rows.map((row) => [row.transaction_type, row]));
+    const consumed = byType.get('CONSUME');
+    const discarded = byType.get('DISCARD');
+    const added = byType.get('ADD');
+    const handled = handledAgg.rows[0];
+    const active = activeAgg.rows[0];
+
+    const handledTotal = Number(handled?.total ?? 0);
+    const handledRate = handledTotal === 0 ? null : Number(handled?.handled ?? 0) / handledTotal;
+
+    return {
+      window_days: 7,
+      consumed_quantity: consumed?.total ?? '0',
+      consumed_count: Number(consumed?.count ?? 0),
+      discarded_quantity: discarded?.total ?? '0',
+      discarded_count: Number(discarded?.count ?? 0),
+      added_count: Number(added?.count ?? 0),
+      active_items: Number(active?.active_items ?? 0),
+      expiring_count: Number(active?.expiring ?? 0),
+      expired_count: Number(active?.expired ?? 0),
+      // 临期处理率：null 表示本周无临期批次，不强行给 0（避免误导）
+      expiry_handled_rate: handledRate === null ? null : Number(handledRate.toFixed(2)),
+    };
+  }
+
   /** 活动时间线（FR-013）：cursor 分页（docs/07 §8）。 */
   async getTransactions(
     householdId: string,

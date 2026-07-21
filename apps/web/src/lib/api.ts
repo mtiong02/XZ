@@ -94,3 +94,20 @@ export async function executeCommand(
 export function fetchInventory(householdId: string): Promise<InventoryView> {
   return apiGet<InventoryView>(`/households/${householdId}/inventory`);
 }
+
+export interface WeeklyStats {
+  window_days: number;
+  consumed_quantity: string;
+  consumed_count: number;
+  discarded_quantity: string;
+  discarded_count: number;
+  added_count: number;
+  active_items: number;
+  expiring_count: number;
+  expired_count: number;
+  expiry_handled_rate: number | null;
+}
+
+export function fetchWeeklyStats(householdId: string): Promise<WeeklyStats> {
+  return apiGet<WeeklyStats>(`/households/${householdId}/stats`);
+}

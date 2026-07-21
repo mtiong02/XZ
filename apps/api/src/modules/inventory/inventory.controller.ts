@@ -63,6 +63,14 @@ export class InventoryController {
     return this.queries.getTransactions(householdId, user.userId, cursor, pageSize);
   }
 
+  @Get('households/:householdId/stats')
+  async getStats(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('householdId', ParseUUIDPipe) householdId: string,
+  ) {
+    return this.queries.getWeeklyStats(householdId, user.userId);
+  }
+
   @Get('households/:householdId/foods/:foodId/detail')
   async getFoodDetail(
     @CurrentUser() user: AuthenticatedUser,

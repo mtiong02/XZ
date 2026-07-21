@@ -61,6 +61,7 @@ export default function FridgePage() {
       <header className="topbar">
         <h1>🥬 {household.name}</h1>
         <nav>
+          <Link href="/fridge/stats">本周</Link>
           <Link href="/fridge/timeline">动态</Link>
           <button className="ghost" onClick={() => signOut()}>
             退出
