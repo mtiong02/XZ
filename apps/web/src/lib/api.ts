@@ -82,6 +82,49 @@ export async function apiDelete<T>(path: string): Promise<T> {
   return responseBody<T>(response);
 }
 
+export async function recordAgentEvent(input: {
+  household_id: string;
+  event_type:
+    | 'PRODUCT_OPENED'
+    | 'FIRST_UTTERANCE'
+    | 'MEAL_FLOW_STEP'
+    | 'ASSISTANT_SESSION_STARTED'
+    | 'TURN_STARTED'
+    | 'TURN_COMPLETED'
+    | 'CORE_INTENT_RECOGNIZED'
+    | 'TASK_CREATED'
+    | 'TASK_COMPLETED'
+    | 'TASK_CANCELLED'
+    | 'MEAL_PLAN_GENERATED'
+    | 'MEAL_PLAN_ACCEPTED'
+    | 'MEAL_PLAN_MODIFIED'
+    | 'MEAL_PLAN_REJECTED'
+    | 'SHOPPING_DRAFT_CREATED'
+    | 'SHOPPING_CONFIRMED'
+    | 'VOICE_FAILURE';
+  session_id?: string | undefined;
+  turn_id?: string | undefined;
+  task_id?: string | undefined;
+  intent?: string | undefined;
+  outcome?: string | undefined;
+  latency_ms?: number | undefined;
+  metadata?: Record<string, unknown> | undefined;
+}): Promise<void> {
+  // Analytics is best-effort and must never delay or fail a voice turn.
+  void apiPost('/agent-runtime/events', input).catch(() => undefined);
+}
+
+export function updateFamilyMealContext(input: {
+  household_id: string;
+  home_mode?: 'FULL_HOUSEHOLD' | 'PARTIAL_HOUSEHOLD' | 'GUESTS' | 'SOLO' | 'UNKNOWN';
+  default_diners?: number;
+  favorite_foods?: string[];
+  excluded_foods?: string[];
+  meal_styles?: string[];
+}): Promise<unknown> {
+  return apiPost('/agent-runtime/family-context', input);
+}
+
 // ---- typed helpers ----
 
 export interface HouseholdSummary {
@@ -91,6 +134,30 @@ export interface HouseholdSummary {
   role: 'OWNER' | 'MEMBER';
   member_id: string;
   refrigerator_id: string;
+}
+
+export interface HouseholdMember {
+  id: string;
+  display_name: string;
+  role: 'OWNER' | 'MEMBER';
+  has_account: boolean;
+  created_at: string;
+}
+
+export function fetchHouseholdMembers(householdId: string): Promise<HouseholdMember[]> {
+  return apiGet<HouseholdMember[]>(`/households/${householdId}/members`);
+}
+
+export function addHouseholdMember(householdId: string, display_name: string) {
+  return apiPost(`/households/${householdId}/members`, { display_name });
+}
+
+export function createHouseholdInvite(householdId: string): Promise<{ code: string; expires_at: string }> {
+  return apiPost<{ code: string; expires_at: string }>(`/households/${householdId}/invites`, {});
+}
+
+export function joinHousehold(invite_code: string, display_name: string): Promise<HouseholdSummary> {
+  return apiPost<HouseholdSummary>('/households/join', { invite_code, display_name });
 }
 
 export interface FoodSummary {
@@ -513,3 +580,16 @@ export function updateShoppingItemStatus(
 ) {
   return apiPost(`/households/${householdId}/shopping-list/${itemId}/status`, { status });
 }
+
+export interface FeedbackSubmissionInput {
+  household_id?: string | null;
+  category: 'SUGGESTION' | 'BUG' | 'EXPERIENCE' | 'OTHER';
+  content: string;
+  rating?: number | null;
+  contact?: string | null;
+}
+
+export function submitFeedback(input: FeedbackSubmissionInput): Promise<{ success: boolean; message: string }> {
+  return apiPost('/feedback', input);
+}
+

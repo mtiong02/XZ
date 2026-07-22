@@ -26,6 +26,7 @@ export default function MealsPage() {
   const [error, setError] = useState('');
   const [addingRecipeId, setAddingRecipeId] = useState<string | null>(null);
   const [focusFood, setFocusFood] = useState<{ id: string; name: string } | null>(null);
+  const [servingsFilter, setServingsFilter] = useState<number | null>(null);
   const [agentRecommendation, setAgentRecommendation] = useState('');
   const [agentBusy, setAgentBusy] = useState(false);
 
@@ -70,7 +71,7 @@ export default function MealsPage() {
   }, [focusFood, household]);
   if (loading || !household) return <div className="empty">加载中…</div>;
   const makeableCount = recipes.filter((recipe) => recipe.can_make).length;
-  const visibleRecipes = useMemo(
+  const scopedRecipes = useMemo(
     () =>
       focusFood
         ? recipes.filter((recipe) =>
@@ -78,6 +79,19 @@ export default function MealsPage() {
           )
         : recipes,
     [focusFood, recipes],
+  );
+  const servingOptions = useMemo(() => {
+    const common = [1, 2, 3, 4, 5, 6];
+    return [...new Set([...common, ...scopedRecipes.map((recipe) => recipe.servings)])]
+      .filter((servings) => Number.isFinite(servings) && servings > 0)
+      .sort((a, b) => a - b);
+  }, [scopedRecipes]);
+  const visibleRecipes = useMemo(
+    () =>
+      servingsFilter === null
+        ? scopedRecipes
+        : scopedRecipes.filter((recipe) => recipe.servings === servingsFilter),
+    [scopedRecipes, servingsFilter],
   );
   const attentionObservations =
     nutrition?.observations
@@ -156,6 +170,34 @@ export default function MealsPage() {
                 <h2>餐食候选</h2>
               </div>
               <small>优先展示库存覆盖高的方案</small>
+            </div>
+            <div className="meal-quick-filters" aria-label="按用餐人数筛选餐食">
+              <span>快速筛选 · 几人餐</span>
+              <div className="quick-choice-row">
+                <button
+                  type="button"
+                  className={servingsFilter === null ? 'selected' : ''}
+                  aria-pressed={servingsFilter === null}
+                  onClick={() => setServingsFilter(null)}
+                >
+                  全部 <small>{scopedRecipes.length}</small>
+                </button>
+                {servingOptions.map((servings) => {
+                  const count = scopedRecipes.filter((recipe) => recipe.servings === servings).length;
+                  return (
+                    <button
+                      type="button"
+                      className={servingsFilter === servings ? 'selected' : ''}
+                      aria-pressed={servingsFilter === servings}
+                      disabled={count === 0}
+                      key={servings}
+                      onClick={() => setServingsFilter(servings)}
+                    >
+                      {servings}人 <small>{count}</small>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             <div className="meal-recipe-list">
               {visibleRecipes.length === 0 ? (

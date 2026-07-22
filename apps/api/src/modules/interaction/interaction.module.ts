@@ -5,6 +5,7 @@ import { InventoryModule } from '../inventory/inventory.module';
 import { NotificationModule } from '../notification/notification.module';
 import { MealPlanningModule } from '../meal-planning/meal-planning.module';
 import { NutritionModule } from '../nutrition/nutrition.module';
+import { AgentRuntimeModule } from '../agent-runtime/agent-runtime.module';
 import { VoiceController } from './voice.controller';
 import { VoiceService } from './voice.service';
 
@@ -16,6 +17,7 @@ import { VoiceService } from './voice.service';
     NotificationModule,
     MealPlanningModule,
     NutritionModule,
+    AgentRuntimeModule,
   ],
   controllers: [VoiceController],
   providers: [VoiceService],

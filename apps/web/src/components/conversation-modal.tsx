@@ -9,10 +9,12 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { startRealtimeVoice, type RealtimeVoiceHandle } from '../lib/realtime-voice';
+import { recordAgentEvent } from '../lib/api';
 import {
   cancelVoiceJob,
   createTextVoiceJob,
   isAwaitingReply,
+  recordMealFeedback,
   replyVoiceJob,
   type VoiceJob,
 } from '../lib/voice-api';
@@ -72,7 +74,11 @@ function isDialogueExit(text: string): boolean {
   if (/结束后提醒/.test(compact)) return false;
   const courtesy = '(?:谢谢(?:力|你|啦)?|多谢|辛苦了|麻烦你了|拜拜|再见|晚安|了|吧)*';
 
-  if (/^(?:(?:好(?:的)?)?(?:结束|退出|关闭|停止|取消|拜拜|再见|退下)(?:这段|本次|当前)?(?:对话|对换|兑换|绘话|会话|聊天|谈话|通话|对|聊|会|吧|了|谢谢)*)+$/i.test(compact)) {
+  if (
+    /^(?:(?:好(?:的)?)?(?:结束|退出|关闭|停止|取消|拜拜|再见|退下)(?:这段|本次|当前)?(?:对话|对换|兑换|绘话|会话|聊天|谈话|通话|对|聊|会|吧|了|谢谢)*)+$/i.test(
+      compact,
+    )
+  ) {
     return true;
   }
 
@@ -89,8 +95,13 @@ function isDialogueExit(text: string): boolean {
       `^(?:好(?:的)?|那|嗯|啊)?(?:(?:先)?(?:别|不要|不用)(?:再|继续)?(?:听|收音|说|说话|聊天|聊|回答|播报)|(?:不用|不需要)再(?:听|收音|说|说话|聊天|聊|回答|播报))${courtesy}$`,
       'i',
     ).test(compact) ||
-    new RegExp(`^(?:好(?:的)?)?(?:谢谢(?:你|啦)?|多谢)?(?:结束|退出)${courtesy}$`, 'i').test(compact) ||
-    new RegExp(`^(?:结束|退出|取消|算了|不用了|不加了)(?:对话|会话|对换|聊天|谈话|通话|谢谢|吧|了)?${courtesy}$`, 'i').test(compact)
+    new RegExp(`^(?:好(?:的)?)?(?:谢谢(?:你|啦)?|多谢)?(?:结束|退出)${courtesy}$`, 'i').test(
+      compact,
+    ) ||
+    new RegExp(
+      `^(?:结束|退出|取消|算了|不用了|不加了)(?:对话|会话|对换|聊天|谈话|通话|谢谢|吧|了)?${courtesy}$`,
+      'i',
+    ).test(compact)
   );
 }
 
@@ -114,6 +125,7 @@ export function ConversationModal({
   const [voiceMode, setVoiceMode] = useState<'online' | null>(null);
   const [mascotPosition, setMascotPosition] = useState<MascotPosition | null>(null);
   const [mascotDragging, setMascotDragging] = useState(false);
+  const phaseRef = useRef<Phase>('idle');
 
   const jobRef = useRef<VoiceJob | null>(null);
   const realtimeRef = useRef<RealtimeVoiceHandle | null>(null);
@@ -128,6 +140,10 @@ export function ConversationModal({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const reminderTimersRef = useRef<number[]>([]);
   const startRef = useRef<() => Promise<void>>(async () => undefined);
+  const sessionIdRef = useRef<string | null>(null);
+  const firstUtteranceRecordedRef = useRef(false);
+  const mealFeedbackJobRef = useRef<string | null>(null);
+  const mealFeedbackSentRef = useRef(false);
   const mascotRef = useRef<HTMLDivElement | null>(null);
   const suppressMascotClickRef = useRef(false);
   const mascotDragRef = useRef<{
@@ -140,6 +156,10 @@ export function ConversationModal({
     y: number;
     moved: boolean;
   } | null>(null);
+
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
 
   const clampMascotPosition = useCallback((position: MascotPosition): MascotPosition => {
     const rect = mascotRef.current?.getBoundingClientRect();
@@ -197,7 +217,7 @@ export function ConversationModal({
     const pending = jobRef.current;
     jobRef.current = null;
     queuedTextRef.current = null;
-    if (!pending || !isAwaitingReply(pending.status)) return;
+    if (!pending || ['COMPLETED', 'CANCELLED', 'FAILED'].includes(pending.status)) return;
     void cancelVoiceJob(pending.voice_job_id).catch((caught: unknown) => {
       setError(caught instanceof Error ? caught.message : '取消当前语音任务失败');
     });
@@ -235,28 +255,50 @@ export function ConversationModal({
       if (closedRef.current) return;
 
       if (terminal) {
+        recordAgentEvent({
+          household_id: householdId,
+          event_type: 'MEAL_FLOW_STEP',
+          session_id: job.session_id ?? sessionIdRef.current ?? undefined,
+          turn_id: job.turn_id ?? undefined,
+          task_id: job.voice_job_id,
+          outcome: job.status === 'COMPLETED' ? 'completed' : 'failed',
+          metadata: { step: 'voice_job', status: job.status, error_code: job.error_code },
+        });
         if (job.status === 'COMPLETED') onExecuted();
+        if (
+          job.status === 'COMPLETED' &&
+          /吃什么|推荐|晚餐|午餐|早餐|下午茶|菜|食谱|菜单/.test(job.transcript?.normalized ?? '')
+        ) {
+          mealFeedbackJobRef.current = job.voice_job_id;
+          mealFeedbackSentRef.current = false;
+        }
         jobRef.current = null;
       }
       if (!job.spoken_prompt) setPhase('listening');
     },
-    [onExecuted, pushMessage],
+    [householdId, onExecuted, pushMessage],
   );
 
   const sendFirst = useCallback(
-    async (text: string) => {
+    async (text: string, turnId: string) => {
       pushMessage('user', text);
       setPhase('processing');
-      return createTextVoiceJob(householdId, text, 'WEB_VOICE');
+      return createTextVoiceJob(
+        householdId,
+        text,
+        'WEB_VOICE',
+        sessionIdRef.current ?? undefined,
+        turnId,
+      );
     },
     [householdId, pushMessage],
   );
 
   const sendReply = useCallback(
-    async (job: VoiceJob, text: string) => {
+    async (job: VoiceJob, text: string, turnId: string) => {
       pushMessage('user', text);
       setPhase('processing');
-      const next = await replyVoiceJob(job.voice_job_id, text);
+      const next = await replyVoiceJob(job.voice_job_id, text, turnId);
       await handleJob(next);
     },
     [handleJob, pushMessage],
@@ -274,12 +316,50 @@ export function ConversationModal({
         setPhase('processing');
         return;
       }
+      if (mealFeedbackJobRef.current && !mealFeedbackSentRef.current) {
+        const compactFeedback = normalizedSpeech(text);
+        if (/^(?:嗯)?(?:好|好的|可以|行|就这个|这个可以)(?:谢谢)?$/.test(compactFeedback)) {
+          submitMealFeedback('ACCEPTED');
+          return;
+        }
+        if (/不合适|不喜欢|换一个|换一道|改一下|重新推荐/.test(compactFeedback)) {
+          const rejected = /不合适|不喜欢/.test(compactFeedback);
+          submitMealFeedback(rejected ? 'REJECTED' : 'MODIFIED');
+          if (rejected) return;
+        }
+      }
       const normalized = normalizedSpeech(text);
       const now = Date.now();
       const lastDispatch = lastDispatchRef.current;
       if (lastDispatch && lastDispatch.normalized === normalized && now - lastDispatch.at < 2500)
         return;
       lastDispatchRef.current = { normalized, at: now };
+      const turnId = crypto.randomUUID();
+      recordAgentEvent({
+        household_id: householdId,
+        event_type: 'TURN_STARTED',
+        session_id: sessionIdRef.current ?? undefined,
+        turn_id: turnId,
+        metadata: { source },
+      });
+      recordAgentEvent({
+        household_id: householdId,
+        event_type: 'MEAL_FLOW_STEP',
+        session_id: sessionIdRef.current ?? undefined,
+        turn_id: turnId,
+        outcome: 'received',
+        metadata: { step: 'user_input', source, text },
+      });
+      if (!firstUtteranceRecordedRef.current) {
+        firstUtteranceRecordedRef.current = true;
+        recordAgentEvent({
+          household_id: householdId,
+          event_type: 'FIRST_UTTERANCE',
+          session_id: sessionIdRef.current ?? undefined,
+          turn_id: turnId,
+          metadata: { text, source },
+        });
+      }
 
       // MiniMax 可能在本地意图路由完成前自动开始回答。先停掉该响应；只有确认是
       // 普通闲聊后才显式重新请求，确保库存/提醒轮只有工具生成的一条最终答案。
@@ -307,9 +387,9 @@ export function ConversationModal({
           setError(null);
           const currentJob = jobRef.current;
           if (currentJob && isAwaitingReply(currentJob.status)) {
-            await sendReply(currentJob, currentText);
+            await sendReply(currentJob, currentText, turnId);
           } else {
-            const next = await sendFirst(currentText);
+            const next = await sendFirst(currentText, turnId);
             const shouldUseOnlineReply =
               realtimeRef.current !== null &&
               next.status === 'FAILED' &&
@@ -344,6 +424,10 @@ export function ConversationModal({
     setError(null);
     setInterim('');
     setVoiceMode(null);
+    sessionIdRef.current = crypto.randomUUID();
+    firstUtteranceRecordedRef.current = false;
+    mealFeedbackJobRef.current = null;
+    mealFeedbackSentRef.current = false;
     jobRef.current = null;
     queuedTextRef.current = null;
     setPhase('processing');
@@ -353,6 +437,18 @@ export function ConversationModal({
         onReady: () => {
           setVoiceMode('online');
           setPhase('standby');
+          recordAgentEvent({
+            household_id: householdId,
+            event_type: 'PRODUCT_OPENED',
+            session_id: sessionIdRef.current ?? undefined,
+            metadata: { source: 'conversation_modal' },
+          });
+          recordAgentEvent({
+            household_id: householdId,
+            event_type: 'ASSISTANT_SESSION_STARTED',
+            session_id: sessionIdRef.current ?? undefined,
+            metadata: { source: 'conversation_modal' },
+          });
         },
         onListening: () => setPhase('processing'),
         onUserSpeechStart: () => {
@@ -389,7 +485,7 @@ export function ConversationModal({
         onTranscript: (text) => {
           setInterim('');
           // 当处于待机 (standby) 状态时，必须先通过唤醒词唤醒，忽略普通非唤醒短语
-          if (phase === 'standby') return;
+          if (phaseRef.current === 'standby' || sessionEndingRef.current) return;
           dispatchRef.current(text, 'online-audio');
         },
         onUserInterim: (text) => setInterim(text),
@@ -467,14 +563,16 @@ export function ConversationModal({
   ]);
   startRef.current = start;
 
+  // 小知在页面进入后就建立待机连接；展开对话框只是展示同一条会话，不能成为启动条件。
+  // 否则用户不点击玩偶时，唤醒词永远没有机会被监听。
   useEffect(() => {
-    if (!expanded) {
-      stopListening();
-      return;
-    }
+    closedRef.current = false;
     const timer = window.setTimeout(() => void startRef.current(), 0);
-    return () => window.clearTimeout(timer);
-  }, [expanded, householdId, stopListening]);
+    return () => {
+      window.clearTimeout(timer);
+      stopListening();
+    };
+  }, [householdId, stopListening]);
 
   function submitManual(): void {
     const text = manualText.trim();
@@ -485,6 +583,15 @@ export function ConversationModal({
 
   function quickReply(text: string): void {
     dispatchRef.current(text, 'manual');
+  }
+
+  function submitMealFeedback(outcome: 'ACCEPTED' | 'MODIFIED' | 'REJECTED'): void {
+    const jobId = mealFeedbackJobRef.current;
+    if (!jobId || mealFeedbackSentRef.current) return;
+    mealFeedbackSentRef.current = true;
+    void recordMealFeedback(jobId, outcome).catch(() => {
+      mealFeedbackSentRef.current = false;
+    });
   }
 
   function handleMascotPointerDown(event: ReactPointerEvent<HTMLDivElement>): void {
@@ -543,7 +650,9 @@ export function ConversationModal({
     }
   }
 
-  const awaiting = jobRef.current ? isAwaitingReply(jobRef.current.status) : false;
+  const awaiting = jobRef.current
+    ? isAwaitingReply(jobRef.current.status) && jobRef.current.requires_confirmation
+    : false;
   const phaseLabel: Record<Phase, string> = {
     idle: error ? '需要麦克风权限，点我重新连接' : '正在准备语音待机…',
     standby: '已待机，仅监听唤醒词“小知小知”',
@@ -685,6 +794,16 @@ export function ConversationModal({
               确认
             </button>
             <button onClick={() => quickReply('不对')}>取消这次</button>
+          </div>
+        ) : null}
+
+        {mealFeedbackJobRef.current && !mealFeedbackSentRef.current ? (
+          <div className="quick-actions" aria-label="餐食方案反馈">
+            <button className="primary" onClick={() => submitMealFeedback('ACCEPTED')}>
+              这个可以
+            </button>
+            <button onClick={() => submitMealFeedback('MODIFIED')}>想改一下</button>
+            <button onClick={() => submitMealFeedback('REJECTED')}>不合适</button>
           </div>
         ) : null}
 

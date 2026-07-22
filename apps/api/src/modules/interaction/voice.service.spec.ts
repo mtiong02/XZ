@@ -3,6 +3,7 @@ import type { InventoryZoneView } from '@xz/contracts';
 import {
   extractReminderText,
   isMealDecisionRequest,
+  isRecommendationModeSwitch,
   reminderQueryPrompt,
   selectInventoryZones,
   VoiceService,
@@ -12,9 +13,20 @@ describe('isMealDecisionRequest', () => {
   it('routes only decision-heavy meal requests to the model agent', () => {
     expect(isMealDecisionRequest('晚上六个人家庭晚餐按库存推荐几道菜')).toBe(true);
     expect(isMealDecisionRequest('推荐一份少油少盐的减脂下午茶')).toBe(true);
+    expect(isMealDecisionRequest('今天下午要跟五个人一起吃吃有什么推荐的菜')).toBe(true);
+    expect(isMealDecisionRequest('明天早餐，两个人')).toBe(true);
+    expect(isMealDecisionRequest('明天早餐，两个人，我不知道，你推荐')).toBe(true);
+    expect(isMealDecisionRequest('搭配一下今天晚上的菜')).toBe(true);
+    expect(isMealDecisionRequest('这个搭配不合理，四个人吃不够')).toBe(true);
     expect(isMealDecisionRequest('冰箱里面还有几个苹果')).toBe(false);
     expect(isMealDecisionRequest('把猪肉移到冷冻室')).toBe(false);
     expect(isMealDecisionRequest('明天中午提醒我吃苹果')).toBe(false);
+  });
+
+  it('switches an unfinished food slot into a meal recommendation task', () => {
+    expect(isRecommendationModeSwitch('我不知道，你推荐')).toBe(true);
+    expect(isRecommendationModeSwitch('随便安排')).toBe(true);
+    expect(isRecommendationModeSwitch('两百克')).toBe(false);
   });
 });
 

@@ -22,7 +22,7 @@ with foods(name, legacy_category, category_code, unit_code, units, shelf_days) a
     ('洋葱', 'VEGETABLE', 'VEGETABLE', 'piece', array['piece','jin','g','kg'], 20),
     ('青椒', 'VEGETABLE', 'VEGETABLE', 'g', array['g','jin','kg','piece'], 7),
     ('彩椒', 'VEGETABLE', 'VEGETABLE', 'g', array['g','jin','kg','piece'], 7),
-    ('大蒜', 'VEGETABLE', 'VEGETABLE', 'head', array['head','jin','g'], 30),
+    ('大蒜', 'VEGETABLE', 'VEGETABLE', 'piece', array['piece','jin','g'], 30),
     ('香菜', 'VEGETABLE', 'VEGETABLE', 'bunch', array['bunch','g'], 4),
 
     -- 水果 (FRUIT)
@@ -64,13 +64,13 @@ with foods(name, legacy_category, category_code, unit_code, units, shelf_days) a
 
     -- 奶类乳品 (DAIRY)
     ('纯牛奶', 'EGG_DAIRY', 'DAIRY', 'box', array['box','pack','bottle'], 30),
-    ('酸奶', 'EGG_DAIRY', 'DAIRY', 'bottle', array['bottle','box','cup'], 14),
+    ('酸奶', 'EGG_DAIRY', 'DAIRY', 'bottle', array['bottle','box'], 14),
     ('奶酪', 'EGG_DAIRY', 'DAIRY', 'pack', array['pack','g','piece'], 30),
     ('黄油', 'EGG_DAIRY', 'DAIRY', 'pack', array['pack','g'], 60),
     ('稀奶油', 'EGG_DAIRY', 'DAIRY', 'box', array['box','ml'], 14),
 
     -- 主食杂粮 (GRAIN_STAPLE)
-    ('米饭', 'STAPLE', 'GRAIN_STAPLE', 'bowl', array['bowl','g'], 2),
+    ('米饭', 'STAPLE', 'GRAIN_STAPLE', 'piece', array['piece','g'], 2),
     ('面条', 'STAPLE', 'GRAIN_STAPLE', 'pack', array['pack','g','jin'], 90),
     ('馒头', 'STAPLE', 'GRAIN_STAPLE', 'piece', array['piece','bag'], 3),
     ('包子', 'STAPLE', 'GRAIN_STAPLE', 'piece', array['piece','bag'], 3),
@@ -84,7 +84,7 @@ with foods(name, legacy_category, category_code, unit_code, units, shelf_days) a
     ('豆腐', 'OTHER', 'LEGUME_SOY', 'piece', array['piece','box','g'], 3),
     ('豆干', 'OTHER', 'LEGUME_SOY', 'pack', array['pack','g','jin'], 7),
     ('腐竹', 'OTHER', 'LEGUME_SOY', 'pack', array['pack','g'], 90),
-    ('豆浆', 'OTHER', 'LEGUME_SOY', 'bottle', array['bottle','cup','ml'], 2),
+    ('豆浆', 'OTHER', 'LEGUME_SOY', 'bottle', array['bottle','ml'], 2),
     ('核桃', 'OTHER', 'LEGUME_SOY', 'bag', array['bag','g','jin'], 180),
     ('花生', 'OTHER', 'LEGUME_SOY', 'bag', array['bag','g','jin'], 180),
     ('腰果', 'OTHER', 'LEGUME_SOY', 'bag', array['bag','g'], 180),
@@ -111,11 +111,11 @@ with foods(name, legacy_category, category_code, unit_code, units, shelf_days) a
 
     -- 饮品 (BEVERAGE)
     ('矿泉水', 'OTHER', 'BEVERAGE', 'bottle', array['bottle','box'], 365),
-    ('可乐', 'OTHER', 'BEVERAGE', 'can', array['can','bottle','pack'], 365),
+    ('可乐', 'OTHER', 'BEVERAGE', 'box', array['box','bottle','pack'], 365),
     ('绿茶饮料', 'OTHER', 'BEVERAGE', 'bottle', array['bottle','box'], 180),
     ('果汁', 'OTHER', 'BEVERAGE', 'bottle', array['bottle','box'], 30),
-    ('咖啡饮料', 'OTHER', 'BEVERAGE', 'can', array['can','bottle'], 180),
-    ('气泡水', 'OTHER', 'BEVERAGE', 'bottle', array['bottle','can'], 365),
+    ('咖啡饮料', 'OTHER', 'BEVERAGE', 'box', array['box','bottle'], 180),
+    ('气泡水', 'OTHER', 'BEVERAGE', 'bottle', array['bottle','box'], 365),
 
     -- 即食加工 (PROCESSED_FOOD)
     ('方便面', 'OTHER', 'PROCESSED_FOOD', 'pack', array['pack','box'], 180),

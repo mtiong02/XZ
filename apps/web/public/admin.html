@@ -452,6 +452,7 @@
   <div class="tabs">
     <div class="tab active" data-tab="conversations" onclick="switchTab('conversations')">对话日志</div>
     <div class="tab" data-tab="stats" onclick="switchTab('stats')">统计分析</div>
+    <div class="tab" data-tab="feedbacks" onclick="switchTab('feedbacks')">内测反馈</div>
     <div class="tab" data-tab="runtime" onclick="switchTab('runtime')">实时性能</div>
     <div class="tab" data-tab="insights" onclick="switchTab('insights')">优化洞察</div>
   </div>
@@ -487,6 +488,58 @@
           <tr><th>用户名</th><th>对话次数</th><th>最近活跃</th></tr>
         </thead>
         <tbody id="households-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Beta Feedbacks Tab -->
+  <div id="feedbacks-tab" class="content" style="display:none">
+    <div class="insight-intro">
+      <div>
+        <div class="eyebrow">BETA FEEDBACK · USER VOICE</div>
+        <h2>用户内测反馈与建议汇总</h2>
+        <p>查看用户从首页“💬内测反馈”入口提交的功能建议、缺陷问题及使用感受，支持状态标记与类型筛选。</p>
+      </div>
+      <div class="insight-scope">
+        <button onclick="loadFeedbacks()">🔄 刷新数据</button>
+      </div>
+    </div>
+
+    <div class="stats-grid" id="feedback-stats-grid">
+      <div class="loading">正在加载统计…</div>
+    </div>
+
+    <div class="filter-bar">
+      <select id="filter-feedback-category" onchange="loadFeedbacks()">
+        <option value="">全部类型</option>
+        <option value="SUGGESTION">💡 功能建议</option>
+        <option value="BUG">🐛 问题反馈</option>
+        <option value="EXPERIENCE">✨ 体验感受</option>
+        <option value="OTHER">💬 其他</option>
+      </select>
+      <select id="filter-feedback-status" onchange="loadFeedbacks()">
+        <option value="">全部状态</option>
+        <option value="OPEN">⏳ 待处理</option>
+        <option value="RESOLVED">✅ 已解决</option>
+      </select>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:100px;">类型</th>
+            <th style="width:110px;">评分</th>
+            <th>反馈内容</th>
+            <th style="width:140px;">联系方式</th>
+            <th style="width:140px;">提交时间</th>
+            <th style="width:100px;">状态</th>
+            <th style="width:100px;">操作</th>
+          </tr>
+        </thead>
+        <tbody id="feedbacks-body">
+          <tr><td colspan="7" class="loading">加载中…</td></tr>
+        </tbody>
       </table>
     </div>
   </div>
@@ -563,9 +616,11 @@ function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   document.getElementById('conversations-tab').style.display = name === 'conversations' ? 'block' : 'none';
   document.getElementById('stats-tab').style.display = name === 'stats' ? 'block' : 'none';
+  document.getElementById('feedbacks-tab').style.display = name === 'feedbacks' ? 'block' : 'none';
   document.getElementById('runtime-tab').style.display = name === 'runtime' ? 'block' : 'none';
   document.getElementById('insights-tab').style.display = name === 'insights' ? 'block' : 'none';
   if (name === 'stats') loadStats();
+  if (name === 'feedbacks') loadFeedbacks();
   if (name === 'runtime') loadRuntimeMetrics();
   if (name === 'insights') loadInsights();
 }
@@ -761,6 +816,77 @@ function loadInsights() {
       document.getElementById('insight-metrics').innerHTML = '<div class="error-msg">优化洞察加载失败，请确认管理员令牌后重试</div>';
       document.getElementById('insight-summary').innerHTML = '';
     });
+}
+
+function loadFeedbacks() {
+  const category = document.getElementById('filter-feedback-category').value;
+  const status = document.getElementById('filter-feedback-status').value;
+  let url = `${API_BASE}/admin/feedbacks?limit=100`;
+  if (category) url += `&category=${encodeURIComponent(category)}`;
+  if (status) url += `&status=${encodeURIComponent(status)}`;
+
+  const grid = document.getElementById('feedback-stats-grid');
+  const tbody = document.getElementById('feedbacks-body');
+  tbody.innerHTML = '<tr><td colspan="7" class="loading">加载中…</td></tr>';
+
+  fetch(url, { headers: { 'x-admin-token': adminToken } })
+    .then(r => r.json())
+    .then(data => {
+      const s = data.stats || {};
+      grid.innerHTML = `
+        <div class="stat-card accent"><div class="label">反馈总数</div><div class="value">${s.total || 0}</div></div>
+        <div class="stat-card green"><div class="label">功能建议</div><div class="value">${s.suggestions || 0}</div></div>
+        <div class="stat-card danger"><div class="label">Bug 问题</div><div class="value">${s.bugs || 0}</div></div>
+        <div class="stat-card warn"><div class="label">待处理</div><div class="value">${s.open || 0}</div></div>
+        <div class="stat-card green"><div class="label">平均评分</div><div class="value">${s.avg_rating ? s.avg_rating + ' ⭐' : '暂无'}</div></div>
+      `;
+
+      const catMap = {
+        SUGGESTION: '💡 建议',
+        BUG: '🐛 Bug',
+        EXPERIENCE: '✨ 体验',
+        OTHER: '💬 其他'
+      };
+
+      if (!data.items || !data.items.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">暂无符合条件的反馈记录</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = data.items.map(item => `
+        <tr>
+          <td><span class="status-badge ${item.category === 'BUG' ? 'badge-warn' : 'badge-ok'}">${catMap[item.category] || item.category}</span></td>
+          <td style="color:${item.rating ? '#fbbf24' : 'var(--muted)'}">${item.rating ? '★'.repeat(item.rating) : '未评分'}</td>
+          <td style="white-space:pre-wrap;word-break:break-word;">${escHtml(item.content)}</td>
+          <td style="color:var(--muted);">${escHtml(item.contact || '未填写')}</td>
+          <td style="color:var(--muted);font-size:12px;">${fmtTime(item.created_at)}</td>
+          <td><span class="status-badge ${item.status === 'RESOLVED' ? 'badge-ok' : 'badge-warn'}">${item.status === 'RESOLVED' ? '已解决' : '待处理'}</span></td>
+          <td>
+            <button style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:6px;font-size:12px;cursor:pointer;" onclick="toggleFeedbackStatus('${item.id}', '${item.status === 'RESOLVED' ? 'OPEN' : 'RESOLVED'}')">
+              ${item.status === 'RESOLVED' ? '重新打开' : '标记解决'}
+            </button>
+          </td>
+        </tr>
+      `).join('');
+    })
+    .catch(() => {
+      grid.innerHTML = '<div class="error-msg">加载统计失败</div>';
+      tbody.innerHTML = '<tr><td colspan="7" class="error-msg">加载失败，请检查网络与管理员 Token</td></tr>';
+    });
+}
+
+function toggleFeedbackStatus(id, newStatus) {
+  fetch(`${API_BASE}/admin/feedbacks/${id}/status`, {
+    method: 'PATCH',
+    headers: {
+      'x-admin-token': adminToken,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({ status: newStatus })
+  })
+    .then(r => r.json())
+    .then(() => loadFeedbacks())
+    .catch(() => alert('状态更新失败'));
 }
 </script>
 </body>

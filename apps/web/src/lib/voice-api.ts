@@ -38,6 +38,8 @@ export type VoiceJobStatus =
 export interface VoiceJob {
   voice_job_id: string;
   household_id: string;
+  session_id?: string | null;
+  turn_id?: string | null;
   status: VoiceJobStatus;
   transcript: { raw: string; normalized: string } | null;
   candidate_command: VoiceCandidate | null;
@@ -56,8 +58,11 @@ export interface VoiceJob {
 }
 
 /** 语音多轮对话推进：用户对系统播报的口头回应（"对"/"不对"/"改成三盒"）。 */
-export function replyVoiceJob(jobId: string, text: string): Promise<VoiceJob> {
-  return apiPost<VoiceJob>(`/voice-jobs/${jobId}/reply`, { text });
+export function replyVoiceJob(jobId: string, text: string, turnId?: string): Promise<VoiceJob> {
+  return apiPost<VoiceJob>(`/voice-jobs/${jobId}/reply`, {
+    text,
+    ...(turnId ? { turn_id: turnId } : {}),
+  });
 }
 
 /** 该状态是否还在等待用户下一轮回应。 */
@@ -70,11 +75,15 @@ export function createTextVoiceJob(
   householdId: string,
   transcriptText: string,
   channel: string,
+  sessionId?: string,
+  turnId?: string,
 ): Promise<VoiceJob> {
   return apiPost<VoiceJob>('/voice-jobs', {
     household_id: householdId,
     transcript_text: transcriptText,
     channel,
+    ...(sessionId ? { session_id: sessionId } : {}),
+    ...(turnId ? { turn_id: turnId } : {}),
     client_request_id: crypto.randomUUID(),
   });
 }
@@ -85,4 +94,15 @@ export function confirmVoiceJob(jobId: string, payload?: unknown): Promise<unkno
 
 export function cancelVoiceJob(jobId: string): Promise<unknown> {
   return apiPost(`/voice-jobs/${jobId}/cancel`, {});
+}
+
+export function recordMealFeedback(
+  jobId: string,
+  outcome: 'ACCEPTED' | 'MODIFIED' | 'REJECTED',
+  note?: string,
+): Promise<unknown> {
+  return apiPost(`/voice-jobs/${jobId}/meal-feedback`, {
+    outcome,
+    ...(note ? { note } : {}),
+  });
 }

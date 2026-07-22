@@ -5,9 +5,10 @@ import { InventoryModule } from '../inventory/inventory.module';
 import { MealPlanningController } from './meal-planning.controller';
 import { MealPlanningService } from './meal-planning.service';
 import { PersonalizedMealAgentService } from './personalized-meal-agent.service';
+import { AgentRuntimeModule } from '../agent-runtime/agent-runtime.module';
 
 @Module({
-  imports: [DatabaseModule, HouseholdModule, InventoryModule],
+  imports: [DatabaseModule, HouseholdModule, InventoryModule, AgentRuntimeModule],
   controllers: [MealPlanningController],
   providers: [MealPlanningService, PersonalizedMealAgentService],
   exports: [MealPlanningService],

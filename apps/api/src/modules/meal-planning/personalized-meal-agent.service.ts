@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { Pool } from 'pg';
 import { z } from 'zod';
 import { PG_POOL } from '../../infra/db/database.module';
+import type { FamilyMealContext } from '../agent-runtime/agent-runtime.types';
 
 const AgentResponseSchema = z.object({
   answer: z.string().min(1).max(700),
@@ -32,7 +33,17 @@ export interface MealAgentContext {
     expiringIngredientCount: number;
   }>;
   householdMemberCount: number;
+  familyContext?: FamilyMealContext | undefined;
+  temporaryContext?:
+    | {
+        occasion: string;
+        dateReference: string;
+        diningMode: string;
+        dinerCount: number | null;
+      }
+    | undefined;
   fallbackAnswer: string;
+  signal?: AbortSignal | undefined;
 }
 
 interface ProfileRow {
@@ -88,6 +99,7 @@ export class PersonalizedMealAgentService {
         [context.householdId, context.memberId, MEAL_HISTORY_PATTERN],
       ),
     ]);
+    if (context.signal?.aborted) throw new Error('AGENT_TASK_CANCELLED');
 
     const profile = profileResult.rows.find((row) => row.member_id === context.memberId) ?? null;
     const sharedFamilyProfiles = profileResult.rows
@@ -102,7 +114,11 @@ export class PersonalizedMealAgentService {
     const availableNames = new Set(context.inventory.map((item) => item.name));
     const payload = {
       current_request: context.requestText,
-      household: { member_count: context.householdMemberCount },
+      household: {
+        member_count: context.householdMemberCount,
+        family_model: context.familyContext ?? null,
+        temporary_context: context.temporaryContext ?? null,
+      },
       current_member: profile
         ? {
             goal: profile.goal,
@@ -134,14 +150,16 @@ export class PersonalizedMealAgentService {
           authorization: `Bearer ${apiKey}`,
           'content-type': 'application/json',
         },
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: context.signal
+          ? AbortSignal.any([context.signal, AbortSignal.timeout(timeoutMs)])
+          : AbortSignal.timeout(timeoutMs),
         body: JSON.stringify({
           model: process.env.MINIMAX_AGENT_MODEL?.trim() || 'abab6.5s-chat',
           messages: [
             {
               role: 'system',
               content:
-                '你是鲜知的小知家庭餐食决策Agent。你只做餐食分析与推荐，不写库存。必须以给定库存为事实；结合用餐场景、人数、健康目标、饮食限制、临期食材和最近推荐，给出真正具体且有变化的菜单。避免连续重复同一道菜。过敏原与明确限制优先级最高。可以列出缺少食材，但必须与现有食材分开。不要输出诊断、疗效承诺或极端节食。回答适合语音播报，通常2到4句。只输出JSON，不要Markdown，也不要透露内部推理。JSON字段固定为answer、selected_dishes、uses_inventory、missing、personalization_basis。',
+                '你是鲜知的小知家庭餐食决策Agent。你只做餐食分析与推荐，不写库存。必须以给定库存为事实；结合用餐场景、当前任务人数、家庭成员限制、在家模式、家庭偏好、临期食材和最近推荐，做一次决策。当前请求里明确说的“我一个人吃/两个人/五个人/朋友聚会”等临时上下文优先于家庭默认人数，家庭模型不得覆盖当前任务。一次请求只能输出一个最终菜单方案，不能同时给多个互相冲突的方案，也不要把澄清问题伪装成菜单。人数达到4人时必须明确按人数扩充份量，必要时给出2到4道菜，而不是只给一份2人菜。只能把上下文中存在的食材写进现有菜单和执行步骤；橄榄油、香草、胡椒、柠檬等调味料如果不在库存，必须列入missing，不得假装家里已有。可以列出缺少食材，但必须与现有食材分开。过敏原与明确限制优先级最高。不要输出诊断、疗效承诺或极端节食。回答适合语音播报，但用户要求具体菜单时要包含菜名、人数/份量和简短执行顺序。只输出JSON，不要Markdown，也不要透露内部推理。JSON字段固定为answer、selected_dishes、uses_inventory、missing、personalization_basis。',
             },
             {
               role: 'user',
@@ -154,7 +172,13 @@ export class PersonalizedMealAgentService {
       });
       const elapsedMs = Date.now() - startedAt;
       if (!response.ok) {
-        console.warn(JSON.stringify({ msg: 'meal_agent.failed', status: response.status, elapsed_ms: elapsedMs }));
+        console.warn(
+          JSON.stringify({
+            msg: 'meal_agent.failed',
+            status: response.status,
+            elapsed_ms: elapsedMs,
+          }),
+        );
         return context.fallbackAnswer;
       }
       const body = (await response.json()) as MiniMaxChatResponse;
@@ -165,7 +189,9 @@ export class PersonalizedMealAgentService {
         return context.fallbackAnswer;
       }
       if (parsed.uses_inventory.some((name) => !availableNames.has(name))) {
-        console.warn(JSON.stringify({ msg: 'meal_agent.inventory_guard_failed', elapsed_ms: elapsedMs }));
+        console.warn(
+          JSON.stringify({ msg: 'meal_agent.inventory_guard_failed', elapsed_ms: elapsedMs }),
+        );
         return context.fallbackAnswer;
       }
       console.info(

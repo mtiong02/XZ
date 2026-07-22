@@ -1,11 +1,4 @@
-import {
-  Controller,
-  ForbiddenException,
-  Get,
-  Headers,
-  Inject,
-  Query,
-} from '@nestjs/common';
+import { Controller, ForbiddenException, Get, Headers, Inject, Query } from '@nestjs/common';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../../infra/db/database.module';
 import { buildProductInsights, type VoiceJobForInsight } from './product-insights';
@@ -117,9 +110,7 @@ export class AdminController {
 
     for (const job of result.rows) {
       const jobTime = new Date(job.created_at).getTime();
-      const lastTime = currentSession
-        ? new Date(currentSession.ended_at).getTime()
-        : 0;
+      const lastTime = currentSession ? new Date(currentSession.ended_at).getTime() : 0;
       const sameHousehold = currentSession?.household_id === job.household_id;
       const withinGap = jobTime - lastTime < SESSION_GAP_MS;
 
@@ -215,6 +206,98 @@ export class AdminController {
       status_breakdown: statusBreakdown.rows,
       top_ambiguous_phrases: topFailed.rows,
       active_households: activeHouseholds.rows,
+    };
+  }
+
+  /** GET /api/v1/admin/validation-metrics
+   * 验证期只读指标：打开、核心意图、餐食方案与购物清单链路。
+   */
+  @Get('validation-metrics')
+  async validationMetrics(
+    @Headers('x-admin-token') token: string | undefined,
+    @Query('days') daysStr?: string,
+  ) {
+    this.checkToken(token);
+    const days = Math.min(Math.max(Number(daysStr) || 14, 1), 90);
+    const [events, households, funnel, dailyOpens, firstUtterances, failureSteps] =
+      await Promise.all([
+        this.pool.query(
+          `select event_type, count(*)::int as event_count,
+                count(distinct household_id)::int as households
+           from agent_events
+          where created_at >= now() - ($1::text || ' days')::interval
+          group by event_type
+          order by event_count desc`,
+          [String(days)],
+        ),
+        this.pool.query(
+          `select count(distinct household_id)::int as opened_households,
+                count(*) filter (where event_type = 'PRODUCT_OPENED')::int as opens,
+                count(distinct actor_member_id)::int as active_members
+           from agent_events
+          where created_at >= now() - ($1::text || ' days')::interval`,
+          [String(days)],
+        ),
+        this.pool.query(
+          `select
+          count(*) filter (where event_type = 'MEAL_PLAN_GENERATED')::int as meal_plans_generated,
+          count(*) filter (where event_type = 'MEAL_PLAN_ACCEPTED')::int as meal_plans_accepted,
+          count(*) filter (where event_type = 'MEAL_PLAN_MODIFIED')::int as meal_plans_modified,
+          count(*) filter (where event_type = 'MEAL_PLAN_REJECTED')::int as meal_plans_rejected,
+          count(*) filter (where event_type = 'SHOPPING_DRAFT_CREATED')::int as shopping_drafts,
+          count(*) filter (where event_type = 'SHOPPING_CONFIRMED')::int as shopping_confirmed,
+          count(*) filter (where event_type = 'VOICE_FAILURE')::int as voice_failures
+         from agent_events
+         where created_at >= now() - ($1::text || ' days')::interval`,
+          [String(days)],
+        ),
+        this.pool.query(
+          `select to_char(created_at at time zone 'Asia/Shanghai', 'YYYY-MM-DD') as day,
+                count(*)::int as opens,
+                count(distinct household_id)::int as households
+           from agent_events
+          where event_type='PRODUCT_OPENED'
+            and created_at >= now() - ($1::text || ' days')::interval
+          group by 1 order by 1`,
+          [String(days)],
+        ),
+        this.pool.query(
+          `select metadata->>'text' as text, count(*)::int as count
+           from agent_events
+          where event_type='FIRST_UTTERANCE'
+            and created_at >= now() - ($1::text || ' days')::interval
+            and nullif(metadata->>'text','') is not null
+          group by 1 order by count desc limit 20`,
+          [String(days)],
+        ),
+        this.pool.query(
+          `select coalesce(metadata->>'step','unknown') as step,
+                count(*) filter (where outcome in ('failed','FAILED'))::int as failures,
+                count(*)::int as events
+           from agent_events
+          where event_type='MEAL_FLOW_STEP'
+            and created_at >= now() - ($1::text || ' days')::interval
+          group by 1 order by failures desc, events desc`,
+          [String(days)],
+        ),
+      ]);
+    return {
+      period_days: days,
+      generated_at: new Date().toISOString(),
+      households: households.rows[0],
+      funnel: funnel.rows[0],
+      events: events.rows,
+      daily_opens: dailyOpens.rows,
+      top_first_utterances: firstUtterances.rows,
+      meal_flow_failure_steps: failureSteps.rows,
+      definitions: {
+        opens: 'PRODUCT_OPENED 次数；按上海时区按天统计',
+        first_utterance: '每个会话的第一句用户原始转写',
+        failure_steps: 'MEAL_FLOW_STEP 中按 step 聚合失败事件',
+        meal_plan_acceptance: 'MEAL_PLAN_ACCEPTED / MEAL_PLAN_GENERATED',
+        meal_plan_feedback: 'MEAL_PLAN_ACCEPTED / MODIFIED / REJECTED 来自用户明确反馈按钮',
+        shopping_confirmation: 'SHOPPING_CONFIRMED / SHOPPING_DRAFT_CREATED',
+      },
     };
   }
 

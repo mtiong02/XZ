@@ -152,6 +152,13 @@ const cases: EvalCase[] = [
   { text: '我要吃一个下午茶你来推荐一个根据我们冰箱里面的食材推荐一个吃的', intent: 'QUERY_INVENTORY' },
   { text: '今晚四个人家庭晚餐，简单一点，按冰箱食材推荐', intent: 'QUERY_INVENTORY' },
   { text: '一个人吃午餐有什么简单推荐', intent: 'QUERY_INVENTORY' },
+  { text: '今天下午要跟五个人一起吃吃有什么推荐的菜', intent: 'QUERY_INVENTORY' },
+  { text: '明天早餐，两个人', intent: 'QUERY_INVENTORY' },
+  { text: '明天早餐两个人吃', intent: 'QUERY_INVENTORY' },
+  { text: '我想吃早餐，你来推荐', intent: 'QUERY_INVENTORY' },
+  { text: '那有什么餐食或者是菜品来推荐', intent: 'QUERY_INVENTORY' },
+  { text: '搭配一下今天晚上的菜', intent: 'QUERY_INVENTORY' },
+  { text: '这个搭配不合理，四个人吃不够', intent: 'QUERY_INVENTORY' },
   { text: '我想要一个少油少盐的食谱', intent: 'QUERY_INVENTORY' },
   { text: '继续刚才的食谱', intent: 'QUERY_INVENTORY' },
   { text: '把所有猪肉移到冷冻室里', intent: 'MOVE_INVENTORY' },
@@ -267,6 +274,12 @@ describe('parseTranscript evaluation set', () => {
     expect(parseTranscript(normalizeTranscript('把猪肉都挪到冷冻室'), catalog).intent).toBe(
       'MOVE_INVENTORY',
     );
+  });
+
+  it('does not ask for a quantity when a meal context has no food entity', () => {
+    const result = parseTranscript(normalizeTranscript('明天早餐，两个人'), catalog);
+    expect(result.intent).toBe('QUERY_INVENTORY');
+    expect(result.items).toHaveLength(0);
   });
 
   it('keeps spoken unit quantities for leafy vegetables and chicken breast', () => {

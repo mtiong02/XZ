@@ -70,6 +70,13 @@ export default function SettingsPage() {
             </div>
           </div>
           <div className="settings-link-grid">
+            <Link className="settings-link-card" href="/fridge/household">
+              <div>
+                <div className="name">家庭成员</div>
+                <div className="qty">查看成员、邀请家人加入，共同管理这个家庭</div>
+              </div>
+              <span>进入</span>
+            </Link>
             <Link className="settings-link-card" href="/fridge/wellness">
               <div>
                 <div className="name">我的健康</div>

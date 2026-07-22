@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { Pool } from 'pg';
 import { z } from 'zod';
 import { PG_POOL } from '../../infra/db/database.module';
@@ -10,6 +10,9 @@ import {
   parseMealContext,
 } from '../interaction/dialogue/meal-recommendations';
 import { PersonalizedMealAgentService } from './personalized-meal-agent.service';
+import { ContextBuilder, type MealDecisionContext } from '../agent-runtime/context-builder';
+import { AgentToolExecutor } from '../agent-runtime/agent-tool-executor';
+import { FamilyContextService } from '../agent-runtime/family-context.service';
 
 export const AddShoppingItemSchema = z.object({
   food_id: z.string().uuid(),
@@ -74,6 +77,9 @@ export class MealPlanningService {
     @Inject(MembershipService) private readonly memberships: MembershipService,
     @Inject(InventoryQueryService) private readonly inventory: InventoryQueryService,
     @Inject(PersonalizedMealAgentService) private readonly mealAgent: PersonalizedMealAgentService,
+    @Optional() @Inject(ContextBuilder) private readonly contextBuilder?: ContextBuilder,
+    @Optional() @Inject(FamilyContextService) private readonly familyContext?: FamilyContextService,
+    @Optional() @Inject(AgentToolExecutor) private readonly toolExecutor?: AgentToolExecutor,
   ) {}
 
   async suggestions(householdId: string, userId: string): Promise<MealSuggestion[]> {
@@ -106,34 +112,34 @@ export class MealPlanningService {
        join food_catalog fc on fc.id=ri.food_id group by r.id order by r.name`,
     );
     const mapped = recipes.rows.map((recipe) => {
-        const ingredients = recipe.ingredients.map((ingredient) => {
-          const item = stocked.get(ingredient.food_id);
-          const enough =
-            item && ingredient.quantity && ingredient.unit_code === item.unit
-              ? Number(item.total_quantity) >= Number(ingredient.quantity)
-              : Boolean(item);
-          return {
-            ...ingredient,
-            available: Boolean(enough),
-            inventory_quantity: item?.total_quantity ?? null,
-            inventory_unit: item?.unit ?? null,
-            expiry_status: item?.expiry_status ?? null,
-          };
-        });
-        const required = ingredients.filter((item) => !item.optional);
-        const availableCount = required.filter((item) => item.available).length;
-        const expiringCount = ingredients.filter(
-          (item) => item.expiry_status === 'EXPIRING' || item.expiry_status === 'EXPIRED',
-        ).length;
+      const ingredients = recipe.ingredients.map((ingredient) => {
+        const item = stocked.get(ingredient.food_id);
+        const enough =
+          item && ingredient.quantity && ingredient.unit_code === item.unit
+            ? Number(item.total_quantity) >= Number(ingredient.quantity)
+            : Boolean(item);
         return {
-          ...recipe,
-          ingredients,
-          coverage: required.length ? availableCount / required.length : 0,
-          can_make: availableCount === required.length,
-          missing: required.filter((item) => !item.available),
-          expiring_ingredient_count: expiringCount,
+          ...ingredient,
+          available: Boolean(enough),
+          inventory_quantity: item?.total_quantity ?? null,
+          inventory_unit: item?.unit ?? null,
+          expiry_status: item?.expiry_status ?? null,
         };
       });
+      const required = ingredients.filter((item) => !item.optional);
+      const availableCount = required.filter((item) => item.available).length;
+      const expiringCount = ingredients.filter(
+        (item) => item.expiry_status === 'EXPIRING' || item.expiry_status === 'EXPIRED',
+      ).length;
+      return {
+        ...recipe,
+        ingredients,
+        coverage: required.length ? availableCount / required.length : 0,
+        can_make: availableCount === required.length,
+        missing: required.filter((item) => !item.available),
+        expiring_ingredient_count: expiringCount,
+      };
+    });
 
     // 食材指纹去重：防止“牛肉炖土豆”与“土豆炖牛腩”等同质化菜谱同时冗余推送
     const seenKeys = new Set<string>();
@@ -165,14 +171,14 @@ export class MealPlanningService {
     userId: string,
     normalizedText: string,
   ): Promise<MealSuggestion | null> {
-    const canonicalName =
-      /土豆.*(?:牛腩|牛肉)|(?:牛腩|牛肉).*土豆/.test(normalizedText)
-        ? '土豆炖牛腩'
-        : null;
+    const canonicalName = /土豆.*(?:牛腩|牛肉)|(?:牛腩|牛肉).*土豆/.test(normalizedText)
+      ? '土豆炖牛腩'
+      : null;
     if (!canonicalName) return null;
     return (
-      (await this.suggestions(householdId, userId)).find((recipe) => recipe.name === canonicalName) ??
-      null
+      (await this.suggestions(householdId, userId)).find(
+        (recipe) => recipe.name === canonicalName,
+      ) ?? null
     );
   }
 
@@ -190,46 +196,83 @@ export class MealPlanningService {
       unit?: string;
       expiry_status?: string;
     }>,
+    options: { taskId?: string | undefined; signal?: AbortSignal | undefined } = {},
   ): Promise<string> {
     const member = await this.memberships.assertMembership(householdId, userId);
-    const context = parseMealContext(text);
-    const [recipes, memberCount] = await Promise.all([
+    const [recipes, memberCount, familyContext] = await Promise.all([
       this.suggestions(householdId, userId),
       this.pool.query<{ count: string }>(
         `select count(*)::text as count from household_members where household_id=$1`,
         [householdId],
       ),
+      this.familyContext?.build(householdId, member.memberId) ?? Promise.resolve(null),
     ]);
     const householdMemberCount = Math.max(1, Number(memberCount.rows[0]?.count ?? 1));
+    const context =
+      this.contextBuilder?.build({
+        requestText: text,
+        inventory: inventoryItems,
+        householdMemberCount,
+        familyContext: familyContext ?? undefined,
+      }) ?? parseMealContext(text);
     const fallbackAnswer = buildMealContextRecommendation(
       context,
       inventoryItems,
       recipes,
       householdMemberCount,
     );
-    return this.mealAgent.recommend({
-      householdId,
-      memberId: member.memberId,
-      requestText: text,
-      inventory: inventoryItems.map((item) => ({
-        name: item.name,
-        ...(item.total_quantity ? { quantity: item.total_quantity } : {}),
-        ...(item.unit ? { unit: item.unit } : {}),
-        ...(item.expiry_status ? { expiryStatus: item.expiry_status } : {}),
-      })),
-      recipes: recipes.slice(0, 10).map((recipe) => ({
-        name: recipe.name,
-        description: recipe.description,
-        servings: recipe.servings,
-        canMake: recipe.can_make,
-        coverage: recipe.coverage,
-        ingredients: recipe.ingredients.map((item) => item.food_name),
-        missing: recipe.missing.map((item) => item.food_name),
-        expiringIngredientCount: recipe.expiring_ingredient_count,
-      })),
-      householdMemberCount,
-      fallbackAnswer,
-    });
+    const run = () =>
+      this.mealAgent.recommend({
+        householdId,
+        memberId: member.memberId,
+        requestText: text,
+        inventory: inventoryItems.map((item) => ({
+          name: item.name,
+          ...(item.total_quantity ? { quantity: item.total_quantity } : {}),
+          ...(item.unit ? { unit: item.unit } : {}),
+          ...(item.expiry_status ? { expiryStatus: item.expiry_status } : {}),
+        })),
+        recipes: recipes.slice(0, 10).map((recipe) => ({
+          name: recipe.name,
+          description: recipe.description,
+          servings: recipe.servings,
+          canMake: recipe.can_make,
+          coverage: recipe.coverage,
+          ingredients: recipe.ingredients.map((item) => item.food_name),
+          missing: recipe.missing.map((item) => item.food_name),
+          expiringIngredientCount: recipe.expiring_ingredient_count,
+        })),
+        householdMemberCount,
+        familyContext: familyContext ?? undefined,
+        temporaryContext:
+          'temporaryContext' in context
+            ? (context as MealDecisionContext).temporaryContext
+            : undefined,
+        fallbackAnswer,
+        signal: options.signal,
+      });
+    if (!this.toolExecutor || !options.taskId) return run();
+    return this.toolExecutor.execute(
+      'meal.recommend',
+      {
+        taskId: options.taskId,
+        signal: options.signal,
+      },
+      run,
+    );
+  }
+
+  /**
+   * 家庭人数只是默认事实，不是当前任务事实。当前请求没有说明人数/模式时，
+   * 只追问一次；用户的回答由同一会话合并到本次任务，不写回家庭配置。
+   */
+  async getMealContextClarification(householdId: string, userId: string, text: string) {
+    const parsed = parseMealContext(text);
+    if (parsed.dinerCount !== null || parsed.diningMode !== 'UNSPECIFIED') return null;
+    const member = await this.memberships.assertMembership(householdId, userId);
+    const family = await this.familyContext?.build(householdId, member.memberId);
+    if (!family || family.defaultDiners <= 1) return null;
+    return `今天还是${family.defaultDiners}个人一起吃吗？如果只有你一个人，直接说“我一个人吃”。`;
   }
 
   /** 手动页面与语音复用同一套按需 Agent；调用只生成建议，不产生库存副作用。 */

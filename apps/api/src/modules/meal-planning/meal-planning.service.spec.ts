@@ -39,3 +39,45 @@ describe('MealPlanningService.addShoppingItem', () => {
     expect(sql).toContain('created_at=now()');
   });
 });
+
+describe('MealPlanningService.getMealContextClarification', () => {
+  it('asks once instead of silently applying the household default', async () => {
+    const service = new MealPlanningService(
+      {} as never,
+      { assertMembership: vi.fn().mockResolvedValue({ memberId: 'member-1' }) } as never,
+      {} as never,
+      {} as never,
+      undefined,
+      {
+        build: vi.fn().mockResolvedValue({ defaultDiners: 4 }),
+      } as never,
+    );
+    await expect(
+      service.getMealContextClarification(
+        '33333333-3333-4333-8333-333333333333',
+        'user-1',
+        '今天吃什么',
+      ),
+    ).resolves.toContain('还是4个人一起吃吗');
+  });
+
+  it('does not ask when the current request explicitly says solo', async () => {
+    const familyContext = { build: vi.fn() };
+    const service = new MealPlanningService(
+      {} as never,
+      { assertMembership: vi.fn() } as never,
+      {} as never,
+      {} as never,
+      undefined,
+      familyContext as never,
+    );
+    await expect(
+      service.getMealContextClarification(
+        '33333333-3333-4333-8333-333333333333',
+        'user-1',
+        '今天我一个人吃',
+      ),
+    ).resolves.toBeNull();
+    expect(familyContext.build).not.toHaveBeenCalled();
+  });
+});

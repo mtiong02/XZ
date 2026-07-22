@@ -13,6 +13,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import {
   ConfirmVoiceJobSchema,
   CreateTextVoiceJobSchema,
+  MealFeedbackSchema,
   ReplyVoiceJobSchema,
   VoiceService,
 } from './voice.service';
@@ -60,5 +61,14 @@ export class VoiceController {
   @Post(':id/cancel')
   async cancel(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.voice.cancel(id, user.userId);
+  }
+
+  @Post(':id/meal-feedback')
+  async mealFeedback(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: unknown,
+  ) {
+    return this.voice.recordMealFeedback(id, user.userId, MealFeedbackSchema.parse(body));
   }
 }

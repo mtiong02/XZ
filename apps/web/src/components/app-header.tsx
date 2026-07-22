@@ -10,6 +10,7 @@ const navigation = [
   { href: '/fridge/notifications', label: '提醒' },
   { href: '/fridge/meals', label: '餐食' },
   { href: '/fridge/wellness', label: '健康' },
+  { href: '/fridge/household', label: '家庭' },
   { href: '/fridge/foods', label: '食材百科' },
   { href: '/fridge/timeline', label: '动态' },
   { href: '/fridge/settings', label: '设置' },
@@ -76,6 +77,7 @@ export function AppHeader({
           <Link
             className={
               pathname.startsWith('/fridge/settings') ||
+              pathname.startsWith('/fridge/household') ||
               pathname.startsWith('/fridge/foods') ||
               pathname.startsWith('/fridge/timeline')
                 ? 'active'

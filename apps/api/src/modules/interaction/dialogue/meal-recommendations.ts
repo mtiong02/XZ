@@ -1,8 +1,10 @@
 export type MealOccasion = 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'AFTERNOON_TEA' | 'LATE_NIGHT' | 'GENERAL';
 export type DiningMode = 'SOLO' | 'FAMILY' | 'GATHERING' | 'UNSPECIFIED';
+export type MealDateReference = 'TODAY' | 'TOMORROW' | 'DAY_AFTER_TOMORROW' | 'UNSPECIFIED';
 
 export interface MealContext {
   occasion: MealOccasion;
+  dateReference: MealDateReference;
   diningMode: DiningMode;
   dinerCount: number | null;
   wantsQuick: boolean;
@@ -22,29 +24,37 @@ const DINER_CN_NUMBERS: Record<string, number> = { 一: 1, 两: 2, 二: 2, 三: 
 /** 从自然语言中提取用餐场景；它只解释用户意图，不产生任何库存副作用。 */
 export function parseMealContext(text: string): MealContext {
   const compact = text.replace(/[\s，。！？、,.!?：:；;]/g, '');
-  const occasion: MealOccasion = /早餐|早饭|早上吃/.test(compact)
+  const occasion: MealOccasion = /早餐|早饭|早上(?:吃|用餐)?/.test(compact)
     ? 'BREAKFAST'
     : /午餐|中饭|中午吃/.test(compact)
       ? 'LUNCH'
-      : /晚餐|晚饭|家庭晚餐|晚上一家/.test(compact)
+      : /晚餐|晚饭|今晚|晚上|家庭晚餐|晚上一家/.test(compact)
         ? 'DINNER'
         : /下午茶|加餐|小点心|点心|零食/.test(compact)
           ? 'AFTERNOON_TEA'
-          : /夜宵|宵夜/.test(compact)
-            ? 'LATE_NIGHT'
-            : 'GENERAL';
+            : /夜宵|宵夜/.test(compact)
+              ? 'LATE_NIGHT'
+              : 'GENERAL';
+  const dateReference: MealDateReference = /后天/.test(compact)
+    ? 'DAY_AFTER_TOMORROW'
+    : /明天|明早|明早上/.test(compact)
+      ? 'TOMORROW'
+      : /今天|今早|今早上|今晚/.test(compact)
+        ? 'TODAY'
+        : 'UNSPECIFIED';
   const numeric = /(\d{1,2})\s*(?:人份?|位|口)/.exec(compact)?.[1];
   const chinese = /([一二两三四五六七八九十])(?:个)?(?:人|位|口)/.exec(compact)?.[1];
   const dinerCount = numeric ? Number(numeric) : chinese ? (DINER_CN_NUMBERS[chinese] ?? null) : /一个人|自己吃|独自/.test(compact) ? 1 : null;
   const diningMode: DiningMode = dinerCount === 1
     ? 'SOLO'
-    : /聚会|朋友来|客人|宴请/.test(compact)
+    : /聚会|朋友来|客人|宴请|一起吃|一起用餐|跟.*吃/.test(compact)
       ? 'GATHERING'
       : /全家|家庭|一家人|家里人/.test(compact)
         ? 'FAMILY'
         : 'UNSPECIFIED';
   return {
     occasion,
+    dateReference,
     diningMode,
     dinerCount,
     wantsQuick: /简单|快手|省事|不想做|方便|快速/.test(compact),

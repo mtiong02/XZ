@@ -11,6 +11,7 @@ import { MealPlanningModule } from './modules/meal-planning/meal-planning.module
 import { MemberWellnessModule } from './modules/member-wellness/member-wellness.module';
 import { NutritionModule } from './modules/nutrition/nutrition.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { FeedbackModule } from './modules/feedback/feedback.module';
 
 /**
  * 模块化单体入口（docs/02 §7）。
@@ -29,6 +30,8 @@ import { AdminModule } from './modules/admin/admin.module';
     MemberWellnessModule,
     NutritionModule,
     AdminModule,
+    FeedbackModule,
   ],
 })
 export class AppModule {}
+

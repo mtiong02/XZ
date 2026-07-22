@@ -1,5 +1,6 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import Big from 'big.js';
+import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 import { z } from 'zod';
 import { ChannelSchema, COMMAND_PAYLOAD_SCHEMAS, type InventoryZoneView } from '@xz/contracts';
@@ -37,6 +38,9 @@ import {
   type SpokenItem,
 } from './dialogue/prompts';
 import { unitSpokenLabel } from './dialogue/units-spoken';
+import { AgentToolExecutor } from '../agent-runtime/agent-tool-executor';
+import { AgentRuntimeService } from '../agent-runtime/agent-runtime.service';
+import { TurnCoordinatorService } from '../agent-runtime/turn-coordinator.service';
 
 export const CreateTextVoiceJobSchema = z.object({
   household_id: z.string().uuid(),
@@ -44,6 +48,8 @@ export const CreateTextVoiceJobSchema = z.object({
   locale: z.string().max(10).default('zh'),
   channel: ChannelSchema.default('WEB_VOICE'),
   client_request_id: z.string().max(100).optional(),
+  session_id: z.string().uuid().optional(),
+  turn_id: z.string().uuid().optional(),
 });
 
 export const ConfirmVoiceJobSchema = z.object({
@@ -52,6 +58,12 @@ export const ConfirmVoiceJobSchema = z.object({
 
 export const ReplyVoiceJobSchema = z.object({
   text: z.string().min(1).max(200),
+  turn_id: z.string().uuid().optional(),
+});
+
+export const MealFeedbackSchema = z.object({
+  outcome: z.enum(['ACCEPTED', 'MODIFIED', 'REJECTED']),
+  note: z.string().trim().max(200).optional(),
 });
 
 export interface CandidateItem {
@@ -73,6 +85,7 @@ type CandidatePayload = {
   lot_ids?: string[];
   target_storage_zone_id?: string;
   reason?: string;
+  request_text?: string;
 };
 
 export interface DialogueTurn {
@@ -101,6 +114,8 @@ interface VoiceJobRow {
   dialogue_turns: DialogueTurn[];
   created_at: Date;
   completed_at: Date | null;
+  session_id: string | null;
+  turn_id: string | null;
 }
 
 const REPLIABLE_STATUSES = new Set(['AWAITING_CONFIRMATION', 'AWAITING_CLARIFICATION']);
@@ -113,7 +128,7 @@ const READ_ONLY_QUERY_INTENTS = new Set([
 const JOB_COLUMNS = `id, household_id, status, transcript_raw, transcript_normalized,
        candidate_command_json, confidence_json, requires_confirmation, error_code,
        source_channel, executed_transaction_id, spoken_prompt, turn_count, dialogue_turns,
-       created_at, completed_at`;
+       created_at, completed_at, session_id, turn_id`;
 
 const INTENT_TO_COMMAND: Record<string, string> = {
   ADD_INVENTORY: 'ADD_INVENTORY',
@@ -131,6 +146,11 @@ export class VoiceService {
     @Inject(FoodCategoryService) private readonly foodCategories: FoodCategoryService,
     @Inject(NotificationService) private readonly notifications: NotificationService,
     @Inject(MealPlanningService) private readonly meals: MealPlanningService,
+    @Optional()
+    @Inject(TurnCoordinatorService)
+    private readonly coordinator?: TurnCoordinatorService,
+    @Optional() @Inject(AgentRuntimeService) private readonly runtime?: AgentRuntimeService,
+    @Optional() @Inject(AgentToolExecutor) private readonly toolExecutor?: AgentToolExecutor,
   ) {}
 
   /**
@@ -152,6 +172,16 @@ export class VoiceService {
     const normalized = normalizeTranscript(input.transcript_text);
     const catalog = await this.loadCatalog(input.household_id);
     const parsed = parseTranscript(normalized, catalog);
+    const sessionId = input.session_id ?? randomUUID();
+    const turnId = input.turn_id ?? randomUUID();
+    const taskId = randomUUID();
+    const task = this.coordinator?.begin({
+      householdId: input.household_id,
+      memberId: membership.memberId,
+      taskId,
+      sessionId,
+      intent: parsed.intent,
+    });
     const outcome =
       parsed.intent === 'CREATE_REMINDER'
         ? await this.buildReminderOutcome(input.household_id, userId, input.transcript_text, parsed)
@@ -165,20 +195,54 @@ export class VoiceService {
           : parsed.intent === 'QUERY_SHOPPING_LIST'
             ? await this.buildShoppingListQueryOutcome(input.household_id, userId)
             : parsed.intent === 'REMOVE_SHOPPING_ITEM'
-              ? await this.buildUpdateShoppingItemStatusOutcome(input.household_id, userId, parsed, 'CANCELLED')
+              ? await this.buildUpdateShoppingItemStatusOutcome(
+                  input.household_id,
+                  userId,
+                  parsed,
+                  'CANCELLED',
+                )
               : parsed.intent === 'MARK_SHOPPING_PURCHASED'
-                ? await this.buildUpdateShoppingItemStatusOutcome(input.household_id, userId, parsed, 'PURCHASED')
+                ? await this.buildUpdateShoppingItemStatusOutcome(
+                    input.household_id,
+                    userId,
+                    parsed,
+                    'PURCHASED',
+                  )
                 : parsed.intent === 'MOVE_INVENTORY'
                   ? await this.buildMoveOutcome(input.household_id, userId, normalized, parsed)
                   : this.buildOutcome(parsed);
+    const superseded = Boolean(
+      task &&
+      this.coordinator?.getActive(input.household_id, membership.memberId)?.taskId !== taskId,
+    );
+    if (superseded) {
+      outcome.status = 'CANCELLED';
+      outcome.candidate = null;
+      outcome.errorCode = 'TASK_SUPERSEDED';
+      outcome.spokenPrompt = null;
+    }
     await this.applyRequestedStorageZone(input.household_id, normalized, outcome.candidate);
-    if (parsed.intent === 'QUERY_INVENTORY') {
-      outcome.spokenPrompt = await this.buildInventoryQueryPrompt(
-        input.household_id,
-        userId,
-        normalized,
-        parsed,
-      );
+    if (parsed.intent === 'QUERY_INVENTORY' && !superseded) {
+      const mealClarification = isMealDecisionRequest(normalized)
+        ? await this.meals.getMealContextClarification(input.household_id, userId, normalized)
+        : null;
+      if (mealClarification) {
+        outcome.status = 'AWAITING_CLARIFICATION';
+        outcome.candidate = {
+          command_type: 'MEAL_RECOMMENDATION',
+          payload: { request_text: input.transcript_text },
+        };
+        outcome.errorCode = null;
+        outcome.spokenPrompt = mealClarification;
+      } else {
+        outcome.spokenPrompt = await this.buildInventoryQueryPrompt(
+          input.household_id,
+          userId,
+          normalized,
+          parsed,
+          { taskId, signal: task ? this.coordinator?.getSignal(taskId) : undefined },
+        );
+      }
     }
     const firstTurn: DialogueTurn[] = [{ role: 'user', text: input.transcript_text, at: nowIso() }];
     if (outcome.spokenPrompt) {
@@ -187,13 +251,14 @@ export class VoiceService {
 
     const inserted = await this.pool.query<{ id: string }>(
       `insert into voice_jobs
-         (household_id, actor_member_id, status, locale, source_channel, input_mode,
+         (id, household_id, actor_member_id, status, locale, source_channel, input_mode,
           transcript_raw, transcript_normalized, candidate_command_json, confidence_json,
           requires_confirmation, error_code, client_request_id, spoken_prompt, turn_count,
-          dialogue_turns)
-       values ($1, $2, $3, $4, $5, 'TEXT', $6, $7, $8, $9, $10, $11, $12, $13, 1, $14)
+          dialogue_turns, session_id, turn_id)
+       values ($1, $2, $3, $4, $5, $6, 'TEXT', $7, $8, $9, $10, $11, $12, $13, $14, 1, $15, $16, $17)
        returning id`,
       [
+        taskId,
         input.household_id,
         membership.memberId,
         outcome.status,
@@ -203,15 +268,85 @@ export class VoiceService {
         normalized,
         outcome.candidate ? JSON.stringify(outcome.candidate) : null,
         JSON.stringify(parsed.confidence),
-        outcome.candidate !== null && outcome.candidate.command_type !== 'QUERY_INVENTORY',
+        outcome.candidate !== null &&
+          !['QUERY_INVENTORY', 'MEAL_RECOMMENDATION'].includes(outcome.candidate.command_type),
         outcome.errorCode,
         input.client_request_id ?? null,
         outcome.spokenPrompt,
         JSON.stringify(firstTurn),
+        sessionId,
+        turnId,
       ],
     );
     const row = inserted.rows[0];
     if (!row) throw new Error('voice job insert returned no row');
+    void this.runtime?.recordEvent({
+      householdId: input.household_id,
+      actorMemberId: membership.memberId,
+      sessionId: task?.sessionId,
+      turnId: task?.turnId,
+      taskId: row.id,
+      eventType: 'CORE_INTENT_RECOGNIZED',
+      intent: parsed.intent,
+      outcome: outcome.status,
+      metadata: {
+        requires_confirmation:
+          outcome.candidate !== null &&
+          !['QUERY_INVENTORY', 'MEAL_RECOMMENDATION'].includes(outcome.candidate.command_type),
+      },
+    });
+    void this.runtime?.recordEvent({
+      householdId: input.household_id,
+      actorMemberId: membership.memberId,
+      sessionId: task?.sessionId,
+      turnId: task?.turnId,
+      taskId: row.id,
+      eventType: 'TASK_CREATED',
+      intent: parsed.intent,
+      outcome: outcome.status,
+    });
+    if (
+      parsed.intent === 'QUERY_INVENTORY' &&
+      isMealDecisionRequest(normalized) &&
+      outcome.status === 'COMPLETED'
+    ) {
+      void this.runtime?.recordEvent({
+        householdId: input.household_id,
+        actorMemberId: membership.memberId,
+        sessionId: task?.sessionId,
+        turnId: task?.turnId,
+        taskId: row.id,
+        eventType: 'MEAL_PLAN_GENERATED',
+        intent: parsed.intent,
+        outcome: 'generated',
+      });
+    }
+    if (parsed.intent === 'ADD_SHOPPING_ITEM' && outcome.status === 'AWAITING_CONFIRMATION') {
+      void this.runtime?.recordEvent({
+        householdId: input.household_id,
+        actorMemberId: membership.memberId,
+        sessionId: task?.sessionId,
+        turnId: task?.turnId,
+        taskId: row.id,
+        eventType: 'SHOPPING_DRAFT_CREATED',
+        intent: parsed.intent,
+        outcome: 'awaiting_confirmation',
+      });
+    }
+    if (task && ['COMPLETED', 'FAILED'].includes(outcome.status)) {
+      this.coordinator?.complete(row.id, outcome.status === 'FAILED' ? 'FAILED' : 'COMPLETED');
+      void this.runtime?.recordEvent({
+        householdId: input.household_id,
+        actorMemberId: membership.memberId,
+        sessionId: task.sessionId,
+        turnId: task.turnId,
+        taskId: row.id,
+        eventType: outcome.status === 'FAILED' ? 'VOICE_FAILURE' : 'TASK_COMPLETED',
+        intent: parsed.intent,
+        outcome: outcome.status,
+        metadata: outcome.errorCode ? { error_code: outcome.errorCode } : undefined,
+      });
+    }
     return this.getJob(row.id, userId);
   }
 
@@ -272,7 +407,21 @@ export class VoiceService {
     }
 
     if (parsed.items.length === 0) {
-      const action = commandType === 'ADD_INVENTORY' ? '添加' : commandType === 'CONSUME_INVENTORY' ? '用掉' : '处理';
+      if (commandType === 'CONSUME_INVENTORY') {
+        return {
+          status: 'AWAITING_CLARIFICATION',
+          candidate: { command_type: commandType, payload: { items: [] } },
+          errorCode: null,
+          spokenPrompt:
+            '你想用掉哪种食材？先告诉我食材名称；如果你想让我按早餐、午餐或晚餐主动推荐，可以直接说“你来推荐”。',
+        };
+      }
+      const action =
+        commandType === 'ADD_INVENTORY'
+          ? '添加'
+          : commandType === 'CONSUME_INVENTORY'
+            ? '用掉'
+            : '处理';
       return {
         status: 'AWAITING_CLARIFICATION',
         candidate: { command_type: commandType, payload: { items: [] } },
@@ -352,7 +501,9 @@ export class VoiceService {
     const targetZone = target.rows[0];
     if (!targetZone) {
       return {
-        status: 'FAILED', candidate: null, errorCode: 'MOVE_TARGET_ZONE_MISSING',
+        status: 'FAILED',
+        candidate: null,
+        errorCode: 'MOVE_TARGET_ZONE_MISSING',
         spokenPrompt: '没有找到目标存放区域，请稍后在冰箱页面检查冷藏、冷冻和常温区。',
       };
     }
@@ -368,7 +519,9 @@ export class VoiceService {
     if (lots.rows.length === 0) {
       const names = parsed.items.map((item) => item.food_name).join('、');
       return {
-        status: 'COMPLETED', candidate: null, errorCode: null,
+        status: 'COMPLETED',
+        candidate: null,
+        errorCode: null,
         spokenPrompt: `${names}目前没有需要移动的在库批次。`,
       };
     }
@@ -405,7 +558,11 @@ export class VoiceService {
         status: 'AWAITING_CONFIRMATION',
         candidate: {
           command_type: 'MOVE_INVENTORY',
-          payload: { lot_ids: lots.rows.map((lot) => lot.id), target_storage_zone_id: targetZone.id, reason: 'USER_CHOICE' },
+          payload: {
+            lot_ids: lots.rows.map((lot) => lot.id),
+            target_storage_zone_id: targetZone.id,
+            reason: 'USER_CHOICE',
+          },
         },
         errorCode: null,
         spokenPrompt: `你是说，把${names}移到${targetZone.name}，对吗？`,
@@ -522,6 +679,7 @@ export class VoiceService {
         food_name?: string;
         reminder_text?: string;
         scheduled_for?: string;
+        request_text?: string;
       };
     } | null;
     errorCode: string | null;
@@ -630,6 +788,7 @@ export class VoiceService {
     userId: string,
     normalized: string,
     parsed: ParseResult,
+    options: { taskId?: string | undefined; signal?: AbortSignal | undefined } = {},
   ): Promise<string> {
     const recipe = await this.meals.findSuggestedRecipeForVoiceRequest(
       householdId,
@@ -640,17 +799,28 @@ export class VoiceService {
       if (recipe.missing.length === 0)
         return `做${recipe.name}需要的食材你都有了：${recipe.ingredients
           .filter((item) => !item.optional)
-          .map((item) => `${item.food_name}${item.quantity ?? ''}${item.unit_code ? unitSpokenLabel(item.unit_code) : ''}`)
+          .map(
+            (item) =>
+              `${item.food_name}${item.quantity ?? ''}${item.unit_code ? unitSpokenLabel(item.unit_code) : ''}`,
+          )
           .join('、')}。这是库存核对，不会自动扣减。`;
       const missing = recipe.missing.map(
-        (item) => `${item.food_name}${item.quantity ?? ''}${item.unit_code ? unitSpokenLabel(item.unit_code) : ''}`,
+        (item) =>
+          `${item.food_name}${item.quantity ?? ''}${item.unit_code ? unitSpokenLabel(item.unit_code) : ''}`,
       );
       const available = recipe.ingredients
         .filter((item) => !item.optional && item.available)
         .map((item) => item.food_name);
       return `做${recipe.name}还缺：${missing.join('、')}。${available.length ? `现有${available.join('、')}。` : ''}如果需要，我可以在你明确说“加入购物清单”后再为你创建待购项。`;
     }
-    const inventory = await this.queries.getInventoryView(householdId, userId);
+    const inventory =
+      options.taskId && this.toolExecutor
+        ? await this.toolExecutor.execute(
+            'inventory.read',
+            { taskId: options.taskId, signal: options.signal },
+            () => this.queries.getInventoryView(householdId, userId),
+          )
+        : await this.queries.getInventoryView(householdId, userId);
     const selectedZones = selectInventoryZones(inventory.zones, normalized);
     const requestedZone = selectedZones.length === 1 ? selectedZones[0] : null;
     let items = selectedZones.flatMap((zone) => zone.items);
@@ -687,7 +857,13 @@ export class VoiceService {
     }
 
     if (asksMealIdea) {
-      return this.meals.buildVoiceMealRecommendation(householdId, userId, normalized, items);
+      return this.meals.buildVoiceMealRecommendation(
+        householdId,
+        userId,
+        normalized,
+        items,
+        options,
+      );
     }
 
     const descriptions = items
@@ -738,6 +914,8 @@ export class VoiceService {
       spoken_prompt: job.spoken_prompt,
       turn_count: job.turn_count,
       dialogue_turns: job.dialogue_turns,
+      session_id: job.session_id,
+      turn_id: job.turn_id,
       created_at: job.created_at.toISOString(),
       completed_at: job.completed_at?.toISOString() ?? null,
     };
@@ -770,6 +948,27 @@ export class VoiceService {
     if (!REPLIABLE_STATUSES.has(job.status)) {
       throw new DomainError('CONFLICT', 'VOICE_JOB_NOT_REPLIABLE', `Voice job is ${job.status}.`);
     }
+    if (input.turn_id) {
+      await this.pool.query(`update voice_jobs set turn_id=$2 where id=$1`, [
+        job.id,
+        input.turn_id,
+      ]);
+    }
+    const originalRequest =
+      job.transcript_raw?.trim() ?? job.dialogue_turns.find((turn) => turn.role === 'user')?.text ?? '';
+    const combinedMealRequest = `${originalRequest}，${input.text}`;
+    // 用户在未完成的库存槽位里说“我不知道，你推荐/你来安排”时，
+    // 这不是数量不清楚，而是主动把任务切换为餐食决策；清掉旧候选，保留原场景上下文。
+    if (
+      job.candidate_command_json?.command_type !== 'MEAL_RECOMMENDATION' &&
+      isRecommendationModeSwitch(input.text) &&
+      isMealDecisionRequest(combinedMealRequest)
+    ) {
+      return this.replaceWithMealRecommendation(job, userId, combinedMealRequest, input.turn_id);
+    }
+    if (job.candidate_command_json?.command_type === 'MEAL_RECOMMENDATION') {
+      return this.advanceMealContext(job, userId, input.text, input.turn_id);
+    }
     const catalog = await this.loadCatalog(job.household_id);
     const replacement = parseTranscript(normalizeTranscript(input.text), catalog);
     if (READ_ONLY_QUERY_INTENTS.has(replacement.intent)) {
@@ -800,6 +999,48 @@ export class VoiceService {
       return this.advanceClarification(job, userId, input.text, catalog, turns);
     }
     return this.advanceConfirmation(job, userId, input.text, catalog, turns);
+  }
+
+  private async advanceMealContext(
+    job: VoiceJobRow,
+    userId: string,
+    replyText: string,
+    turnId?: string,
+  ) {
+    const original = job.candidate_command_json?.payload?.request_text?.trim();
+    if (!original) {
+      throw new DomainError('CONFLICT', 'VOICE_JOB_INVALID_CANDIDATE', '餐食上下文缺少原始请求。');
+    }
+    return this.replaceWithMealRecommendation(
+      job,
+      userId,
+      `${original}，${replyText}`,
+      turnId,
+    );
+  }
+
+  private async replaceWithMealRecommendation(
+    job: VoiceJobRow,
+    userId: string,
+    requestText: string,
+    turnId?: string,
+  ) {
+    await this.pool.query(
+      `update voice_jobs
+          set status='CANCELLED', completed_at=now(), error_code='MEAL_CONTEXT_REPLACED'
+        where id=$1`,
+      [job.id],
+    );
+    this.coordinator?.cancel(job.id);
+    const payload = {
+      household_id: job.household_id,
+      transcript_text: requestText,
+      locale: 'zh',
+      channel: ChannelSchema.parse(job.source_channel),
+      ...(job.session_id ? { session_id: job.session_id } : {}),
+      ...(turnId ? { turn_id: turnId } : {}),
+    } satisfies z.infer<typeof CreateTextVoiceJobSchema>;
+    return this.createTextJob(userId, payload);
   }
 
   private async advanceReminder(
@@ -968,7 +1209,11 @@ export class VoiceService {
       }
     }
 
-    await this.applyRequestedStorageZone(job.household_id, normalizeTranscript(replyText), candidate);
+    await this.applyRequestedStorageZone(
+      job.household_id,
+      normalizeTranscript(replyText),
+      candidate,
+    );
 
     if (!filled || !candidate?.command_type) {
       // 没听清数量，继续追问
@@ -1029,7 +1274,11 @@ export class VoiceService {
     const candidate = job.candidate_command_json;
     const interp = interpretReply(replyText, catalog);
 
-    await this.applyRequestedStorageZone(job.household_id, normalizeTranscript(replyText), candidate);
+    await this.applyRequestedStorageZone(
+      job.household_id,
+      normalizeTranscript(replyText),
+      candidate,
+    );
 
     if (interp.kind === 'REJECT') {
       turns.push({ role: 'system', text: CANCELLED_PROMPT, at: nowIso() });
@@ -1120,12 +1369,20 @@ export class VoiceService {
       if (!item) {
         throw new DomainError('CONFLICT', 'VOICE_JOB_INVALID_CANDIDATE', '购物清单候选缺少食材。');
       }
-      const result = await this.meals.addShoppingItem(job.household_id, userId, {
-        food_id: item.food_id,
-        ...(item.quantity_explicit ? { quantity: item.quantity, unit_code: item.unit } : {}),
-        source: 'VOICE',
-        idempotency_key: `voice-${job.id}`,
-      });
+      const runShoppingConfirm = () =>
+        this.meals.addShoppingItem(job.household_id, userId, {
+          food_id: item.food_id,
+          ...(item.quantity_explicit ? { quantity: item.quantity, unit_code: item.unit } : {}),
+          source: 'VOICE',
+          idempotency_key: `voice-${job.id}`,
+        });
+      const result = this.toolExecutor
+        ? await this.toolExecutor.execute(
+            'shopping.confirm',
+            { taskId: job.id },
+            runShoppingConfirm,
+          )
+        : await runShoppingConfirm();
       const spoken = '好的，已经加入购物清单。这里只记录待购事项，不会自动下单。';
       const finalTurns = turns
         ? [...turns, { role: 'system' as const, text: spoken, at: nowIso() }]
@@ -1134,6 +1391,16 @@ export class VoiceService {
         `update voice_jobs set status='COMPLETED',completed_at=now(),spoken_prompt=$2,dialogue_turns=coalesce($3,dialogue_turns),turn_count=turn_count+case when $3 is null then 0 else 1 end where id=$1`,
         [job.id, spoken, finalTurns ? JSON.stringify(finalTurns) : null],
       );
+      void this.runtime?.recordEvent({
+        householdId: job.household_id,
+        sessionId: job.session_id,
+        turnId: job.turn_id,
+        taskId: job.id,
+        eventType: 'SHOPPING_CONFIRMED',
+        intent: 'ADD_SHOPPING_ITEM',
+        outcome: 'completed',
+      });
+      this.coordinator?.complete(job.id, 'COMPLETED');
       return result;
     }
     if (rawCommandType === 'CREATE_REMINDER' || rawCommandType === 'UPDATE_REMINDER') {
@@ -1216,10 +1483,64 @@ export class VoiceService {
       throw new DomainError('CONFLICT', 'VOICE_JOB_ALREADY_EXECUTED', 'Job already executed.');
     }
     await this.pool.query(
-      `update voice_jobs set status = 'CANCELLED', completed_at = now() where id = $1`,
+      `update voice_jobs
+          set status = 'CANCELLED', cancel_requested_at = now(), completed_at = now()
+        where id = $1 and status not in ('COMPLETED','CANCELLED')`,
       [jobId],
     );
+    void this.runtime?.recordEvent({
+      householdId: job.household_id,
+      sessionId: job.session_id,
+      turnId: job.turn_id,
+      taskId: job.id,
+      eventType: 'TASK_CANCELLED',
+      outcome: 'cancelled',
+    });
+    this.coordinator?.cancel(job.id);
     return { voice_job_id: jobId, status: 'CANCELLED' };
+  }
+
+  async recordMealFeedback(
+    jobId: string,
+    userId: string,
+    input: z.infer<typeof MealFeedbackSchema>,
+  ) {
+    const job = await this.loadJobRow(jobId);
+    await this.membership.assertMembership(job.household_id, userId);
+    if (job.status !== 'COMPLETED') {
+      throw new DomainError(
+        'CONFLICT',
+        'MEAL_PLAN_NOT_COMPLETE',
+        '餐食方案尚未完成，暂时不能记录反馈。',
+      );
+    }
+    if (!job.transcript_normalized || !isMealDecisionRequest(job.transcript_normalized)) {
+      throw new DomainError(
+        'CONFLICT',
+        'NOT_MEAL_PLAN',
+        '这条任务不是餐食方案，不能记录餐食反馈。',
+      );
+    }
+    const eventType =
+      input.outcome === 'ACCEPTED'
+        ? 'MEAL_PLAN_ACCEPTED'
+        : input.outcome === 'MODIFIED'
+          ? 'MEAL_PLAN_MODIFIED'
+          : 'MEAL_PLAN_REJECTED';
+    await this.runtime?.recordEvent({
+      householdId: job.household_id,
+      sessionId: job.session_id,
+      turnId: job.turn_id,
+      taskId: job.id,
+      eventType,
+      intent: 'MEAL_RECOMMENDATION',
+      outcome: input.outcome.toLowerCase(),
+      metadata: {
+        step: 'meal_feedback',
+        ...(input.note ? { note: input.note } : {}),
+      },
+    });
+    return { voice_job_id: job.id, outcome: input.outcome };
   }
 
   private async loadJobRow(jobId: string): Promise<VoiceJobRow> {
@@ -1294,8 +1615,15 @@ export function selectInventoryZones(
 
 /** 只有确实需要组合、权衡和个性化的餐食请求才进入大模型 Agent。 */
 export function isMealDecisionRequest(normalized: string): boolean {
-  return /(?:今天|今晚|中午).*(?:吃什么|做什么菜|做点什么)|(?:早餐|早饭|午餐|中饭|晚餐|晚饭|夜宵|宵夜|家庭餐|家庭晚餐|全家|一个人|聚会).*(?:推荐|吃什么|有什么|做什么|怎么搭配|简单|快手|食谱|菜谱|几道菜)|(?:下午茶|加餐|小点心|点心|零食).*(?:推荐|吃什么|有什么|做什么|怎么搭配|简单|食谱|菜谱)|(?:能做|可以做|吃什么|怎么吃|美食|菜谱|食谱|减脂餐)|(?:减脂|减肥|少油|少盐|清淡|低脂)/.test(
+  return /(?:今天|明天|后天|今晚|中午|晚上|下午|早上).*(?:吃什么|做什么菜|做点什么|推荐|搭配|菜单|餐食|菜品)|(?:推荐|搭配|安排|菜单).*(?:今天|明天|后天|今晚|中午|晚上|下午|早上).*(?:菜|餐|食谱|吃)|(?:早餐|早饭|午餐|中饭|晚餐|晚饭|夜宵|宵夜|家庭餐|家庭晚餐|全家|一个人|多人|几个人|聚会|一起吃).*(?:推荐|吃什么|有什么|做什么|怎么搭配|搭配|菜单|餐食|菜品|简单|快手|食谱|菜谱|几道菜|吃|用餐|安排|准备)|(?:明天|后天|今天|今晚|早上|中午|晚上)?(?:早餐|早饭|午餐|中饭|晚餐|晚饭|下午茶|加餐|夜宵|宵夜|家庭餐|家庭晚餐|聚会).{0,24}(?:吃|用餐|两个人|三个人|四个人|五个人|六个人|[一二两三四五六七八九十\d]+(?:个)?(?:人|位|口)|安排|准备)|(?:下午茶|加餐|小点心|点心|零食).*(?:推荐|吃什么|有什么|做什么|怎么搭配|搭配|简单|食谱|菜谱)|(?:想吃|想要吃|吃什么|做什么).{0,30}(?:你来推荐|帮我推荐|你推荐|推荐一下|你安排|随便安排|帮我选)|(?:能做|可以做|吃什么|怎么吃|美食|菜谱|食谱|减脂餐|菜单|餐食|菜品)|(?:这个)?(?:搭配|菜单|方案).*(?:不合理|不够|调整|修改)|(?:不合理|不够).*(?:调味料|食材|吃|人份|菜|餐|搭配)|(?:减脂|减肥|少油|少盐|清淡|低脂).*(?:餐|菜|食谱|搭配|做法)?/.test(
     normalized,
+  );
+}
+
+/** 用户明确放弃自己选择、要求小知接管推荐时的模式切换信号。 */
+export function isRecommendationModeSwitch(normalized: string): boolean {
+  return /我(?:也)?不知道|你来(?:帮我)?推荐|你推荐(?:一下)?|推荐一下|你来安排|随便(?:你|安排)?|你决定|帮我选|不用我决定/.test(
+    normalized.replace(/[\s，。！？、,.!?：:；;]/g, ''),
   );
 }
 
@@ -1469,7 +1797,9 @@ function applyCorrection(
           display_text: ci.food_name,
           quantity: ci.quantity_explicit === false ? previous.quantity : ci.quantity,
           unit: ci.quantity_explicit === false ? previous.unit : ci.unit,
-          ...(ci.quantity_explicit === undefined ? {} : { quantity_explicit: ci.quantity_explicit }),
+          ...(ci.quantity_explicit === undefined
+            ? {}
+            : { quantity_explicit: ci.quantity_explicit }),
         };
       } else {
         items.push({
@@ -1477,7 +1807,9 @@ function applyCorrection(
           display_text: ci.food_name,
           quantity: ci.quantity,
           unit: ci.unit,
-          ...(ci.quantity_explicit === undefined ? {} : { quantity_explicit: ci.quantity_explicit }),
+          ...(ci.quantity_explicit === undefined
+            ? {}
+            : { quantity_explicit: ci.quantity_explicit }),
         });
       }
     }

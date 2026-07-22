@@ -34,67 +34,19 @@ const QUICK_EXPIRY_DAYS = [2, 3, 5, 7, 10, 14];
  * 面向家庭采购的入口，采用《中国居民膳食指南》常用的食物大类；
  * 仅用于展示和筛选，数据库仍以完整分类树为唯一事实来源。
  */
-const FOOD_ENTRY_GROUPS: Array<{
-  label: string;
-  codes: string[];
-  keywords: string[];
-}> = [
-  {
-    label: '蔬菜',
-    codes: ['VEGETABLE'],
-    keywords: ['菜', '瓜', '笋', '藕', '韭', '萝卜', '薯', '山药', '葱', '椒', '蒜', '香菜', '茄子', '土豆'],
-  },
-  {
-    label: '水果',
-    codes: ['FRUIT'],
-    keywords: ['苹果', '蕉', '桃', '葡萄', '芒果', '梨', '瓜', '莓', '柠檬', '柚', '橘', '橙', '柿', '西瓜'],
-  },
-  {
-    label: '肉禽蛋',
-    codes: ['MEAT', 'POULTRY', 'EGG', 'PROCESSED_MEAT', 'EGG_DAIRY'],
-    keywords: ['肉', '鸡', '鸭', '鹅', '牛', '羊', '猪', '排骨', '排', '翅', '腿', '蛋', '培根', '香肠', '火腿'],
-  },
-  {
-    label: '水产海鲜',
-    codes: ['AQUATIC', 'FISH', 'SEAFOOD', 'CRUSTACEAN', 'MOLLUSK'],
-    keywords: ['鱼', '虾', '蟹', '贝', '蛤', '鱿', '海鲜', '甲壳'],
-  },
-  {
-    label: '奶类乳品',
-    codes: ['DAIRY', 'MILK', 'EGG_DAIRY'],
-    keywords: ['奶', '乳', '酪', '黄油', '奶油'],
-  },
-  {
-    label: '主食杂粮',
-    codes: ['GRAIN_STAPLE', 'STAPLE', 'GRAIN'],
-    keywords: ['米', '面', '馒头', '包子', '饺子', '水饺', '燕麦', '玉米', '意面', '饼', '粉'],
-  },
-  {
-    label: '豆制品坚果',
-    codes: ['LEGUME_SOY', 'LEGUME', 'HEALTHY_FAT'],
-    keywords: ['豆', '腐', '核桃', '花生', '腰果', '杏仁', '坚果'],
-  },
-  {
-    label: '菌菇海藻',
-    codes: ['FUNGI', 'MUSHROOM'],
-    keywords: ['菇', '菌', '木耳', '耳', '海带', '紫菜', '裙带菜'],
-  },
-  {
-    label: '调味料',
-    codes: ['SEASONING'],
-    keywords: ['抽', '油', '醋', '酒', '盐', '糖', '酱', '粉', '精', '花椒', '八角', '调味'],
-  },
-  {
-    label: '饮品',
-    codes: ['BEVERAGE', 'WINE_BEVERAGE'],
-    keywords: ['水', '酒', '茶', '可乐', '咖啡', '汁', '饮', '汽水', '红酒'],
-  },
-  {
-    label: '即食加工',
-    codes: ['PROCESSED_FOOD', 'PROCESSED_MEAT'],
-    keywords: ['面', '肠', '三明治', '罐头', '汤圆', '烧麦', '加工', '即食', '香肠'],
-  },
-];
+const FOOD_ENTRY_GROUPS = [
+  { label: '蔬菜', codes: ['VEGETABLE'] },
+  { label: '水果', codes: ['FRUIT'] },
+  { label: '肉禽蛋', codes: ['MEAT', 'POULTRY', 'EGG', 'PROCESSED_MEAT', 'EGG_DAIRY'] },
+  { label: '水产海鲜', codes: ['AQUATIC', 'FISH', 'SEAFOOD', 'CRUSTACEAN', 'MOLLUSK'] },
+  { label: '奶类乳品', codes: ['DAIRY', 'MILK'] },
+  { label: '主食杂粮', codes: ['GRAIN_STAPLE', 'STAPLE', 'GRAIN'] },
+  { label: '豆制品坚果', codes: ['LEGUME_SOY', 'LEGUME', 'HEALTHY_FAT'] },
+  { label: '菌菇海藻', codes: ['FUNGI', 'MUSHROOM'] },
+  { label: '调味料', codes: ['SEASONING'] },
+  { label: '饮品', codes: ['BEVERAGE', 'WINE_BEVERAGE'] },
+  { label: '即食加工', codes: ['PROCESSED_FOOD'] },
+] as const;
 
 function dateAfterDays(days: number): string {
   const date = new Date();
@@ -174,11 +126,10 @@ export function ActionModal({
     return foods.filter((food) => {
       let code: string | null | undefined = food.category_code;
       while (code) {
-        if (group.codes.includes(code)) return true;
+        if ((group.codes as readonly string[]).includes(code)) return true;
         code = categoryByCode.get(code)?.parent_code;
       }
-      const fullName = (food.canonical_name + (food.category_path?.join('') ?? '')).toLowerCase();
-      return group.keywords.some((kw) => fullName.includes(kw.toLowerCase()));
+      return false;
     });
   }, [categoryByCode, foods, selectedGroup]);
 

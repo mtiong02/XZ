@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { InventoryView } from '@xz/contracts';
 import { ActionModal, type ActionKind } from '../../components/action-modal';
 import { ConversationModal } from '../../components/conversation-modal';
+import { FeedbackModal } from '../../components/feedback-modal';
 import { AppHeader } from '../../components/app-header';
 import {
   fetchDailyBriefing,
@@ -71,6 +72,7 @@ export default function FridgePage() {
   const [error, setError] = useState<string | null>(null);
   const [action, setAction] = useState<ActionKind | null>(null);
   const [voiceOpen, setVoiceOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [reminders, setReminders] = useState<ReminderTaskView[]>([]);
   const [briefing, setBriefing] = useState<DailyBriefing | null>(null);
   const [storageAudit, setStorageAudit] = useState<StorageAuditItem[]>([]);
@@ -322,14 +324,25 @@ export default function FridgePage() {
             if (!event.currentTarget.contains(event.relatedTarget)) setHighlightPaused(false);
           }}
         >
-          <Image
-            className="fridge-greeting-mascot"
-            src="/mascot/xiaozhi.png"
-            width={132}
-            height={132}
-            priority
-            alt="小知"
-          />
+          <div className="fridge-mascot-wrapper">
+            <Image
+              className="fridge-greeting-mascot"
+              src="/mascot/xiaozhi.png"
+              width={132}
+              height={132}
+              priority
+              alt="小知"
+            />
+            <button
+              type="button"
+              className="beta-feedback-badge"
+              onClick={() => setFeedbackOpen(true)}
+              title="提出内测反馈与建议"
+            >
+              <span className="pulse-dot" />
+              <span>💬 内测反馈</span>
+            </button>
+          </div>
           <div className="fridge-highlight-stage">
             <div className="fridge-highlight-copy" key={activeHighlight.id}>
               <span>{activeHighlight.kicker}</span>
@@ -574,6 +587,13 @@ export default function FridgePage() {
         }
         scheduledReminders={scheduledVoiceReminders}
       />
+
+      {feedbackOpen ? (
+        <FeedbackModal
+          householdId={household.id}
+          onClose={() => setFeedbackOpen(false)}
+        />
+      ) : null}
     </>
   );
 }

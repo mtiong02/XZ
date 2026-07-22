@@ -64,15 +64,33 @@ const GROUP_ORDER: NutritionGroupCode[] = [
  */
 export function nutritionGroupForCategory(categoryCode: string): NutritionGroupCode {
   const code = categoryCode.toUpperCase();
-  if (['PORK', 'BEEF', 'LAMB', 'POULTRY', 'OTHER_POULTRY', 'GAME_MEAT', 'EGG'].includes(code))
+  if (
+    ['PORK', 'BEEF', 'LAMB', 'MEAT', 'POULTRY', 'OTHER_POULTRY', 'GAME_MEAT', 'EGG', 'PROCESSED_MEAT', 'EGG_DAIRY'].includes(
+      code,
+    )
+  )
     return 'PROTEIN';
-  if (['FISH', 'CRAB', 'SHRIMP', 'CEPHALOPOD', 'BIVALVE'].includes(code)) return 'SEAFOOD';
+  if (
+    ['FISH', 'CRAB', 'SHRIMP', 'CEPHALOPOD', 'BIVALVE', 'AQUATIC', 'SEAFOOD', 'CRUSTACEAN', 'MOLLUSK'].includes(
+      code,
+    )
+  )
+    return 'SEAFOOD';
   if (
     ['DAIRY', 'LIQUID_DAIRY', 'FERMENTED_DAIRY', 'CHEESE', 'MILK_PRODUCT'].includes(code)
   )
     return 'DAIRY';
-  if (code === 'LEGUME' || code === 'SOY_PRODUCT' || code === 'SOY') return 'LEGUME';
-  if (code === 'NUT_SEED' || code === 'TREE_NUT' || code === 'PEANUT' || code === 'OIL_FAT')
+  if (
+    code === 'LEGUME' ||
+    code === 'LEGUME_SOY' ||
+    code === 'SOY_PRODUCT' ||
+    code === 'SOY' ||
+    code.includes('LEGUME') ||
+    code.includes('SOY') ||
+    code.includes('BEAN')
+  )
+    return 'LEGUME';
+  if (code === 'NUT_SEED' || code === 'TREE_NUT' || code === 'PEANUT' || code === 'OIL_FAT' || code === 'HEALTHY_FAT')
     return 'HEALTHY_FAT';
   if (
     code === 'FRUIT' ||
@@ -87,7 +105,7 @@ export function nutritionGroupForCategory(categoryCode: string): NutritionGroupC
   )
     return 'VEGETABLE';
   if (
-    ['GRAIN_STAPLE', 'CORN_GRAIN', 'COARSE_GRAIN', 'TUBER_STAPLE', 'ROOT_TUBER', 'RICE'].includes(
+    ['GRAIN_STAPLE', 'STAPLE', 'GRAIN', 'CORN_GRAIN', 'COARSE_GRAIN', 'TUBER_STAPLE', 'ROOT_TUBER', 'RICE'].includes(
       code,
     )
   )

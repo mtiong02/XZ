@@ -10,9 +10,9 @@ describe('buildAfternoonTeaRecommendation', () => {
     expect(
       buildAfternoonTeaRecommendation([{ name: '酸奶' }, { name: '苹果' }, { name: '西瓜' }]),
     ).toContain('苹果酸奶杯');
-    expect(
-      buildAfternoonTeaRecommendation([{ name: '酸奶' }, { name: '苹果' }]),
-    ).toContain('不会自动扣减库存');
+    expect(buildAfternoonTeaRecommendation([{ name: '酸奶' }, { name: '苹果' }])).toContain(
+      '不会自动扣减库存',
+    );
   });
 
   it('does not suggest raw meat as an afternoon snack', () => {
@@ -23,7 +23,11 @@ describe('buildAfternoonTeaRecommendation', () => {
 
   it('understands occasion, diners and meal preferences before choosing a recipe', () => {
     expect(parseMealContext('今晚四个人家庭晚餐，简单一点，想吃减脂餐')).toMatchObject({
-      occasion: 'DINNER', dinerCount: 4, diningMode: 'FAMILY', wantsQuick: true, weightConscious: true,
+      occasion: 'DINNER',
+      dinerCount: 4,
+      diningMode: 'FAMILY',
+      wantsQuick: true,
+      weightConscious: true,
     });
     expect(
       buildMealContextRecommendation(
@@ -33,6 +37,14 @@ describe('buildAfternoonTeaRecommendation', () => {
         3,
       ),
     ).toContain('约2.0倍备料');
+  });
+
+  it('keeps tomorrow breakfast and diner count as temporary task context', () => {
+    expect(parseMealContext('明天早餐，两个人')).toMatchObject({
+      occasion: 'BREAKFAST',
+      dateReference: 'TOMORROW',
+      dinerCount: 2,
+    });
   });
 
   it('offers a multi-dish menu for a gathering instead of collapsing to one recipe', () => {
@@ -49,5 +61,20 @@ describe('buildAfternoonTeaRecommendation', () => {
     expect(answer).toContain('3道菜');
     expect(answer).toContain('清蒸鲈鱼、牛肉炖土豆、鸡蛋羹');
     expect(answer).toContain('6人');
+  });
+
+  it('recognizes natural spoken group dining without an explicit dinner word', () => {
+    expect(parseMealContext('今天下午要跟五个人一起吃吃有什么推荐的菜')).toMatchObject({
+      dinerCount: 5,
+      diningMode: 'GATHERING',
+    });
+    expect(parseMealContext('搭配一下今天晚上的菜')).toMatchObject({ occasion: 'DINNER' });
+  });
+
+  it('keeps a solo diner as temporary request context', () => {
+    expect(parseMealContext('今天只有我一个人吃')).toMatchObject({
+      dinerCount: 1,
+      diningMode: 'SOLO',
+    });
   });
 });
