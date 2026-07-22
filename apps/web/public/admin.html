@@ -452,6 +452,7 @@
   <div class="tabs">
     <div class="tab active" data-tab="conversations" onclick="switchTab('conversations')">对话日志</div>
     <div class="tab" data-tab="stats" onclick="switchTab('stats')">统计分析</div>
+    <div class="tab" data-tab="user-analytics" onclick="switchTab('user-analytics')">用户分析与时长</div>
     <div class="tab" data-tab="feedbacks" onclick="switchTab('feedbacks')">内测反馈</div>
     <div class="tab" data-tab="runtime" onclick="switchTab('runtime')">实时性能</div>
     <div class="tab" data-tab="insights" onclick="switchTab('insights')">优化洞察</div>
@@ -488,6 +489,56 @@
           <tr><th>用户名</th><th>对话次数</th><th>最近活跃</th></tr>
         </thead>
         <tbody id="households-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- User Analytics Tab -->
+  <div id="user-analytics-tab" class="content" style="display:none">
+    <div class="insight-intro">
+      <div>
+        <div class="eyebrow">USER ANALYTICS · BETA DASHBOARD</div>
+        <h2>内测用户分析与使用时长追踪</h2>
+        <p>追踪内测用户的具体账号信息、登录成员、累计使用时长、单次会话时长分布及活跃天数，帮助深入分析用户黏性与留存。</p>
+      </div>
+      <div class="insight-scope">
+        <label for="analytics-days">范围</label>
+        <select id="analytics-days" onchange="loadUserAnalytics()">
+          <option value="7">近 7 天</option>
+          <option value="30" selected>近 30 天</option>
+          <option value="90">近 90 天</option>
+        </select>
+        <button onclick="loadUserAnalytics()">🔄 刷新数据</button>
+      </div>
+    </div>
+
+    <div class="stats-grid" id="analytics-stats-grid">
+      <div class="loading">正在加载统计数据…</div>
+    </div>
+
+    <h3 style="margin-bottom:14px;font-size:15px;">⏱️ 单次会话连贯时长分布</h3>
+    <div id="duration-distribution-bar" style="margin-bottom:28px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 22px;">
+      <div class="loading">加载中…</div>
+    </div>
+
+    <h3 style="margin-bottom:14px;font-size:15px;">👥 内测用户与家庭明细</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>家庭/用户名</th>
+            <th>账号/成员信息</th>
+            <th style="width:120px;">注册时间</th>
+            <th style="width:120px;">累计使用时长</th>
+            <th style="width:90px;">会话数</th>
+            <th style="width:90px;">活跃天数</th>
+            <th style="width:130px;">最近活跃</th>
+            <th style="width:100px;">操作</th>
+          </tr>
+        </thead>
+        <tbody id="user-analytics-body">
+          <tr><td colspan="8" class="loading">加载中…</td></tr>
+        </tbody>
       </table>
     </div>
   </div>
@@ -579,6 +630,19 @@
   </div>
 </div>
 
+<!-- User Detail Modal Overlay -->
+<div id="user-detail-modal-overlay" class="modal-overlay">
+  <div class="modal" style="max-width:780px;">
+    <div class="modal-header">
+      <div class="modal-title" id="user-modal-title">用户详细画像与历史履历</div>
+      <button class="modal-close" onclick="closeUserDetailModal()">✕</button>
+    </div>
+    <div id="user-modal-content">
+      <div class="loading">加载用户详情…</div>
+    </div>
+  </div>
+</div>
+
 
 
 <script>
@@ -616,10 +680,12 @@ function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   document.getElementById('conversations-tab').style.display = name === 'conversations' ? 'block' : 'none';
   document.getElementById('stats-tab').style.display = name === 'stats' ? 'block' : 'none';
+  document.getElementById('user-analytics-tab').style.display = name === 'user-analytics' ? 'block' : 'none';
   document.getElementById('feedbacks-tab').style.display = name === 'feedbacks' ? 'block' : 'none';
   document.getElementById('runtime-tab').style.display = name === 'runtime' ? 'block' : 'none';
   document.getElementById('insights-tab').style.display = name === 'insights' ? 'block' : 'none';
   if (name === 'stats') loadStats();
+  if (name === 'user-analytics') loadUserAnalytics();
   if (name === 'feedbacks') loadFeedbacks();
   if (name === 'runtime') loadRuntimeMetrics();
   if (name === 'insights') loadInsights();
@@ -755,18 +821,18 @@ function loadStats() {
   fetch(`${API_BASE}/admin/stats`, { headers: { 'x-admin-token': adminToken } })
     .then(r => r.json())
     .then(data => {
-      const s = data.summary;
+      const s = data.summary || {};
       const successRate = s.total_jobs > 0 ? ((s.completed / s.total_jobs) * 100).toFixed(1) : '0.0';
       document.getElementById('stats-grid').innerHTML = `
-        <div class="stat-card accent"><div class="label">总对话次数 (30天)</div><div class="value">${s.total_jobs}</div></div>
-        <div class="stat-card green"><div class="label">成功完成</div><div class="value">${s.completed}</div></div>
+        <div class="stat-card green"><div class="label">已注册家庭数</div><div class="value">${s.total_registered_households || 0}</div></div>
+        <div class="stat-card green"><div class="label">已注册成员账号</div><div class="value">${s.total_registered_users || s.total_registered_members || 0}</div></div>
+        <div class="stat-card accent"><div class="label">总对话次数 (30天)</div><div class="value">${s.total_jobs || 0}</div></div>
         <div class="stat-card green"><div class="label">成功率</div><div class="value">${successRate}%</div></div>
-        <div class="stat-card danger"><div class="label">未识别 (AMBIGUOUS)</div><div class="value">${s.ambiguous}</div></div>
-        <div class="stat-card warn"><div class="label">平均对话轮次</div><div class="value">${s.avg_turns}</div></div>
-        <div class="stat-card accent"><div class="label">活跃用户数</div><div class="value">${s.unique_users}</div></div>
+        <div class="stat-card danger"><div class="label">未识别 (AMBIGUOUS)</div><div class="value">${s.ambiguous || 0}</div></div>
+        <div class="stat-card warn"><div class="label">平均对话轮次</div><div class="value">${s.avg_turns || 0}</div></div>
       `;
 
-      document.getElementById('ambiguous-list').innerHTML = data.top_ambiguous_phrases.length
+      document.getElementById('ambiguous-list').innerHTML = data.top_ambiguous_phrases && data.top_ambiguous_phrases.length
         ? data.top_ambiguous_phrases.map(p => `
           <div class="ambiguous-item">
             <div class="phrase">"${p.transcript_raw}"</div>
@@ -775,13 +841,15 @@ function loadStats() {
         `).join('')
         : '<div style="color:var(--muted);padding:16px;">暂无未识别短语，表现良好 🎉</div>';
 
-      document.getElementById('households-body').innerHTML = data.active_households.map(h => `
-        <tr>
-          <td>${h.display_name || '未命名'}</td>
-          <td>${h.job_count}</td>
-          <td style="color:var(--muted)">${fmtTime(h.last_active)}</td>
-        </tr>
-      `).join('');
+      document.getElementById('households-body').innerHTML = data.active_households && data.active_households.length
+        ? data.active_households.map(h => `
+          <tr>
+            <td>${escHtml(h.display_name || h.household_name || '未命名')}</td>
+            <td>${h.job_count} 次</td>
+            <td style="color:var(--muted)">${fmtTime(h.last_active)}</td>
+          </tr>
+        `).join('')
+        : '<tr><td colspan="3" style="text-align:center;padding:16px;color:var(--muted)">暂无注册用户记录</td></tr>';
     });
 }
 
@@ -887,6 +955,188 @@ function toggleFeedbackStatus(id, newStatus) {
     .then(r => r.json())
     .then(() => loadFeedbacks())
     .catch(() => alert('状态更新失败'));
+}
+
+function loadUserAnalytics() {
+  const days = document.getElementById('analytics-days').value;
+  const grid = document.getElementById('analytics-stats-grid');
+  const distBox = document.getElementById('duration-distribution-bar');
+  const tbody = document.getElementById('user-analytics-body');
+
+  grid.innerHTML = '<div class="loading">正在加载统计数据…</div>';
+  tbody.innerHTML = '<tr><td colspan="8" class="loading">加载中…</td></tr>';
+
+  fetch(`${API_BASE}/admin/user-analytics?days=${encodeURIComponent(days)}`, {
+    headers: { 'x-admin-token': adminToken }
+  })
+    .then(r => r.json())
+    .then(data => {
+      const s = data.summary || {};
+      grid.innerHTML = `
+        <div class="stat-card accent"><div class="label">内测家庭数</div><div class="value">${s.total_households || 0}</div></div>
+        <div class="stat-card green"><div class="label">注册成员数</div><div class="value">${s.total_members || 0}</div></div>
+        <div class="stat-card accent"><div class="label">累计使用总时长</div><div class="value">${s.total_duration_formatted || '0 分钟'}</div></div>
+        <div class="stat-card green"><div class="label">平均单次会话时长</div><div class="value">${s.avg_session_minutes || 0} 分钟</div></div>
+        <div class="stat-card warn"><div class="label">累计交互会话数</div><div class="value">${s.total_sessions || 0}</div></div>
+      `;
+
+      const dist = data.duration_distribution || {};
+      const distTotal = (dist.under_1m || 0) + (dist.m1_5 || 0) + (dist.m5_15 || 0) + (dist.m15_30 || 0) + (dist.over_30m || 0) || 1;
+      distBox.innerHTML = `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:12px;text-align:center;">
+          <div style="background:var(--surface2);padding:10px;border-radius:10px;">
+            <div style="font-size:11px;color:var(--muted)">＜ 1 分钟</div>
+            <div style="font-size:18px;font-weight:700;margin:3px 0;">${dist.under_1m || 0} 次</div>
+            <div style="font-size:11px;color:var(--muted)">${((dist.under_1m / distTotal) * 100).toFixed(1)}%</div>
+          </div>
+          <div style="background:var(--surface2);padding:10px;border-radius:10px;">
+            <div style="font-size:11px;color:var(--muted)">1 - 5 分钟</div>
+            <div style="font-size:18px;font-weight:700;color:var(--accent2);margin:3px 0;">${dist.m1_5 || 0} 次</div>
+            <div style="font-size:11px;color:var(--muted)">${((dist.m1_5 / distTotal) * 100).toFixed(1)}%</div>
+          </div>
+          <div style="background:var(--surface2);padding:10px;border-radius:10px;">
+            <div style="font-size:11px;color:var(--muted)">5 - 15 分钟</div>
+            <div style="font-size:18px;font-weight:700;color:var(--accent);margin:3px 0;">${dist.m5_15 || 0} 次</div>
+            <div style="font-size:11px;color:var(--muted)">${((dist.m5_15 / distTotal) * 100).toFixed(1)}%</div>
+          </div>
+          <div style="background:var(--surface2);padding:10px;border-radius:10px;">
+            <div style="font-size:11px;color:var(--muted)">15 - 30 分钟</div>
+            <div style="font-size:18px;font-weight:700;color:var(--warn);margin:3px 0;">${dist.m15_30 || 0} 次</div>
+            <div style="font-size:11px;color:var(--muted)">${((dist.m15_30 / distTotal) * 100).toFixed(1)}%</div>
+          </div>
+          <div style="background:var(--surface2);padding:10px;border-radius:10px;">
+            <div style="font-size:11px;color:var(--muted)">＞ 30 分钟</div>
+            <div style="font-size:18px;font-weight:700;color:var(--danger);margin:3px 0;">${dist.over_30m || 0} 次</div>
+            <div style="font-size:11px;color:var(--muted)">${((dist.over_30m / distTotal) * 100).toFixed(1)}%</div>
+          </div>
+        </div>
+      `;
+
+      if (!data.users || !data.users.length) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">暂无内测用户数据</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = data.users.map(u => {
+        const membersHtml = u.members && u.members.length
+          ? u.members.map(m => `<div style="font-size:12px;">👤 ${escHtml(m.display_name)}${m.email ? ` <span style="color:var(--muted);font-size:11px;">(${escHtml(m.email)})</span>` : ''}</div>`).join('')
+          : '<div style="color:var(--muted);font-size:12px;">暂无成员详情</div>';
+
+        return `
+          <tr>
+            <td style="font-weight:600;">${escHtml(u.household_name)}</td>
+            <td>${membersHtml}</td>
+            <td style="color:var(--muted);font-size:12px;">${fmtTime(u.created_at)}</td>
+            <td style="font-weight:700;color:var(--accent2);">${escHtml(u.total_duration_formatted)}</td>
+            <td>${u.session_count} 次</td>
+            <td>${u.active_days_count} 天</td>
+            <td style="color:var(--muted);font-size:12px;">${fmtTime(u.last_active)}</td>
+            <td>
+              <button style="background:var(--accent);color:#fff;border:none;padding:5px 10px;border-radius:7px;font-size:12px;cursor:pointer;font-weight:600;" onclick="openUserDetailModal('${u.household_id}')">
+                查看画像
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    })
+    .catch(() => {
+      grid.innerHTML = '<div class="error-msg">用户分析数据加载失败</div>';
+      tbody.innerHTML = '<tr><td colspan="8" class="error-msg">加载失败，请重试</td></tr>';
+    });
+}
+
+function openUserDetailModal(householdId) {
+  const overlay = document.getElementById('user-detail-modal-overlay');
+  const content = document.getElementById('user-modal-content');
+  overlay.classList.add('open');
+  content.innerHTML = '<div class="loading">正在获取用户画像数据…</div>';
+
+  fetch(`${API_BASE}/admin/households/${householdId}/detail`, {
+    headers: { 'x-admin-token': adminToken }
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.household) {
+        content.innerHTML = '<div class="error-msg">找不到对应用户数据</div>';
+        return;
+      }
+
+      const hh = data.household;
+      const s = data.summary || {};
+      document.getElementById('user-modal-title').innerText = `用户画像 · ${hh.name || '未命名用户'}`;
+
+      const membersHtml = hh.members && hh.members.length
+        ? hh.members.map(m => `
+            <div style="background:var(--surface2);border:1px solid var(--border);padding:10px 14px;border-radius:10px;">
+              <div style="font-weight:600;font-size:13px;">👤 ${escHtml(m.display_name)} <span style="font-size:11px;color:var(--accent);">${escHtml(m.role || 'MEMBER')}</span></div>
+              <div style="color:var(--muted);font-size:12px;margin-top:2px;">${m.email ? `✉️ ${escHtml(m.email)}` : '未绑定邮箱'}</div>
+            </div>
+          `).join('')
+        : '<div style="color:var(--muted)">无成员信息</div>';
+
+      const eventsHtml = data.feature_usage && data.feature_usage.length
+        ? data.feature_usage.map(e => `<span style="background:rgba(124,108,250,0.15);color:var(--accent);padding:3px 8px;border-radius:6px;font-size:11px;margin-right:6px;margin-bottom:6px;display:inline-block;">${escHtml(e.event_type)} (${e.count})</span>`).join('')
+        : '<span style="color:var(--muted);font-size:12px;">暂无扩展功能数据</span>';
+
+      const feedbackHtml = data.feedbacks && data.feedbacks.length
+        ? data.feedbacks.map(f => `
+            <div style="background:var(--surface2);border-left:3px solid var(--accent2);padding:10px 12px;border-radius:6px;margin-bottom:8px;">
+              <div style="font-size:12px;font-weight:600;margin-bottom:4px;">${f.category} · ${f.rating ? '★'.repeat(f.rating) : '未评分'}</div>
+              <div style="font-size:13px;white-space:pre-wrap;">${escHtml(f.content)}</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:4px;">${fmtTime(f.created_at)} · 联系: ${escHtml(f.contact || '无')}</div>
+            </div>
+          `).join('')
+        : '<div style="color:var(--muted);font-size:12px;">该用户暂未提交内测反馈</div>';
+
+      const sessionsHtml = data.sessions && data.sessions.length
+        ? data.sessions.map(sess => `
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <div style="font-size:13px;font-weight:600;">🕒 ${fmtTime(sess.started_at)} 会话 (${sess.job_count} 条指令 / ${sess.total_turns} 轮)</div>
+                <div style="font-size:12px;color:var(--accent2);font-weight:700;">时长 ${sess.duration_minutes} 分钟</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">
+                ${sess.turns.map(t => `
+                  <div style="font-size:12px;line-height:1.4;color:${t.role==='user'?'var(--accent)':'var(--text)'}">
+                    <strong>${t.role === 'user' ? '用户' : '小知'}:</strong> ${escHtml(t.text)}
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `).join('')
+        : '<div style="color:var(--muted);font-size:12px;">暂无历史会话</div>';
+
+      content.innerHTML = `
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">
+          <div class="stat-card accent" style="padding:14px;"><div class="label">累计使用时长</div><div class="value" style="font-size:22px;">${escHtml(s.total_duration_formatted)}</div></div>
+          <div class="stat-card green" style="padding:14px;"><div class="label">总会话数</div><div class="value" style="font-size:22px;">${s.total_sessions || 0}</div></div>
+          <div class="stat-card accent" style="padding:14px;"><div class="label">总指令数</div><div class="value" style="font-size:22px;">${s.total_jobs || 0}</div></div>
+          <div class="stat-card warn" style="padding:14px;"><div class="label">反馈提交数</div><div class="value" style="font-size:22px;">${s.feedbacks_count || 0}</div></div>
+        </div>
+
+        <h4 style="font-size:14px;margin-bottom:8px;">成员账号列表</h4>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:10px;margin-bottom:20px;">
+          ${membersHtml}
+        </div>
+
+        <h4 style="font-size:14px;margin-bottom:8px;">核心功能事件参与度</h4>
+        <div style="margin-bottom:20px;">${eventsHtml}</div>
+
+        <h4 style="font-size:14px;margin-bottom:8px;">用户内测反馈记录</h4>
+        <div style="margin-bottom:20px;">${feedbackHtml}</div>
+
+        <h4 style="font-size:14px;margin-bottom:8px;">最近会话交互履历</h4>
+        <div>${sessionsHtml}</div>
+      `;
+    })
+    .catch(() => {
+      content.innerHTML = '<div class="error-msg">获取用户详情失败</div>';
+    });
+}
+
+function closeUserDetailModal() {
+  document.getElementById('user-detail-modal-overlay').classList.remove('open');
 }
 </script>
 </body>

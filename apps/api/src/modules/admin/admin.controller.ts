@@ -1,4 +1,4 @@
-import { Controller, ForbiddenException, Get, Headers, Inject, Query } from '@nestjs/common';
+import { Controller, ForbiddenException, Get, Headers, Inject, Param, Query } from '@nestjs/common';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../../infra/db/database.module';
 import { buildProductInsights, type VoiceJobForInsight } from './product-insights';
@@ -152,13 +152,13 @@ export class AdminController {
   }
 
   /** GET /api/v1/admin/stats
-   * 汇总统计：总对话数、成功率、AMBIGUOUS比例、常见FAILED词等
+   * 汇总统计：总对话数、注册用户数、成功率、AMBIGUOUS比例、常见FAILED词等
    */
   @Get('stats')
   async stats(@Headers('x-admin-token') token: string | undefined) {
     this.checkToken(token);
 
-    const [summary, statusBreakdown, topFailed, activeHouseholds] = await Promise.all([
+    const [summary, regStats, statusBreakdown, topFailed, activeHouseholds] = await Promise.all([
       this.pool.query(`
         select
           count(*) as total_jobs,
@@ -171,6 +171,12 @@ export class AdminController {
           round(avg(turn_count)::numeric, 2) as avg_turns
         from voice_jobs
         where created_at >= now() - interval '30 days'
+      `),
+      this.pool.query(`
+        select
+          (select count(*)::int from households) as total_registered_households,
+          (select count(*)::int from household_members) as total_registered_members,
+          (select count(*)::int from auth.users) as total_registered_users
       `),
       this.pool.query(`
         select status, error_code, count(*) as cnt
@@ -190,19 +196,33 @@ export class AdminController {
         limit 30
       `),
       this.pool.query(`
-        select h.name as display_name, count(*) as job_count, max(vj.created_at) as last_active
-        from voice_jobs vj
-        join households h on h.id = vj.household_id
-        where vj.created_at >= now() - interval '7 days'
-        group by h.id, h.name
-        order by job_count desc
-        limit 20
+        select
+          h.id as household_id,
+          h.name as household_name,
+          coalesce(
+            string_agg(distinct hm.display_name || coalesce(' (' || u.email || ')', ''), ', '),
+            h.name
+          ) as display_name,
+          count(vj.id)::int as job_count,
+          coalesce(max(vj.created_at), h.created_at) as last_active
+        from households h
+        left join household_members hm on hm.household_id = h.id
+        left join auth.users u on u.id = hm.user_id
+        left join voice_jobs vj on vj.household_id = h.id
+        group by h.id, h.name, h.created_at
+        order by last_active desc
+        limit 50
       `),
     ]);
 
+    const sum = {
+      ...summary.rows[0],
+      ...regStats.rows[0],
+    };
+
     return {
       period: '30 days',
-      summary: summary.rows[0],
+      summary: sum,
       status_breakdown: statusBreakdown.rows,
       top_ambiguous_phrases: topFailed.rows,
       active_households: activeHouseholds.rows,
@@ -331,4 +351,422 @@ export class AdminController {
       ...buildProductInsights(result.rows),
     };
   }
+
+  /**
+   * GET /api/v1/admin/user-analytics
+   * 内测用户分析与使用时长统计
+   */
+  @Get('user-analytics')
+  async userAnalytics(
+    @Headers('x-admin-token') token: string | undefined,
+    @Query('days') daysStr?: string,
+  ) {
+    this.checkToken(token);
+    const days = Math.min(Math.max(Number(daysStr) || 30, 1), 180);
+
+    // 1. 获取全量内测家庭与成员信息（包含 Auth 邮箱/手机）
+    const householdsResult = await this.pool.query<{
+      household_id: string;
+      household_name: string;
+      created_at: string;
+      member_count: number;
+      members: Array<{
+        id: string;
+        display_name: string;
+        role: string;
+        user_id: string | null;
+        email: string | null;
+        created_at: string;
+      }>;
+    }>(
+      `select
+         h.id as household_id,
+         h.name as household_name,
+         h.created_at,
+         count(distinct hm.id)::int as member_count,
+         coalesce(
+           json_agg(
+             json_build_object(
+               'id', hm.id,
+               'display_name', hm.display_name,
+               'role', hm.role,
+               'user_id', hm.user_id,
+               'email', u.email,
+               'created_at', hm.created_at
+             )
+           ) filter (where hm.id is not null),
+           '[]'::json
+         ) as members
+       from households h
+       left join household_members hm on hm.household_id = h.id
+       left join auth.users u on u.id = hm.user_id
+       group by h.id, h.name, h.created_at
+       order by h.created_at desc`,
+    );
+
+    // 2. 拉取指定时间段内的 voice_jobs 用于会话及时长计算
+    const jobsResult = await this.pool.query<{
+      id: string;
+      household_id: string;
+      status: string;
+      turn_count: number;
+      created_at: string;
+      completed_at: string | null;
+    }>(
+      `select id, household_id, status, turn_count, created_at, completed_at
+       from voice_jobs
+       where created_at >= now() - ($1::text || ' days')::interval
+       order by household_id, created_at asc`,
+      [String(days)],
+    );
+
+    // 3. 拉取事件统计与内测反馈统计
+    const [eventsResult, feedbackResult] = await Promise.all([
+      this.pool.query<{ household_id: string; cnt: number }>(
+        `select household_id, count(*)::int as cnt
+         from agent_events
+         where created_at >= now() - ($1::text || ' days')::interval
+         group by household_id`,
+        [String(days)],
+      ),
+      this.pool.query<{ household_id: string; cnt: number }>(
+        `select household_id, count(*)::int as cnt
+         from beta_feedbacks
+         group by household_id`,
+      ),
+    ]);
+
+    const eventsMap = new Map(eventsResult.rows.map((r) => [r.household_id, r.cnt]));
+    const feedbackMap = new Map(feedbackResult.rows.map((r) => [r.household_id, r.cnt]));
+
+    // 4. 按 30 分钟空闲间隔将对话归集为会话，并计算每个家庭的时长与活跃天数
+    const SESSION_GAP_MS = 30 * 60 * 1000;
+    const householdStats = new Map<
+      string,
+      {
+        total_duration_ms: number;
+        session_count: number;
+        total_turns: number;
+        active_days: Set<string>;
+        last_active: string | null;
+      }
+    >();
+
+    const distribution = {
+      under_1m: 0,
+      m1_5: 0,
+      m5_15: 0,
+      m15_30: 0,
+      over_30m: 0,
+    };
+
+    let currentHouseholdId: string | null = null;
+    let currentSessionStart: number = 0;
+    let currentSessionEnd: number = 0;
+    let currentTurns = 0;
+
+    const finalizeSession = () => {
+      if (!currentHouseholdId || !currentSessionStart) return;
+      const rawMs = currentSessionEnd - currentSessionStart;
+      const durationMs = Math.max(60000, rawMs);
+      const minutes = durationMs / 60000;
+
+      if (minutes < 1) distribution.under_1m++;
+      else if (minutes <= 5) distribution.m1_5++;
+      else if (minutes <= 15) distribution.m5_15++;
+      else if (minutes <= 30) distribution.m15_30++;
+      else distribution.over_30m++;
+
+      let stat = householdStats.get(currentHouseholdId);
+      if (!stat) {
+        stat = {
+          total_duration_ms: 0,
+          session_count: 0,
+          total_turns: 0,
+          active_days: new Set(),
+          last_active: null,
+        };
+        householdStats.set(currentHouseholdId, stat);
+      }
+      stat.total_duration_ms += durationMs;
+      stat.session_count += 1;
+      stat.total_turns += currentTurns;
+    };
+
+    for (const job of jobsResult.rows) {
+      const jobStart = new Date(job.created_at).getTime();
+      const jobEnd = job.completed_at ? new Date(job.completed_at).getTime() : jobStart;
+      const dateKey = job.created_at.slice(0, 10);
+
+      let stat = householdStats.get(job.household_id);
+      if (!stat) {
+        stat = {
+          total_duration_ms: 0,
+          session_count: 0,
+          total_turns: 0,
+          active_days: new Set(),
+          last_active: null,
+        };
+        householdStats.set(job.household_id, stat);
+      }
+      stat.active_days.add(dateKey);
+      if (!stat.last_active || job.created_at > stat.last_active) {
+        stat.last_active = job.created_at;
+      }
+
+      if (
+        currentHouseholdId !== job.household_id ||
+        jobStart - currentSessionEnd > SESSION_GAP_MS
+      ) {
+        finalizeSession();
+        currentHouseholdId = job.household_id;
+        currentSessionStart = jobStart;
+        currentSessionEnd = Math.max(jobStart, jobEnd);
+        currentTurns = job.turn_count || 1;
+      } else {
+        currentSessionEnd = Math.max(currentSessionEnd, jobEnd);
+        currentTurns += job.turn_count || 1;
+      }
+    }
+    finalizeSession();
+
+    // 5. 组合家庭与用户分析列表
+    let grandTotalDurationMs = 0;
+    let totalSessionsAll = 0;
+
+    const userList = householdsResult.rows.map((h) => {
+      const stat = householdStats.get(h.household_id) || {
+        total_duration_ms: 0,
+        session_count: 0,
+        total_turns: 0,
+        active_days: new Set<string>(),
+        last_active: null,
+      };
+
+      grandTotalDurationMs += stat.total_duration_ms;
+      totalSessionsAll += stat.session_count;
+
+      const durationMinutes = Math.round(stat.total_duration_ms / 60000);
+
+      return {
+        household_id: h.household_id,
+        household_name: h.household_name || '未命名用户',
+        created_at: h.created_at,
+        member_count: h.member_count,
+        members: Array.isArray(h.members) ? h.members : [],
+        session_count: stat.session_count,
+        total_turns: stat.total_turns,
+        event_count: eventsMap.get(h.household_id) || 0,
+        feedback_count: feedbackMap.get(h.household_id) || 0,
+        total_duration_minutes: durationMinutes,
+        total_duration_formatted:
+          durationMinutes >= 60
+            ? `${(durationMinutes / 60).toFixed(1)} 小时`
+            : `${durationMinutes} 分钟`,
+        active_days_count: stat.active_days.size,
+        last_active: stat.last_active || h.created_at,
+      };
+    });
+
+    const totalDurationMinutes = Math.round(grandTotalDurationMs / 60000);
+    const avgSessionMinutes =
+      totalSessionsAll > 0 ? Math.round(totalDurationMinutes / totalSessionsAll) : 0;
+
+    return {
+      period_days: days,
+      summary: {
+        total_households: userList.length,
+        total_members: userList.reduce((acc, curr) => acc + curr.member_count, 0),
+        total_duration_minutes: totalDurationMinutes,
+        total_duration_formatted:
+          totalDurationMinutes >= 60
+            ? `${(totalDurationMinutes / 60).toFixed(1)} 小时`
+            : `${totalDurationMinutes} 分钟`,
+        avg_session_minutes: avgSessionMinutes,
+        total_sessions: totalSessionsAll,
+      },
+      duration_distribution: distribution,
+      users: userList,
+    };
+  }
+
+  /**
+   * GET /api/v1/admin/households/:id/detail
+   * 单个内测用户的详细画像与交互履历
+   */
+  @Get('households/:id/detail')
+  async householdDetail(
+    @Headers('x-admin-token') token: string | undefined,
+    @Param('id') householdId: string,
+  ) {
+    this.checkToken(token);
+
+    // 1. 家庭与成员信息
+    const hhResult = await this.pool.query<{
+      id: string;
+      name: string;
+      timezone: string;
+      created_at: string;
+      members: Array<{
+        id: string;
+        display_name: string;
+        role: string;
+        user_id: string | null;
+        email: string | null;
+        created_at: string;
+      }>;
+    }>(
+      `select
+         h.id,
+         h.name,
+         h.timezone,
+         h.created_at,
+         coalesce(
+           json_agg(
+             json_build_object(
+               'id', hm.id,
+               'display_name', hm.display_name,
+               'role', hm.role,
+               'user_id', hm.user_id,
+               'email', u.email,
+               'created_at', hm.created_at
+             )
+           ) filter (where hm.id is not null),
+           '[]'::json
+         ) as members
+       from households h
+       left join household_members hm on hm.household_id = h.id
+       left join auth.users u on u.id = hm.user_id
+       where h.id = $1
+       group by h.id, h.name, h.timezone, h.created_at`,
+      [householdId],
+    );
+
+    if (!hhResult.rows[0]) {
+      return { success: false, message: 'Household not found' };
+    }
+
+    const household = hhResult.rows[0];
+
+    // 2. 对话记录
+    const jobsResult = await this.pool.query<{
+      id: string;
+      status: string;
+      transcript_raw: string | null;
+      error_code: string | null;
+      spoken_prompt: string | null;
+      turn_count: number;
+      dialogue_turns: Array<{ role: string; text: string; at: string }>;
+      created_at: string;
+      completed_at: string | null;
+    }>(
+      `select id, status, transcript_raw, error_code, spoken_prompt, turn_count, dialogue_turns, created_at, completed_at
+       from voice_jobs
+       where household_id = $1
+       order by created_at asc`,
+      [householdId],
+    );
+
+    // 会话拆分
+    const SESSION_GAP_MS = 30 * 60 * 1000;
+    type DetailSession = {
+      session_id: string;
+      started_at: string;
+      ended_at: string;
+      duration_minutes: number;
+      job_count: number;
+      total_turns: number;
+      turns: Array<{ role: string; text: string; at: string }>;
+    };
+
+    const sessions: DetailSession[] = [];
+    let currentSession: DetailSession | null = null;
+    let totalDurationMs = 0;
+
+    for (const job of jobsResult.rows) {
+      const jobTime = new Date(job.created_at).getTime();
+      const lastTime = currentSession ? new Date(currentSession.ended_at).getTime() : 0;
+
+      if (!currentSession || jobTime - lastTime >= SESSION_GAP_MS) {
+        if (currentSession) {
+          const rawMs =
+            new Date(currentSession.ended_at).getTime() -
+            new Date(currentSession.started_at).getTime();
+          const durationMs = Math.max(60000, rawMs);
+          currentSession.duration_minutes = Math.round(durationMs / 60000);
+          totalDurationMs += durationMs;
+        }
+
+        currentSession = {
+          session_id: job.id,
+          started_at: job.created_at,
+          ended_at: job.completed_at ?? job.created_at,
+          duration_minutes: 1,
+          job_count: 0,
+          total_turns: 0,
+          turns: [],
+        };
+        sessions.push(currentSession);
+      }
+
+      currentSession.ended_at = job.completed_at ?? job.created_at;
+      currentSession.job_count += 1;
+      currentSession.total_turns += job.turn_count || 1;
+
+      const turns = Array.isArray(job.dialogue_turns) ? job.dialogue_turns : [];
+      for (const turn of turns) {
+        currentSession.turns.push({ ...turn });
+      }
+    }
+
+    if (currentSession) {
+      const rawMs =
+        new Date(currentSession.ended_at).getTime() -
+        new Date(currentSession.started_at).getTime();
+      const durationMs = Math.max(60000, rawMs);
+      currentSession.duration_minutes = Math.round(durationMs / 60000);
+      totalDurationMs += durationMs;
+    }
+
+    sessions.reverse();
+
+    // 3. 用户提交的反馈
+    const feedbackResult = await this.pool.query(
+      `select id, category, content, rating, contact, status, created_at
+       from beta_feedbacks
+       where household_id = $1
+       order by created_at desc`,
+      [householdId],
+    );
+
+    // 4. 事件类型分布
+    const eventsResult = await this.pool.query<{ event_type: string; count: number }>(
+      `select event_type, count(*)::int as count
+       from agent_events
+       where household_id = $1
+       group by event_type
+       order by count desc`,
+      [householdId],
+    );
+
+    const totalDurationMinutes = Math.round(totalDurationMs / 60000);
+
+    return {
+      household,
+      summary: {
+        total_sessions: sessions.length,
+        total_jobs: jobsResult.rows.length,
+        total_duration_minutes: totalDurationMinutes,
+        total_duration_formatted:
+          totalDurationMinutes >= 60
+            ? `${(totalDurationMinutes / 60).toFixed(1)} 小时`
+            : `${totalDurationMinutes} 分钟`,
+        feedbacks_count: feedbackResult.rows.length,
+      },
+      feature_usage: eventsResult.rows,
+      feedbacks: feedbackResult.rows,
+      sessions,
+    };
+  }
 }
+
