@@ -102,63 +102,67 @@ export default function MealsPage() {
               <small>优先展示库存覆盖高的方案</small>
             </div>
             <div className="meal-recipe-list">
-              {recipes.map((recipe) => (
-                <article className="meal-recipe-card" key={recipe.id}>
-                  <div className="meal-recipe-copy">
-                    <div className="name">{recipe.name}</div>
-                    <div className="qty">
-                      {recipe.description} · {recipe.servings} 人份
+              {recipes.length === 0 ? (
+                <p className="empty workspace-empty">暂无餐食候选，添加冰箱食材或自定义菜谱后，小知会为你智能推荐。</p>
+              ) : (
+                recipes.map((recipe) => (
+                  <article className="meal-recipe-card" key={recipe.id}>
+                    <div className="meal-recipe-copy">
+                      <div className="name">{recipe.name}</div>
+                      <div className="qty">
+                        {recipe.description} · {recipe.servings} 人份
+                      </div>
+                      <div className="meal-ingredients">
+                        {recipe.ingredients.map((item) => (
+                          <span className={item.available ? 'available' : ''} key={item.food_id}>
+                            {item.available ? '已有' : '缺少'} · {item.food_name}
+                            {item.quantity
+                              ? ` ${item.quantity}${unitLabel(item.unit_code ?? '')}`
+                              : ''}
+                          </span>
+                        ))}
+                      </div>
                     </div>
-                    <div className="meal-ingredients">
-                      {recipe.ingredients.map((item) => (
-                        <span className={item.available ? 'available' : ''} key={item.food_id}>
-                          {item.available ? '已有' : '缺少'} · {item.food_name}
-                          {item.quantity
-                            ? ` ${item.quantity}${unitLabel(item.unit_code ?? '')}`
-                            : ''}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="meal-recipe-actions">
-                    <span className={`badge ${recipe.can_make ? 'normal' : 'unknown'}`}>
-                      {recipe.can_make
-                        ? '现有食材可做'
-                        : `库存覆盖 ${Math.round(recipe.coverage * 100)}%`}
-                    </span>
-                    {recipe.missing.length ? (
-                      <button
-                        className="primary"
-                        disabled={addingRecipeId === recipe.id}
-                        onClick={async () => {
-                          setAddingRecipeId(recipe.id);
-                          setMessage('');
-                          try {
-                            const result = await addMissingRecipeItems(household.id, recipe.id);
-                            const nextShopping = await fetchShoppingList(household.id);
-                            const visibleIds = new Set(nextShopping.map((item) => item.id));
-                            const visibleCount = result.items.filter((item) =>
-                              visibleIds.has(item.id),
-                            ).length;
-                            if (visibleCount !== result.items.length) {
-                              throw new Error('购物清单尚未同步完成，请稍后重试。');
+                    <div className="meal-recipe-actions">
+                      <span className={`badge ${recipe.can_make ? 'normal' : 'unknown'}`}>
+                        {recipe.can_make
+                          ? '现有食材可做'
+                          : `库存覆盖 ${Math.round(recipe.coverage * 100)}%`}
+                      </span>
+                      {recipe.missing.length ? (
+                        <button
+                          className="primary"
+                          disabled={addingRecipeId === recipe.id}
+                          onClick={async () => {
+                            setAddingRecipeId(recipe.id);
+                            setMessage('');
+                            try {
+                              const result = await addMissingRecipeItems(household.id, recipe.id);
+                              const nextShopping = await fetchShoppingList(household.id);
+                              const visibleIds = new Set(nextShopping.map((item) => item.id));
+                              const visibleCount = result.items.filter((item) =>
+                                visibleIds.has(item.id),
+                              ).length;
+                              if (visibleCount !== result.items.length) {
+                                throw new Error('购物清单尚未同步完成，请稍后重试。');
+                              }
+                              setShopping(nextShopping);
+                              setMessage(`已把 ${visibleCount} 项缺少食材放入待购清单。`);
+                              setError('');
+                            } catch (caught) {
+                              setError(caught instanceof Error ? caught.message : '加入缺料失败');
+                            } finally {
+                              setAddingRecipeId(null);
                             }
-                            setShopping(nextShopping);
-                            setMessage(`已把 ${visibleCount} 项缺少食材放入待购清单。`);
-                            setError('');
-                          } catch (caught) {
-                            setError(caught instanceof Error ? caught.message : '加入缺料失败');
-                          } finally {
-                            setAddingRecipeId(null);
-                          }
-                        }}
-                      >
-                        {addingRecipeId === recipe.id ? '加入中…' : '加入缺料'}
-                      </button>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
+                          }}
+                        >
+                          {addingRecipeId === recipe.id ? '加入中…' : '加入缺料'}
+                        </button>
+                      ) : null}
+                    </div>
+                  </article>
+                ))
+              )}
             </div>
           </section>
 

@@ -31,8 +31,9 @@ export type ReplyInterpretation =
   | { kind: 'UNCLEAR' };
 
 const CONFIRM_PATTERN =
-  /(对|对的|对对|是的|没错|好的|确认|可以|嗯|行|ok|yes|correct|right|yep|sure)/i;
-const REJECT_PATTERN = /(不对|不是的|不要|取消|算了|错了|不用了|重来|no|cancel|wrong|nope)/i;
+  /^(?:是对的|是的对|是对|是|是的|对|对的|对对|没错|好的|确认|可以|嗯|行|ok|yes|correct|right|yep|sure)$/i;
+const REJECT_PATTERN =
+  /(不对|不是的|不要|取消|算了|错了|不用了|重来|结束|退出|不用|多谢|就这|算了吧|不加了|不做|no|cancel|wrong|nope)/i;
 
 /** 相对库存数量。当前先支持最常见且无歧义的“一半”。 */
 export function relativeInventoryFraction(rawReply: string): string | null {
@@ -43,13 +44,15 @@ export function relativeInventoryFraction(rawReply: string): string | null {
 /** 明确结束当前会话；覆盖“结束兑换/绘话”等常见 ASR 近音字，但不误伤“结束后提醒我”。 */
 export function isDialogueExit(rawReply: string): boolean {
   const compact = rawReply.replace(/[\s，。！？、,.!?：:；;“”‘’'"`]/g, '');
+  if (/结束后提醒/.test(compact)) return false;
   return (
-    /^(?:我(?:们)?(?:要|想|先)?|请)?(?:结束|退出|关闭|停止)(?:这段|本次|当前)?(?:对话|对换|兑换|绘话|会话|聊天|对|聊|会)?(?:了|吧)?$/.test(
+    /^(?:我(?:们)?(?:要|想|先)?|请)?(?:结束|退出|关闭|停止)(?:这段|本次|当前)?(?:对话|对换|兑换|绘话|会话|聊天|对|聊|会)?(?:谢谢|多谢|拜拜|了|吧)?$/.test(
       compact,
     ) ||
-    /^(?:我们?)?(?:先这样|就这样|没事了|没有别的了|不聊了|结束吧|退下吧|先退下|你先退下)(?:吧|了)?$/.test(
+    /^(?:我们?)?(?:先这样|就这样|没事了|没有别的了|不聊了|结束吧|退下吧|先退下|你先退下)(?:谢谢|多谢|拜拜|吧|了)?$/.test(
       compact,
-    )
+    ) ||
+    /^(?:结束|退出|取消|算了|不用了|不加了)(?:对话|会话|对换|聊天|谢谢|吧|了)?$/.test(compact)
   );
 }
 

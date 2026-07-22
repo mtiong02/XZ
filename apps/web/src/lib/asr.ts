@@ -43,8 +43,22 @@ interface LocalMessage {
   message?: string;
 }
 
-const LOCAL_SPEECH_HTTP = process.env.NEXT_PUBLIC_LOCAL_SPEECH_URL ?? 'http://127.0.0.1:6010';
-const LOCAL_ASR_URL = `${LOCAL_SPEECH_HTTP.replace(/^http/, 'ws').replace(/\/$/, '')}/asr`;
+function getAsrUrl(): string {
+  const envUrl = process.env.NEXT_PUBLIC_LOCAL_SPEECH_URL;
+  if (envUrl && !envUrl.includes('127.0.0.1') && !envUrl.includes('localhost')) {
+    return `${envUrl.replace(/^http/, 'ws').replace(/\/$/, '')}/asr`;
+  }
+  if (typeof window !== 'undefined') {
+    const isLocal =
+      window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (!isLocal) {
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${wsProtocol}//${window.location.host}/speech/asr`;
+    }
+  }
+  return 'ws://127.0.0.1:6010/asr';
+}
+
 const CONNECT_TIMEOUT_MS = 1500;
 
 class AsrStartError extends Error {
@@ -71,7 +85,8 @@ export function isAsrSupported(): boolean {
 
 async function startLocalAsr(callbacks: Callbacks): Promise<AsrHandle> {
   return new Promise<AsrHandle>((resolve, reject) => {
-    const socket = new WebSocket(LOCAL_ASR_URL);
+    const asrUrl = getAsrUrl();
+    const socket = new WebSocket(asrUrl);
     socket.binaryType = 'arraybuffer';
     let stream: MediaStream | null = null;
     let context: AudioContext | null = null;

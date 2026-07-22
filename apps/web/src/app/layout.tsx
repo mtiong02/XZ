@@ -20,6 +20,20 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="zh-CN">
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.addEventListener('error', function(e) {
+                if (e.message && (e.message.indexOf('ChunkLoadError') !== -1 || e.message.indexOf('Loading chunk') !== -1)) {
+                  console.warn('New deployment detected, reloading page to fetch latest JS chunks...');
+                  window.location.reload();
+                }
+              });
+            `,
+          }}
+        />
+      </head>
       <body>{children}</body>
     </html>
   );

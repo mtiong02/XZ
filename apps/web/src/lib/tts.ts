@@ -7,9 +7,21 @@
  * 只有浏览器完全不支持 Web Speech 时才调用独立 speech 进程中的 Kokoro int8。
  */
 
-const LOCAL_SPEECH_URL = (
-  process.env.NEXT_PUBLIC_LOCAL_SPEECH_URL ?? 'http://127.0.0.1:6010'
-).replace(/\/$/, '');
+function getTtsUrl(): string {
+  const envUrl = process.env.NEXT_PUBLIC_LOCAL_SPEECH_URL;
+  if (envUrl && !envUrl.includes('127.0.0.1') && !envUrl.includes('localhost')) {
+    return envUrl.replace(/\/$/, '');
+  }
+  if (typeof window !== 'undefined') {
+    const isLocal =
+      window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (!isLocal) {
+      return `${window.location.origin}/speech`;
+    }
+  }
+  return 'http://127.0.0.1:6010';
+}
+
 const SPEAK_TIMEOUT_MS = 12000;
 const PREFERRED_VOICE_NAMES = ['Tingting', 'Ting-Ting', 'Yu-shu', 'Li-Mu', 'Meijia', 'Sin-ji'];
 
@@ -46,7 +58,7 @@ class TtsEngine {
     }
     try {
       this.abortController = new AbortController();
-      const response = await fetch(`${LOCAL_SPEECH_URL}/tts`, {
+      const response = await fetch(`${getTtsUrl()}/tts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),

@@ -9,13 +9,13 @@ const catalog: FoodCatalogEntry[] = [
 
 describe('interpretReply', () => {
   it('recognizes plain confirmation', () => {
-    for (const yes of ['对', '对的', '是的', '没错', '好的', '确认', 'yes', 'OK']) {
+    for (const yes of ['对', '对的', '是的', '是', '是的对', '是对', '没错', '好的', '确认', 'yes', 'OK']) {
       expect(interpretReply(yes, catalog).kind).toBe('CONFIRM');
     }
   });
 
   it('recognizes plain rejection', () => {
-    for (const no of ['不对', '取消', '算了', '错了', 'cancel']) {
+    for (const no of ['不对', '取消', '算了', '错了', '结束对话谢谢', '取消这', 'cancel']) {
       expect(interpretReply(no, catalog).kind).toBe('REJECT');
     }
   });

@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: xz-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - xz-db-data:/var/lib/postgresql/data
+      - ./supabase/migrations:/docker-entrypoint-initdb.d:ro
+
+  gotrue:
+    image: supabase/gotrue:v2.132.3
+    container_name: xz-gotrue
+    restart: unless-stopped
+    ports:
+      - "9999:9999"
+    environment:
+      API_EXTERNAL_URL: https://busybeeenglish.site/auth
+      GOTRUE_API_EXTERNAL_URL: https://busybeeenglish.site/auth
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      GOTRUE_DB_DRIVER: postgres
+      DATABASE_URL: postgresql://postgres:postgrespassword@db:5432/postgres
+      GOTRUE_DB_DATABASE_URL: postgresql://postgres:postgrespassword@db:5432/postgres
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_SITE_URL: https://busybeeenglish.site
+      GOTRUE_URI_ALLOW_LIST: "*"
+      GOTRUE_JWT_SECRET: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_LOG_LEVEL: info
+    depends_on:
+      - db
+
+  speech:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: xz-speech
+    restart: unless-stopped
+    command: ["pnpm", "--filter", "@xz/speech", "start"]
+    volumes:
+      - ./local-models:/app/local-models:ro
+    ports:
+      - "6010:6010"
+    environment:
+      - NODE_ENV=production
+      - SPEECH_PORT=6010
+      - MINIMAX_API_KEY=sk-cp-7Rsl8cRIoL41jvprK0vQHF2kf45kN-CyH29Fo9ptB4BAaGLhXaIr_u9d-SSPM8vrpPQjSIqal1kWAUQ6PqFcSLQ7Q__WqL5jj9Kqg-eEErF1r21y0y-hsDA
+      - MINIMAX_REALTIME_MODEL=abab6.5s-chat
+      - MINIMAX_REALTIME_VOICE=female-shaonv
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: xz-web
+    restart: unless-stopped
+    ports:
+      - "3100:3000"
+    environment:
+      - NODE_ENV=production
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: xz-api
+    restart: unless-stopped
+    command: ["pnpm", "--filter", "@xz/api", "start"]
+    ports:
+      - "4100:4000"
+    environment:
+      - NODE_ENV=production
+      - API_PORT=4000
+      - DATABASE_URL=postgresql://postgres:postgrespassword@db:5432/postgres
+      - SUPABASE_URL=http://gotrue:9999
+      - SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+    depends_on:
+      - db
+      - gotrue
+
+volumes:
+  xz-db-data:

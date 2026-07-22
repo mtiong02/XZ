@@ -63,8 +63,17 @@ interface SherpaModule {
   };
 }
 
-const localRequire = createRequire(__filename);
-const sherpa = localRequire('sherpa-onnx-node') as SherpaModule;
+let sherpa: SherpaModule | null = null;
+try {
+  const localRequire = createRequire(__filename);
+  try {
+    sherpa = localRequire('sherpa-onnx-node') as SherpaModule;
+  } catch {
+    sherpa = localRequire('/app/node_modules/sherpa-onnx-node') as SherpaModule;
+  }
+} catch (loadError) {
+  console.warn('[speech] sherpa-onnx-node native binary unavailable, operating in online mode:', loadError);
+}
 
 const PORT = Number(process.env.SPEECH_PORT ?? 6010);
 const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY?.trim() ?? '';
@@ -93,43 +102,52 @@ function requiredFile(...segments: string[]): string {
   return filename;
 }
 
-const recognizer = new sherpa.OnlineRecognizer({
-  featConfig: { sampleRate: 16000, featureDim: 80 },
-  modelConfig: {
-    paraformer: {
-      encoder: requiredFile(ASR_DIR, 'encoder.int8.onnx'),
-      decoder: requiredFile(ASR_DIR, 'decoder.int8.onnx'),
-    },
-    tokens: requiredFile(ASR_DIR, 'tokens.txt'),
-    numThreads: 2,
-    provider: 'cpu',
-  },
-  decodingMethod: 'greedy_search',
-  maxActivePaths: 4,
-  enableEndpoint: true,
-  rule1MinTrailingSilence: 2.4,
-  rule2MinTrailingSilence: 2.2,
-  rule3MinUtteranceLength: 15,
-});
+let recognizer: OnlineRecognizer | null = null;
+let keywordSpotter: KeywordSpotter | null = null;
 
-const keywordSpotter = new sherpa.KeywordSpotter({
-  featConfig: { sampleRate: 16000, featureDim: 80 },
-  modelConfig: {
-    transducer: {
-      encoder: requiredFile(KWS_DIR, 'encoder-epoch-99-avg-1-chunk-16-left-64.int8.onnx'),
-      decoder: requiredFile(KWS_DIR, 'decoder-epoch-99-avg-1-chunk-16-left-64.int8.onnx'),
-      joiner: requiredFile(KWS_DIR, 'joiner-epoch-99-avg-1-chunk-16-left-64.int8.onnx'),
-    },
-    tokens: requiredFile(KWS_DIR, 'tokens.txt'),
-    numThreads: 2,
-    provider: 'cpu',
-  },
-  keywordsFile: requiredFile(KWS_DIR, 'keywords.txt'),
-  maxActivePaths: 2,
-  keywordsScore: 1.8,
-  keywordsThreshold: 0.2,
-  numTrailingBlanks: 1,
-});
+if (sherpa && existsSync(ASR_DIR) && existsSync(KWS_DIR)) {
+  try {
+    recognizer = new sherpa.OnlineRecognizer({
+      featConfig: { sampleRate: 16000, featureDim: 80 },
+      modelConfig: {
+        paraformer: {
+          encoder: requiredFile(ASR_DIR, 'encoder.int8.onnx'),
+          decoder: requiredFile(ASR_DIR, 'decoder.int8.onnx'),
+        },
+        tokens: requiredFile(ASR_DIR, 'tokens.txt'),
+        numThreads: 2,
+        provider: 'cpu',
+      },
+      decodingMethod: 'greedy_search',
+      maxActivePaths: 4,
+      enableEndpoint: true,
+      rule1MinTrailingSilence: 2.4,
+      rule2MinTrailingSilence: 2.2,
+      rule3MinUtteranceLength: 15,
+    });
+
+    keywordSpotter = new sherpa.KeywordSpotter({
+      featConfig: { sampleRate: 16000, featureDim: 80 },
+      modelConfig: {
+        transducer: {
+          encoder: requiredFile(KWS_DIR, 'encoder-epoch-99-avg-1-chunk-16-left-64.int8.onnx'),
+          decoder: requiredFile(KWS_DIR, 'decoder-epoch-99-avg-1-chunk-16-left-64.int8.onnx'),
+          joiner: requiredFile(KWS_DIR, 'joiner-epoch-99-avg-1-chunk-16-left-64.int8.onnx'),
+        },
+        tokens: requiredFile(KWS_DIR, 'tokens.txt'),
+        numThreads: 2,
+        provider: 'cpu',
+      },
+      keywordsFile: requiredFile(KWS_DIR, 'keywords.txt'),
+      maxActivePaths: 2,
+      keywordsScore: 1.8,
+      keywordsThreshold: 0.2,
+      numTrailingBlanks: 1,
+    });
+  } catch (err) {
+    console.warn('[speech] Local speech models skipped:', err);
+  }
+}
 
 let tts: OfflineTts | null = null;
 let ttsQueue: Promise<void> = Promise.resolve();
@@ -137,7 +155,7 @@ const ttsCache = new Map<string, Buffer>();
 const MAX_TTS_CACHE_ENTRIES = 32;
 
 async function loadTts(): Promise<void> {
-  if (!existsSync(path.join(TTS_DIR, 'model.int8.onnx'))) return;
+  if (!sherpa || !existsSync(path.join(TTS_DIR, 'model.int8.onnx'))) return;
   tts = await sherpa.OfflineTts.createAsync({
     model: {
       kokoro: {
@@ -159,7 +177,11 @@ async function loadTts(): Promise<void> {
 }
 
 function originAllowed(origin: string | undefined): boolean {
-  return origin === undefined || ALLOWED_ORIGINS.has(origin);
+  if (!origin) return true;
+  if (ALLOWED_ORIGINS.has(origin)) return true;
+  if (origin.includes('busybeeenglish.site')) return true;
+  if (origin.includes('localhost') || origin.includes('127.0.0.1')) return true;
+  return false;
 }
 
 function sendJson(socket: WebSocket, value: object): void {
@@ -173,6 +195,11 @@ function toFloat32(data: RawData): Float32Array {
 }
 
 function handleAsrConnection(socket: WebSocket): void {
+  if (!recognizer) {
+    sendJson(socket, { type: 'error', message: 'Local ASR engine unavailable' });
+    socket.close();
+    return;
+  }
   const stream = recognizer.createStream();
   let sampleRate = 48000;
   let lastPartial = '';
@@ -229,6 +256,15 @@ function handleAsrConnection(socket: WebSocket): void {
 }
 
 function createRealtimeTranscriber(socket: WebSocket, onTranscript?: (text: string) => void): RealtimeTranscriber {
+  if (!recognizer || !keywordSpotter) {
+    return {
+      setSampleRate() {},
+      setMode() {},
+      accept() {},
+      finishTurn() {},
+      close() {},
+    };
+  }
   const stream = recognizer.createStream();
   const keywordStream = keywordSpotter.createStream();
   let sampleRate = 48000;
@@ -284,6 +320,7 @@ function createRealtimeTranscriber(socket: WebSocket, onTranscript?: (text: stri
   };
 
   function emitFinal(): void {
+    if (!recognizer) return;
     while (recognizer.isReady(stream)) recognizer.decode(stream);
     const text = recognizer.getResult(stream).text.trim();
     if (text) {
@@ -385,7 +422,10 @@ const server = createServer(async (request, response) => {
     response.writeHead(204).end();
     return;
   }
-  if (request.method === 'GET' && request.url === '/health') {
+  if (
+    (request.method === 'GET' || request.method === 'HEAD') &&
+    (request.url === '/health' || request.url === '/')
+  ) {
     response.setHeader('Content-Type', 'application/json');
     response.end(
       JSON.stringify({
@@ -458,7 +498,7 @@ void loadTts()
     ),
   )
   .finally(() => {
-    server.listen(PORT, '127.0.0.1', () => {
+    server.listen(PORT, '0.0.0.0', () => {
       process.stdout.write(
         `${JSON.stringify({ msg: 'speech.started', port: PORT, wake_word: 'sherpa-onnx-kws', asr: 'after-wake', tts: tts ? 'kokoro' : 'system-fallback', realtime: MINIMAX_API_KEY ? 'minimax' : 'disabled' })}\n`,
       );

@@ -4,17 +4,27 @@ import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSupabase } from '../../lib/supabase';
 
+const VALID_INVITE_CODES = ['XZ2026', 'VIP888', 'BUSYBEE', 'XZ666', 'SARA888'];
+
 export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setError(null);
+
+    const code = inviteCode.trim().toUpperCase();
+    if (!code || !VALID_INVITE_CODES.includes(code)) {
+      setError('邀请码不正确，请输入有效的邀请码');
+      return;
+    }
+
     setBusy(true);
     const supabase = getSupabase();
     try {
@@ -43,6 +53,18 @@ export default function LoginPage() {
         <h1>XZ 鲜知</h1>
         <p className="sub">把家里的食材、提醒和饮食安排得清清楚楚</p>
         <form onSubmit={handleSubmit}>
+          <div className="field">
+            <label htmlFor="inviteCode">邀请码</label>
+            <input
+              id="inviteCode"
+              type="text"
+              value={inviteCode}
+              onChange={(e) => setInviteCode(e.target.value)}
+              placeholder="请输入邀请码"
+              required
+              autoComplete="off"
+            />
+          </div>
           <div className="field">
             <label htmlFor="email">邮箱</label>
             <input

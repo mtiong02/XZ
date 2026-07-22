@@ -62,14 +62,26 @@ export class AuthGuard implements CanActivate {
     if (!this.env.SUPABASE_URL || !this.env.SUPABASE_ANON_KEY) {
       throw new UnauthorizedException('Auth provider not configured');
     }
+    const baseUrl = this.env.SUPABASE_URL.replace(/\/$/, '');
+    const userUrl = baseUrl.endsWith('/auth/v1') ? `${baseUrl}/user` : `${baseUrl}/auth/v1/user`;
+    const directUrl = `${baseUrl}/user`;
+
     let response: Response;
     try {
-      response = await fetch(`${this.env.SUPABASE_URL}/auth/v1/user`, {
+      response = await fetch(userUrl, {
         headers: {
           apikey: this.env.SUPABASE_ANON_KEY,
           authorization: `Bearer ${token}`,
         },
       });
+      if (response.status === 404 && userUrl !== directUrl) {
+        response = await fetch(directUrl, {
+          headers: {
+            apikey: this.env.SUPABASE_ANON_KEY,
+            authorization: `Bearer ${token}`,
+          },
+        });
+      }
     } catch {
       throw new UnauthorizedException('Auth provider unreachable');
     }

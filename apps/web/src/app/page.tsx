@@ -12,18 +12,20 @@ export default function IndexPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data } = await getSupabase().auth.getSession();
-      if (cancelled) return;
-      if (!data.session) {
-        router.replace('/login');
-        return;
-      }
       try {
+        const { data } = await getSupabase().auth.getSession();
+        if (cancelled) return;
+        if (!data.session) {
+          router.replace('/login');
+          return;
+        }
         const households = await apiGet<HouseholdSummary[]>('/households');
         if (cancelled) return;
         router.replace(households.length === 0 ? '/onboarding' : '/fridge');
       } catch {
-        router.replace('/login');
+        if (!cancelled) {
+          router.replace('/login');
+        }
       }
     })();
     return () => {

@@ -55,13 +55,8 @@ const TRANSCRIPT_DEDUP_WINDOW_MS = 2500;
 
 export function isEndConversation(text: string): boolean {
   const compact = text.replace(/[\s，。！？、,.!?：:；;“”‘’'"`]/g, '');
-  return (
-    /^(?:我(?:们)?(?:要|想|先)?|请)?(?:结束|退出|关闭|停止)(?:这段|本次|当前)?(?:对话|对换|兑换|绘话|会话|聊天|对|聊|会)?(?:了|吧)?$/.test(
-      compact,
-    ) ||
-    /^(?:我们?)?(?:先这样|就这样|没事了|没有别的了|不聊了|结束吧|退下吧|先退下|你先退下)(?:吧|了)?$/.test(
-      compact,
-    )
+  return /结束对话|退出对话|结束会话|退出会话|关闭对话|不用了|算了吧|不聊了|先这样|就这样|没事了|没有别的了|退下吧|先退下|拜拜|再见|期待下次|祝您一切顺利|生活愉快|祝你生活愉快/.test(
+    compact,
   );
 }
 

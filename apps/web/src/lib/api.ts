@@ -3,7 +3,20 @@
 import type { CommandResult, InventoryView } from '@xz/contracts';
 import { getSupabase } from './supabase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001/api/v1';
+function getApiBase(): string {
+  const envUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+    return envUrl;
+  }
+  if (typeof window !== 'undefined') {
+    const isLocal =
+      window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    return isLocal ? 'http://localhost:3001/api/v1' : `${window.location.origin}/api/v1`;
+  }
+  return envUrl || 'http://localhost:3001/api/v1';
+}
+
+const API_BASE = getApiBase();
 
 export interface ProblemDetails {
   title: string;

@@ -102,6 +102,12 @@ importers:
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
+      sherpa-onnx-linux-arm64:
+        specifier: 1.13.2
+        version: 1.13.2
+      sherpa-onnx-linux-x64:
+        specifier: 1.13.2
+        version: 1.13.2
       sherpa-onnx-node:
         specifier: 1.13.2
         version: 1.13.2
@@ -1891,9 +1897,19 @@ packages:
     cpu: [arm64]
     os: [darwin]
 
+  sherpa-onnx-linux-arm64@1.13.2:
+    resolution: {integrity: sha512-IJNyd6ORcMpy1oR2ZXGNidRiPuIh5KWoOYSIOhW9UQ/BUIY43P6fq8Y3XcFj1xNjBtwke7keMW9DA7ZPYxlYoQ==}
+    cpu: [arm64]
+    os: [linux]
+
   sherpa-onnx-linux-arm64@1.13.4:
     resolution: {integrity: sha512-RMjMRqT82BgTXypNNGmLe6ZFYhc3WEvnAGl3DdkK7qB/kuXwkL3iHhV31wAecbnWPsnEpUoD+8cFovWSBzsCuw==}
     cpu: [arm64]
+    os: [linux]
+
+  sherpa-onnx-linux-x64@1.13.2:
+    resolution: {integrity: sha512-CI2pTKgbOTOpAbm6cSwsFzJZ9qD+xcpEKPfmMCMI7KjaEePnTfky+FYxVBvllbYNk9DQznuTT0Ob9XsBhwtE/Q==}
+    cpu: [x64]
     os: [linux]
 
   sherpa-onnx-linux-x64@1.13.4:
@@ -3765,8 +3781,12 @@ snapshots:
   sherpa-onnx-darwin-arm64@1.13.4:
     optional: true
 
+  sherpa-onnx-linux-arm64@1.13.2: {}
+
   sherpa-onnx-linux-arm64@1.13.4:
     optional: true
+
+  sherpa-onnx-linux-x64@1.13.2: {}
 
   sherpa-onnx-linux-x64@1.13.4:
     optional: true

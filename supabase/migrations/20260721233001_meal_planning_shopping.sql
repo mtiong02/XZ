@@ -36,27 +36,7 @@ create table shopping_list_items (
 );
 create index shopping_list_household_status_idx on shopping_list_items(household_id,status,created_at desc);
 
-with recipe_seed(name,description,instructions,tags,servings) as (values
-  ('清蒸鲈鱼','使用现有鲈鱼制作的少油家常菜',array['鲈鱼处理干净','蒸熟后按口味调味'],array['少油','高蛋白候选'],2),
-  ('牛肉炖土豆','牛肉与土豆搭配的家常炖菜',array['牛肉切块焯水','加入土豆后炖至软熟'],array['家常','炖菜'],2),
-  ('番茄炒鸡蛋','番茄和鸡蛋制作的快手家常菜',array['鸡蛋炒至凝固盛出','番茄炒软后与鸡蛋混合'],array['快手','家常'],2)
-)
-insert into recipes(name,description,instructions,tags,servings,source_reference)
-select name,description,instructions,tags,servings,'XZ curated starter recipe; nutrition not calculated' from recipe_seed
-on conflict(name) do nothing;
 
-with ingredients(recipe_name,food_name,quantity,unit_code) as (values
-  ('清蒸鲈鱼','鲈鱼',500::numeric,'g'),
-  ('牛肉炖土豆','牛肉',500::numeric,'g'),
-  ('牛肉炖土豆','土豆',2::numeric,'piece'),
-  ('番茄炒鸡蛋','西红柿',2::numeric,'piece'),
-  ('番茄炒鸡蛋','鸡蛋',3::numeric,'piece')
-)
-insert into recipe_ingredients(recipe_id,food_id,quantity,unit_code)
-select r.id,fc.id,i.quantity,i.unit_code from ingredients i
-join recipes r on r.name=i.recipe_name
-join food_catalog fc on fc.canonical_name=i.food_name and fc.household_id is null
-on conflict(recipe_id,food_id) do nothing;
 
 alter table recipes enable row level security;
 alter table recipe_ingredients enable row level security;

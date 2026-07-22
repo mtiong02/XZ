@@ -1,7 +1,21 @@
 'use client';
 
-const LOCAL_SPEECH_HTTP = process.env.NEXT_PUBLIC_LOCAL_SPEECH_URL ?? 'http://127.0.0.1:6010';
-const REALTIME_URL = `${LOCAL_SPEECH_HTTP.replace(/^http/, 'ws').replace(/\/$/, '')}/realtime`;
+function getRealtimeUrl(): string {
+  const envUrl = process.env.NEXT_PUBLIC_LOCAL_SPEECH_URL;
+  if (envUrl && !envUrl.includes('127.0.0.1') && !envUrl.includes('localhost')) {
+    return `${envUrl.replace(/^http/, 'ws').replace(/\/$/, '')}/realtime`;
+  }
+  if (typeof window !== 'undefined') {
+    const isLocal =
+      window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (!isLocal) {
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${wsProtocol}//${window.location.host}/speech/realtime`;
+    }
+  }
+  return 'ws://127.0.0.1:6010/realtime';
+}
+
 const CONNECT_TIMEOUT_MS = 12000;
 const SPEECH_THRESHOLD = 0.011;
 const END_SILENCE_MS = 900;
@@ -121,7 +135,8 @@ export async function startRealtimeVoice(
   const context = new AudioContext({ latencyHint: 'interactive' });
   await context.resume();
   const player = new PcmPlayer(context);
-  const socket = new WebSocket(REALTIME_URL);
+  const realtimeUrl = getRealtimeUrl();
+  const socket = new WebSocket(realtimeUrl);
   socket.binaryType = 'arraybuffer';
   let source: MediaStreamAudioSourceNode | null = null;
   let processor: AudioWorkletNode | null = null;
