@@ -8,6 +8,7 @@ export default tseslint.config(
       '**/node_modules/',
       '**/dist/',
       '**/.next/',
+      '**/.next-build/',
       '**/coverage/',
       'supabase/.temp/',
       // Next.js 自动生成，不受本仓库 lint 规则约束
@@ -35,6 +36,14 @@ export default tseslint.config(
   {
     files: ['**/*.{js,mjs,cjs}'],
     ...tseslint.configs.disableTypeChecked,
+  },
+  {
+    files: ['apps/web/next.config.mjs'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+      },
+    },
   },
   {
     // 冒烟/运维脚本：Node 运行时全局可用，console 是预期输出方式

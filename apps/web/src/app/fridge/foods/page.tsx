@@ -101,28 +101,29 @@ export default function FoodLibraryPage() {
   return (
     <>
       <AppHeader title="食材百科" subtitle="查找食材知识，也看看当前家庭库存的营养结构" />
-      <main className="container">
-        <section className="zone">
-          <h2>家庭营养结构</h2>
-          <p className="qty">
-            基于当前在库食材做结构分析，不代表任何成员已经实际摄入，也不构成医疗或营养诊断。
-          </p>
-          <div className="stats">
+      <main className="container workspace-page foods-page">
+        <section className="knowledge-hero">
+          <div className="workspace-hero-copy">
+            <span>从家里现有的食材出发</span>
+            <h2>家庭食材结构</h2>
+            <p>基于当前在库食材做结构分析，不代表任何成员已经实际摄入，也不构成医疗或营养诊断。</p>
+          </div>
+          <div className="knowledge-group-grid">
             {nutrition?.groups
               .filter((group) =>
                 ['PROTEIN', 'VEGETABLE', 'FRUIT', 'STAPLE', 'DAIRY', 'LEGUME'].includes(group.code),
               )
               .map((group) => (
-                <div className={`stat-card ${group.present ? '' : 'warn'}`} key={group.code}>
-                  <div className="num">{group.present ? group.food_count : '—'}</div>
-                  <div className="label">{group.label}</div>
-                  <div className="qty">{group.present ? group.foods.join('、') : '暂未记录'}</div>
+                <div className={group.present ? '' : 'missing'} key={group.code}>
+                  <span>{group.label}</span>
+                  <strong>{group.present ? group.food_count : '—'}</strong>
+                  <small>{group.present ? group.foods.join('、') : '暂未记录'}</small>
                 </div>
               ))}
           </div>
-          <div className="items">
+          <div className="knowledge-observations">
             {nutrition?.observations.map((observation) => (
-              <div className="item-card" key={observation.code}>
+              <article key={observation.code}>
                 <div>
                   <div className="name">{observation.title}</div>
                   <div className="qty">{observation.detail}</div>
@@ -130,28 +131,34 @@ export default function FoodLibraryPage() {
                 <span className={`badge ${observation.severity === 'ATTENTION' ? 'warn' : 'safe'}`}>
                   {observation.severity === 'ATTENTION' ? '建议关注' : '分析结果'}
                 </span>
-              </div>
+              </article>
             ))}
           </div>
           {nutrition ? (
-            <p className="qty" style={{ marginTop: 14 }}>
+            <p className="knowledge-evidence">
               数据完整度：{Math.round(nutrition.evidence.profile_completeness * 100)}%（
               {nutrition.evidence.profiled_food_count} 种食材有营养资料，
               {nutrition.evidence.unprofiled_food_count} 种仅按分类分析）。
             </p>
           ) : null}
         </section>
-        <section className="zone">
-          <h2>查找食材</h2>
-          <p className="qty">优先从标准百科中选择，系统会自动用于库存录入、语音识别和保存规则。</p>
-          <input
-            aria-label="搜索食材百科"
-            value={search}
-            placeholder="搜索食材或语音别名，例如：鲍鱼、虎虾、土豆"
-            onChange={(event) => setSearch(event.target.value)}
-          />
+        <section className="food-search-panel">
+          <div>
+            <span>标准食材百科</span>
+            <h2>想了解什么食材？</h2>
+            <p>搜索结果会同时用于库存录入、语音识别、分类、单位和保存规则。</p>
+          </div>
+          <label>
+            <span className="visually-hidden">搜索食材百科</span>
+            <input
+              aria-label="搜索食材百科"
+              value={search}
+              placeholder="搜索食材或语音别名，例如：鲍鱼、虎虾、土豆"
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
         </section>
-        <section className="zone">
+        <section className="zone workspace-section">
           <details>
             <summary>找不到食材？新增家庭自定义食材</summary>
             <p className="qty" style={{ margin: '10px 0 16px' }}>
@@ -247,8 +254,14 @@ export default function FoodLibraryPage() {
             </form>
           </details>
         </section>
-        <section className="zone">
-          <h2>标准食材知识库</h2>
+        <section className="zone workspace-section">
+          <div className="workspace-section-heading">
+            <div>
+              <span>系统维护</span>
+              <h2>标准食材知识库</h2>
+            </div>
+            <small>{visibleFoods.filter((food) => !food.is_custom).length} 种匹配</small>
+          </div>
           <p className="qty">
             已收录 {foods.filter((food) => !food.is_custom).length}{' '}
             种标准食材；分类、别名、单位、保质期和来源均可追溯。
@@ -277,8 +290,13 @@ export default function FoodLibraryPage() {
               ))}
           </div>
         </section>
-        <section className="zone">
-          <h2>我的自定义食材</h2>
+        <section className="zone workspace-section">
+          <div className="workspace-section-heading">
+            <div>
+              <span>只属于这个家庭</span>
+              <h2>我的自定义食材</h2>
+            </div>
+          </div>
           {foods.filter((food) => food.is_custom).length === 0 ? (
             <p className="empty">还没有自定义食材</p>
           ) : (

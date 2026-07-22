@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { interpretReply, relativeInventoryFraction } from './reply-interpreter';
+import { interpretReply, isDialogueExit, relativeInventoryFraction } from './reply-interpreter';
 import type { FoodCatalogEntry } from '../parser/intent-parser';
 
 const catalog: FoodCatalogEntry[] = [
@@ -49,6 +49,18 @@ describe('interpretReply', () => {
 
   it('returns UNCLEAR for unrelated speech', () => {
     expect(interpretReply('今天天气不错', catalog).kind).toBe('UNCLEAR');
+  });
+
+  it.each(['结束对话', '结束兑换', '退出本次绘话', '我要结束对话了', '你先退下吧'])(
+    'treats session exit as rejection: %s',
+    (text) => {
+      expect(isDialogueExit(text)).toBe(true);
+      expect(interpretReply(text, catalog).kind).toBe('REJECT');
+    },
+  );
+
+  it('does not treat a later reminder as session exit', () => {
+    expect(isDialogueExit('结束后提醒我买牛奶')).toBe(false);
   });
 
   it.each(['用掉一半吧', '吃掉半数', '使用50%'])(

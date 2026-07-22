@@ -227,6 +227,7 @@ Multipart：
 - `DELETE /api/v1/households/{householdId}/notifications/reminders/{reminderId}`：取消一条待执行提醒，将任务标记为 `CANCELLED`；保留历史记录，不扣减或改变库存。
 
 取消操作必须经过家庭成员权限校验，只允许取消当前家庭且状态为 `PENDING` 的任务。已触发、已完成或已取消的任务不会被删除或重复修改。
+语音提醒可以只包含一个动作或类别（例如“明天买绿叶菜”“明天交水费”），此时 `food_id` 允许为空；仍需用户明确确认后才写入 `reminder_tasks`。
 
 ## 6. Inventory API
 
@@ -480,14 +481,18 @@ Agent 不能直接访问数据库。Tool 示例：
 
 ## 10.2 当前成员健康档案 API
 
-- `GET|POST /households/:householdId/wellness/me/profile`：读取或保存当前登录成员自己的档案、目标、过敏原与分享授权。
-- `DELETE /households/:householdId/wellness/me/profile`：删除当前成员档案；体重记录随档案删除。
+- `GET|POST /households/:householdId/wellness/me/profile`：读取或保存当前登录成员自己的基础档案、目标、活动水平、过敏原与分享授权。
+- `DELETE /households/:householdId/wellness/me/profile`：在同一事务中删除当前成员档案与全部身体指标记录。
 - `GET|POST /households/:householdId/wellness/me/weight`：读取体重趋势或添加手工记录。
 - `DELETE /households/:householdId/wellness/me/weight/:measurementId`：删除自己的单条记录。
+- `GET /households/:householdId/wellness/me/measurements`：按指标返回本人的体重、腰围、体脂率、静息心率与血压趋势；身高与最新体重齐全时返回派生 BMI 和数据局限。
+- `POST /households/:householdId/wellness/me/measurements`：手工记录一项身体指标，必须携带测量时间；血压必须同时提供收缩压与舒张压。
+- `DELETE /households/:householdId/wellness/me/measurements/:measurementId`：删除本人的单条身体指标记录。
 - `GET /households/:householdId/wellness/me/meal-suggestions`：用当前库存生成候选菜谱，并对已录入过敏原做强制排除。
 
 成人成员健康数据默认仅本人可见；家庭角色不会覆盖这一边界。成员主动开启
 `share_with_household` 后，同家庭成员才具备数据库读取权限。目标标签不等于营养结论；在营养成分和实际摄入不完整时，接口不得计算精确热量、疗效或减重结果。
+BMI 仅由已记录的身高和最新体重派生，作为筛查参考展示，不写回健康事实，也不输出体型或疾病诊断。手工记录必须保留来源与测量时间。
 
 ## 10.3 食材存放审计与移动
 

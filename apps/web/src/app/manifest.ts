@@ -9,6 +9,12 @@ export default function manifest(): MetadataRoute.Manifest {
     display: 'standalone',
     background_color: '#ffffff',
     theme_color: '#16a34a',
-    icons: [],
+    icons: [
+      {
+        src: '/mascot/xiaozhi.png',
+        sizes: 'any',
+        type: 'image/png',
+      },
+    ],
   };
 }

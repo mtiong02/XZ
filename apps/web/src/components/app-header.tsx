@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 
@@ -19,9 +20,16 @@ interface Props {
   subtitle?: string;
   actions?: ReactNode;
   showNavigation?: boolean;
+  compact?: boolean;
 }
 
-export function AppHeader({ title, subtitle, actions, showNavigation = true }: Props) {
+export function AppHeader({
+  title,
+  subtitle,
+  actions,
+  showNavigation = true,
+  compact = true,
+}: Props) {
   const pathname = usePathname();
   const isActive = (href: string) =>
     href === '/fridge' ? pathname === href : pathname.startsWith(href);
@@ -32,7 +40,7 @@ export function AppHeader({ title, subtitle, actions, showNavigation = true }: P
         <div className="app-header-inner">
           <Link href="/fridge" className="brand" aria-label="鲜知首页">
             <span className="brand-mark" aria-hidden="true">
-              X
+              <Image src="/mascot/xiaozhi.png" alt="" width={40} height={40} priority />
             </span>
             <span className="brand-name">鲜知</span>
           </Link>
@@ -51,7 +59,7 @@ export function AppHeader({ title, subtitle, actions, showNavigation = true }: P
           ) : null}
           <div className="header-actions">{actions}</div>
         </div>
-        <div className="page-heading container">
+        <div className={`page-heading container${compact ? ' compact' : ''}`}>
           <div>
             <h1>{title}</h1>
             {subtitle ? <p>{subtitle}</p> : null}

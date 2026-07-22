@@ -18,6 +18,7 @@ export type ParsedIntent =
   | 'CONSUME_INVENTORY'
   | 'DISCARD_INVENTORY'
   | 'QUERY_INVENTORY'
+  | 'QUERY_REMINDERS'
   | 'CREATE_REMINDER'
   | 'EXTERNAL_PURCHASE'
   | 'ADD_SHOPPING_ITEM'
@@ -104,6 +105,8 @@ const INVENTORY_CATEGORY_QUERY =
   /(?:有|剩)(?:哪些|什么)(?:肉类?|荤菜|蔬菜|青菜|菜类|水果|海鲜|水产|鱼虾|龙虾|贝类|蛋奶|奶制品|乳制品|蛋类|豆制品|主食|粮食|谷物|菌菇|蘑菇|调味料|调料|佐料)|(?:肉类?|荤菜|蔬菜|青菜|菜类|水果|海鲜|水产|鱼虾|龙虾|贝类|蛋奶|奶制品|乳制品|蛋类|豆制品|主食|粮食|谷物|菌菇|蘑菇|调味料|调料|佐料)(?:有|剩)(?:哪些|什么|多少)/;
 const INVENTORY_QUERY_REQUEST =
   /(?:冰箱|冷藏|冷冻|常温|库存|家里).*(?:有|剩|哪些|什么)|(?:我|我们)?(?:有|剩)(?:哪些|什么)食材|(?:有哪些|有什么|列出|盘点|查找|查询).*(?:食材|东西|菜)|(?:哪些|什么).*(?:快过期|临期|已经过期)|(?:快过期|临期|过期).*(?:哪些|什么)|(?:今天|今晚|中午).*(?:吃什么|做什么菜|做点什么)|(?:这些|现有|冰箱里|库存里).*(?:能做|可以做|吃什么|怎么吃|美食|菜谱|减脂餐)|(?:减脂|减肥).*(?:餐|吃什么|怎么吃|推荐)/;
+const REMINDER_QUERY_REQUEST =
+  /(?:今天|明天|后天|今晚).*(?:安排|计划|提醒).*(?:什么|哪些|啥|有没有|查看|看一下|查一下)|(?:查看|看一下|查一下|告诉我).*(?:今天|明天|后天|今晚).*(?:安排|计划|提醒)|(?:今天|明天|后天|今晚).*(?:有什么|有哪些).*(?:安排|计划|提醒)|(?:今天|明天|后天|今晚).*有(?:安排|计划|提醒)(?:吗|呢)/;
 const EXPLICIT_COMPLETED_ACTION =
   /用了|用掉|吃了|吃掉|喝了|喝掉|买了|新买|购入|添加|加了|放进|入库|扔了|扔掉|丢了|丢掉|倒掉/;
 
@@ -138,7 +141,14 @@ export function extractCorrectionQuantity(
 }
 
 export function detectIntent(normalized: string): { intent: ParsedIntent; confidence: number } {
-  if (/(?:提醒(?:一|1)?下?我|到时候提醒|记得提醒|别忘了提醒)/.test(normalized)) {
+  if (REMINDER_QUERY_REQUEST.test(normalized)) {
+    return { intent: 'QUERY_REMINDERS', confidence: 0.98 };
+  }
+  if (
+    /(?:提醒(?:一|1)?下?我|到时候提醒|记得提醒|别忘了提醒|定(?:一个|1个|个)?提醒|设置(?:一个|1个)?提醒|安排(?:一个|1个)?提醒)/.test(
+      normalized,
+    )
+  ) {
     return { intent: 'CREATE_REMINDER', confidence: 0.98 };
   }
   if (/(?:加入|加到|添加到).{0,20}购物清单|购物清单.{0,10}(?:加|添加)/.test(normalized)) {

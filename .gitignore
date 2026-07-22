@@ -23,6 +23,8 @@ supabase/.branches/
 
 # test artifacts
 coverage/
+.playwright-cli/
+output/
 
 # downloaded local speech models
 local-models/

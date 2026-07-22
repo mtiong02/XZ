@@ -22,6 +22,7 @@ export default function MealsPage() {
   const [nutrition, setNutrition] = useState<NutritionStructureView | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [addingRecipeId, setAddingRecipeId] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     if (!household) return;
@@ -42,59 +43,84 @@ export default function MealsPage() {
 
   useEffect(() => void reload(), [reload]);
   if (loading || !household) return <div className="empty">加载中…</div>;
+  const makeableCount = recipes.filter((recipe) => recipe.can_make).length;
+  const attentionObservations =
+    nutrition?.observations
+      .filter((observation) => observation.severity === 'ATTENTION')
+      .slice(0, 2) ?? [];
 
   return (
     <>
       <AppHeader title="餐食与购物清单" subtitle="优先利用现有食材，缺少的再加入清单" />
-      <main className="container">
-        <p className="sub" style={{ marginBottom: 16 }}>
-          候选仅依据当前库存和临期状态；不会自动扣减库存，也不会向外部商家下单。
-        </p>
+      <main className="container workspace-page meals-page">
         {error ? <div className="error-box">{error}</div> : null}
         {message ? <div className="success-box">{message}</div> : null}
 
-        {nutrition ? (
-          <section className="zone">
-            <h2>从家庭结构出发</h2>
-            <p className="qty">
-              当前先优先利用库存中已有食材；以下建议只反映库存结构，不代表成员实际摄入。
-            </p>
-            <div className="items">
-              {nutrition.observations
-                .filter((observation) => observation.severity === 'ATTENTION')
-                .slice(0, 2)
-                .map((observation) => (
-                  <div className="item-card" key={observation.code}>
-                    <div>
-                      <div className="name">{observation.title}</div>
-                      <div className="qty">{observation.detail}</div>
-                    </div>
-                    <span className="badge warn">补充建议</span>
-                  </div>
-                ))}
+        <section className="workspace-hero workspace-hero-compact meal-hero">
+          <div className="workspace-hero-copy">
+            <span>先看看家里能做什么</span>
+            <h2>
+              {makeableCount > 0
+                ? `已有 ${makeableCount} 道菜可以直接准备`
+                : '从库存出发安排下一餐'}
+            </h2>
+            <p>候选只依据当前库存、临期状态和已确认限制，不自动扣减库存，也不会代你下单。</p>
+          </div>
+          <div className="workspace-summary-grid">
+            <div>
+              <strong>{recipes.length}</strong>
+              <span>餐食候选</span>
             </div>
-          </section>
-        ) : null}
+            <div>
+              <strong>{makeableCount}</strong>
+              <span>现在可做</span>
+            </div>
+            <div className={shopping.length > 0 ? 'attention' : ''}>
+              <strong>{shopping.length}</strong>
+              <span>待购食材</span>
+            </div>
+          </div>
+          {attentionObservations.length > 0 ? (
+            <div className="meal-attention-strip">
+              {attentionObservations.map((observation) => (
+                <div key={observation.code}>
+                  <strong>{observation.title}</strong>
+                  <span>{observation.detail}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
 
-        <section className="zone">
-          <h2>当前可选菜谱</h2>
-          <div className="items">
-            {recipes.map((recipe) => (
-              <article className="item-card" key={recipe.id} style={{ alignItems: 'flex-start' }}>
-                <div style={{ width: '100%' }}>
-                  <div className="name">{recipe.name}</div>
-                  <div className="qty">
-                    {recipe.description} · {recipe.servings} 人份
+        <div className="workspace-layout meal-layout">
+          <section className="zone workspace-section meal-recipes">
+            <div className="workspace-section-heading">
+              <div>
+                <span>结合现有食材</span>
+                <h2>餐食候选</h2>
+              </div>
+              <small>优先展示库存覆盖高的方案</small>
+            </div>
+            <div className="meal-recipe-list">
+              {recipes.map((recipe) => (
+                <article className="meal-recipe-card" key={recipe.id}>
+                  <div className="meal-recipe-copy">
+                    <div className="name">{recipe.name}</div>
+                    <div className="qty">
+                      {recipe.description} · {recipe.servings} 人份
+                    </div>
+                    <div className="meal-ingredients">
+                      {recipe.ingredients.map((item) => (
+                        <span className={item.available ? 'available' : ''} key={item.food_id}>
+                          {item.available ? '已有' : '缺少'} · {item.food_name}
+                          {item.quantity
+                            ? ` ${item.quantity}${unitLabel(item.unit_code ?? '')}`
+                            : ''}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                  <div className="qty" style={{ marginTop: 6 }}>
-                    {recipe.ingredients
-                      .map(
-                        (item) =>
-                          `${item.available ? '✓' : '○'} ${item.food_name}${item.quantity ? ` ${item.quantity}${unitLabel(item.unit_code ?? '')}` : ''}`,
-                      )
-                      .join(' · ')}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+                  <div className="meal-recipe-actions">
                     <span className={`badge ${recipe.can_make ? 'normal' : 'unknown'}`}>
                       {recipe.can_make
                         ? '现有食材可做'
@@ -103,65 +129,89 @@ export default function MealsPage() {
                     {recipe.missing.length ? (
                       <button
                         className="primary"
+                        disabled={addingRecipeId === recipe.id}
                         onClick={async () => {
-                          const result = (await addMissingRecipeItems(household.id, recipe.id)) as {
-                            added_count: number;
-                          };
-                          setMessage(`已把 ${result.added_count} 项缺少食材加入购物清单。`);
-                          await reload();
+                          setAddingRecipeId(recipe.id);
+                          setMessage('');
+                          try {
+                            const result = await addMissingRecipeItems(household.id, recipe.id);
+                            const nextShopping = await fetchShoppingList(household.id);
+                            const visibleIds = new Set(nextShopping.map((item) => item.id));
+                            const visibleCount = result.items.filter((item) =>
+                              visibleIds.has(item.id),
+                            ).length;
+                            if (visibleCount !== result.items.length) {
+                              throw new Error('购物清单尚未同步完成，请稍后重试。');
+                            }
+                            setShopping(nextShopping);
+                            setMessage(`已把 ${visibleCount} 项缺少食材放入待购清单。`);
+                            setError('');
+                          } catch (caught) {
+                            setError(caught instanceof Error ? caught.message : '加入缺料失败');
+                          } finally {
+                            setAddingRecipeId(null);
+                          }
                         }}
                       >
-                        加入缺料
+                        {addingRecipeId === recipe.id ? '加入中…' : '加入缺料'}
                       </button>
                     ) : null}
                   </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="zone">
-          <h2>待购清单</h2>
-          {shopping.length === 0 ? (
-            <p className="empty">购物清单还是空的。</p>
-          ) : (
-            <div className="items">
-              {shopping.map((item) => (
-                <div className="item-card" key={item.id}>
-                  <div>
-                    <div className="name">{item.food_name}</div>
-                    <div className="qty">
-                      {item.quantity
-                        ? `${item.quantity} ${unitLabel(item.unit_code ?? '')}`
-                        : '数量待定'}
-                      {item.recipe_name ? ` · 来自${item.recipe_name}` : ''}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button
-                      className="primary"
-                      onClick={async () => {
-                        await updateShoppingItemStatus(household.id, item.id, 'PURCHASED');
-                        await reload();
-                      }}
-                    >
-                      已购买
-                    </button>
-                    <button
-                      onClick={async () => {
-                        await updateShoppingItemStatus(household.id, item.id, 'CANCELLED');
-                        await reload();
-                      }}
-                    >
-                      移除
-                    </button>
-                  </div>
-                </div>
+                </article>
               ))}
             </div>
-          )}
-        </section>
+          </section>
+
+          <section className="zone workspace-section meal-shopping">
+            <div className="workspace-section-heading">
+              <div>
+                <span>只放确认要买的东西</span>
+                <h2>待购清单</h2>
+              </div>
+              <small>{shopping.length} 项</small>
+            </div>
+            {shopping.length === 0 ? (
+              <p className="empty workspace-empty">购物清单还是空的。</p>
+            ) : (
+              <div className="workspace-card-list">
+                {shopping.map((item) => (
+                  <article className="workspace-card workspace-card-stack" key={item.id}>
+                    <div>
+                      <div className="name">{item.food_name}</div>
+                      <div className="qty">
+                        {item.quantity
+                          ? `${item.quantity} ${unitLabel(item.unit_code ?? '')}`
+                          : '数量待定'}
+                        {item.recipe_name ? ` · 来自${item.recipe_name}` : ''}
+                      </div>
+                    </div>
+                    <div className="workspace-card-actions">
+                      <button
+                        className="primary"
+                        onClick={async () => {
+                          await updateShoppingItemStatus(household.id, item.id, 'PURCHASED');
+                          setMessage('');
+                          await reload();
+                        }}
+                      >
+                        已购买
+                      </button>
+                      <button
+                        onClick={async () => {
+                          await updateShoppingItemStatus(household.id, item.id, 'CANCELLED');
+                          setMessage('');
+                          await reload();
+                        }}
+                      >
+                        移除
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
       </main>
     </>
   );

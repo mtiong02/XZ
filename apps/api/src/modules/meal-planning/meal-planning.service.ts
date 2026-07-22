@@ -149,7 +149,10 @@ export class MealPlanningService {
        (household_id,food_id,quantity,unit_code,source,recipe_id,idempotency_key,created_by_member_id)
        select $1,fc.id,$3,$4,$5,$6,$7,$8 from food_catalog fc
        where fc.id=$2 and (fc.household_id is null or fc.household_id=$1)
-       on conflict(household_id,idempotency_key) do update set idempotency_key=excluded.idempotency_key
+       on conflict(household_id,idempotency_key) do update set
+       quantity=excluded.quantity,unit_code=excluded.unit_code,status='PENDING',
+       source=excluded.source,recipe_id=excluded.recipe_id,
+       created_by_member_id=excluded.created_by_member_id,created_at=now(),completed_at=null
        returning id,food_id,quantity::text,unit_code,status,source,recipe_id`,
       [
         householdId,

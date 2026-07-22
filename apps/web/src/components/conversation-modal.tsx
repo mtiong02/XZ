@@ -1,9 +1,16 @@
 'use client';
 
 import Image from 'next/image';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { startRealtimeVoice, type RealtimeVoiceHandle } from '../lib/realtime-voice';
 import {
+  cancelVoiceJob,
   createTextVoiceJob,
   isAwaitingReply,
   replyVoiceJob,
@@ -16,6 +23,8 @@ interface Props {
   onOpen: () => void;
   onClose: () => void;
   onExecuted: () => void;
+  onAddInventory: () => void;
+  onConsumeInventory: () => void;
   dailyBriefing?: { text: string; should_speak: boolean; scheduled_time: string } | null;
   scheduledReminders?: Array<{ id: string; text: string; scheduled_for: string }>;
 }
@@ -26,6 +35,11 @@ type SpeechSource = 'online-audio' | 'manual';
 interface Message {
   role: 'user' | 'system';
   text: string;
+}
+
+interface MascotPosition {
+  x: number;
+  y: number;
 }
 
 function normalizedSpeech(text: string): string {
@@ -59,6 +73,8 @@ export function ConversationModal({
   onOpen,
   onClose,
   onExecuted,
+  onAddInventory,
+  onConsumeInventory,
   dailyBriefing,
   scheduledReminders = [],
 }: Props) {
@@ -68,6 +84,8 @@ export function ConversationModal({
   const [manualText, setManualText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [voiceMode, setVoiceMode] = useState<'online' | null>(null);
+  const [mascotPosition, setMascotPosition] = useState<MascotPosition | null>(null);
+  const [mascotDragging, setMascotDragging] = useState(false);
 
   const jobRef = useRef<VoiceJob | null>(null);
   const realtimeRef = useRef<RealtimeVoiceHandle | null>(null);
@@ -81,12 +99,79 @@ export function ConversationModal({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const reminderTimersRef = useRef<number[]>([]);
   const startRef = useRef<() => Promise<void>>(async () => undefined);
+  const mascotRef = useRef<HTMLDivElement | null>(null);
+  const suppressMascotClickRef = useRef(false);
+  const mascotDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    x: number;
+    y: number;
+    moved: boolean;
+  } | null>(null);
+
+  const clampMascotPosition = useCallback((position: MascotPosition): MascotPosition => {
+    const rect = mascotRef.current?.getBoundingClientRect();
+    const width = rect?.width ?? 276;
+    const height = rect?.height ?? 82;
+    const edge = 10;
+    const navigationSpace = window.innerWidth <= 680 ? 76 : edge;
+    return {
+      x: Math.min(Math.max(position.x, edge), Math.max(edge, window.innerWidth - width - edge)),
+      y: Math.min(
+        Math.max(position.y, edge),
+        Math.max(edge, window.innerHeight - height - navigationSpace),
+      ),
+    };
+  }, []);
+
+  useEffect(() => {
+    const storageKey = `xz-mascot-position:${householdId}`;
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      if (!stored) {
+        setMascotPosition(null);
+        return;
+      }
+      const parsed = JSON.parse(stored) as Partial<MascotPosition>;
+      if (
+        typeof parsed.x === 'number' &&
+        Number.isFinite(parsed.x) &&
+        typeof parsed.y === 'number' &&
+        Number.isFinite(parsed.y)
+      ) {
+        setMascotPosition(clampMascotPosition({ x: parsed.x, y: parsed.y }));
+      }
+    } catch {
+      window.localStorage.removeItem(storageKey);
+    }
+  }, [clampMascotPosition, householdId]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setMascotPosition((current) => (current ? clampMascotPosition(current) : current));
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [clampMascotPosition]);
 
   const stopListening = useCallback(() => {
     realtimeRef.current?.stop();
     realtimeRef.current = null;
     reminderTimersRef.current.forEach((timer) => window.clearTimeout(timer));
     reminderTimersRef.current = [];
+  }, []);
+
+  const abandonPendingJob = useCallback(() => {
+    const pending = jobRef.current;
+    jobRef.current = null;
+    queuedTextRef.current = null;
+    if (!pending || !isAwaitingReply(pending.status)) return;
+    void cancelVoiceJob(pending.voice_job_id).catch((caught: unknown) => {
+      setError(caught instanceof Error ? caught.message : '取消当前语音任务失败');
+    });
   }, []);
 
   useEffect(() => {
@@ -251,10 +336,12 @@ export function ConversationModal({
           setPhase('listening');
         },
         onSessionEnding: () => {
+          abandonPendingJob();
           setInterim('正在结束本次对话…');
           setPhase('processing');
         },
         onSessionEnded: () => {
+          abandonPendingJob();
           setInterim('');
           setPhase('standby');
         },
@@ -321,7 +408,14 @@ export function ConversationModal({
       setError(onlineError instanceof Error ? onlineError.message : 'MiniMax 在线语音不可用');
       setPhase('idle');
     }
-  }, [dailyBriefing, householdId, pushMessage, scheduledReminders, stopListening]);
+  }, [
+    abandonPendingJob,
+    dailyBriefing,
+    householdId,
+    pushMessage,
+    scheduledReminders,
+    stopListening,
+  ]);
   startRef.current = start;
 
   useEffect(() => {
@@ -339,6 +433,62 @@ export function ConversationModal({
 
   function quickReply(text: string): void {
     dispatchRef.current(text, 'manual');
+  }
+
+  function handleMascotPointerDown(event: ReactPointerEvent<HTMLDivElement>): void {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    mascotDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: rect.left,
+      originY: rect.top,
+      x: rect.left,
+      y: rect.top,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleMascotPointerMove(event: ReactPointerEvent<HTMLDivElement>): void {
+    const drag = mascotDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - drag.startX;
+    const deltaY = event.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(deltaX, deltaY) < 5) return;
+    drag.moved = true;
+    const nextPosition = clampMascotPosition({
+      x: drag.originX + deltaX,
+      y: drag.originY + deltaY,
+    });
+    drag.x = nextPosition.x;
+    drag.y = nextPosition.y;
+    setMascotDragging(true);
+    setMascotPosition(nextPosition);
+  }
+
+  function finishMascotDrag(event: ReactPointerEvent<HTMLDivElement>): void {
+    const drag = mascotDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    mascotDragRef.current = null;
+    setMascotDragging(false);
+    if (!drag.moved) return;
+    suppressMascotClickRef.current = true;
+    window.setTimeout(() => {
+      suppressMascotClickRef.current = false;
+    }, 0);
+    try {
+      window.localStorage.setItem(
+        `xz-mascot-position:${householdId}`,
+        JSON.stringify({ x: drag.x, y: drag.y }),
+      );
+    } catch {
+      // 隐私模式下本地存储可能不可用；不影响本次拖动。
+    }
   }
 
   const awaiting = jobRef.current ? isAwaitingReply(jobRef.current.status) : false;
@@ -361,34 +511,76 @@ export function ConversationModal({
 
   if (!expanded) {
     return (
-      <button
-        type="button"
-        className={`mascot-assistant mascot-${phase}`}
-        onClick={() => {
-          if (phase === 'idle') void start();
-          onOpen();
-        }}
-        aria-label="打开小知语音助手"
+      <div
+        ref={mascotRef}
+        className={`mascot-assistant mascot-${phase}${mascotDragging ? ' is-dragging' : ''}`}
+        style={
+          mascotPosition
+            ? {
+                left: mascotPosition.x,
+                top: mascotPosition.y,
+                right: 'auto',
+                bottom: 'auto',
+              }
+            : undefined
+        }
+        onPointerDown={handleMascotPointerDown}
+        onPointerMove={handleMascotPointerMove}
+        onPointerUp={finishMascotDrag}
+        onPointerCancel={finishMascotDrag}
+        onDragStart={(event) => event.preventDefault()}
+        aria-label="小知语音与库存快捷操作；按住可移动位置"
       >
-        <span className="mascot-glow" aria-hidden="true" />
-        <Image
-          className="mascot-image"
-          src="/mascot/xiaozhi.png"
-          width={190}
-          height={190}
-          priority
-          alt="小知语音助手"
-        />
-        <span className="mascot-copy">
-          <strong>小知</strong>
-          <small>{mascotStatus[phase]}</small>
+        <button
+          className="mascot-main"
+          type="button"
+          onClick={() => {
+            if (suppressMascotClickRef.current) {
+              suppressMascotClickRef.current = false;
+              return;
+            }
+            if (phase === 'idle') void start();
+            onOpen();
+          }}
+          aria-label="打开小知语音助手"
+          title="点击和小知说话，按住可移动"
+        >
+          <span className="mascot-glow" aria-hidden="true" />
+          <Image
+            className="mascot-image"
+            src="/mascot/xiaozhi.png"
+            width={190}
+            height={190}
+            priority
+            alt="小知语音助手"
+          />
+          <span className="mascot-copy">
+            <strong>小知</strong>
+            <small>{mascotStatus[phase]}</small>
+          </span>
+          <span className="mascot-dots" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+        </button>
+        <span className="mascot-inventory-actions" aria-label="库存快捷操作">
+          <button
+            type="button"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={onAddInventory}
+          >
+            添加
+          </button>
+          <button
+            type="button"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={onConsumeInventory}
+          >
+            使用
+          </button>
         </span>
-        <span className="mascot-dots" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </span>
-      </button>
+      </div>
     );
   }
 
@@ -440,7 +632,7 @@ export function ConversationModal({
             <button className="primary" onClick={() => quickReply('对')}>
               确认
             </button>
-            <button onClick={() => quickReply('不对')}>修改</button>
+            <button onClick={() => quickReply('不对')}>取消这次</button>
           </div>
         ) : null}
 

@@ -8,6 +8,7 @@ export interface Membership {
   householdId: string;
   role: 'OWNER' | 'MEMBER';
   displayName: string;
+  timezone: string;
 }
 
 /**
@@ -24,10 +25,12 @@ export class MembershipService {
       household_id: string;
       role: 'OWNER' | 'MEMBER';
       display_name: string;
+      timezone: string;
     }>(
-      `select id, household_id, role, display_name
-       from household_members
-       where household_id = $1 and user_id = $2`,
+      `select hm.id, hm.household_id, hm.role, hm.display_name, h.timezone
+       from household_members hm
+       join households h on h.id = hm.household_id
+       where hm.household_id = $1 and hm.user_id = $2`,
       [householdId, userId],
     );
     const row = result.rows[0];
@@ -37,6 +40,7 @@ export class MembershipService {
       householdId: row.household_id,
       role: row.role,
       displayName: row.display_name,
+      timezone: row.timezone,
     };
   }
 

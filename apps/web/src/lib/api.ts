@@ -296,14 +296,20 @@ export interface MealIngredientView {
 
 export type WellnessGoal =
   'GENERAL_WELLNESS' | 'WEIGHT_MANAGEMENT' | 'MUSCLE_SUPPORT' | 'BALANCED_DIET';
+export type ActivityLevel = 'LOW' | 'MODERATE' | 'HIGH';
 export interface WellnessProfile {
   birth_year: number | null;
-  height_cm: string | number | null;
+  height_cm: number | null;
   goal: WellnessGoal;
+  activity_level: ActivityLevel;
   allergen_codes: string[];
   dietary_restrictions: string[];
   health_considerations: string[];
   share_with_household: boolean;
+}
+interface WellnessProfileResponse extends Omit<WellnessProfile, 'height_cm' | 'activity_level'> {
+  height_cm: string | number | null;
+  activity_level?: ActivityLevel;
 }
 export interface WeightTrend {
   entries: Array<{ id: string; value: string; measured_at: string; note: string | null }>;
@@ -316,17 +322,96 @@ export interface PersonalizedMeals {
   excluded_for_allergens: Array<{ id: string; name: string }>;
   limitations: string[];
 }
-export function fetchWellnessProfile(householdId: string) {
-  return apiGet<WellnessProfile | null>(`/households/${householdId}/wellness/me/profile`);
+export async function fetchWellnessProfile(householdId: string): Promise<WellnessProfile | null> {
+  const profile = await apiGet<WellnessProfileResponse | null>(
+    `/households/${householdId}/wellness/me/profile`,
+  );
+  if (!profile) return null;
+  return {
+    birth_year: profile.birth_year,
+    height_cm: profile.height_cm == null ? null : Number(profile.height_cm),
+    goal: profile.goal,
+    activity_level: profile.activity_level ?? 'MODERATE',
+    allergen_codes: profile.allergen_codes,
+    dietary_restrictions: profile.dietary_restrictions,
+    health_considerations: profile.health_considerations,
+    share_with_household: profile.share_with_household,
+  };
 }
 export function saveWellnessProfile(householdId: string, profile: WellnessProfile) {
-  return apiPost<WellnessProfile>(`/households/${householdId}/wellness/me/profile`, profile);
+  return apiPost<WellnessProfile>(`/households/${householdId}/wellness/me/profile`, {
+    birth_year: profile.birth_year,
+    height_cm: profile.height_cm == null ? null : Number(profile.height_cm),
+    goal: profile.goal,
+    activity_level: profile.activity_level,
+    allergen_codes: profile.allergen_codes,
+    dietary_restrictions: profile.dietary_restrictions,
+    health_considerations: profile.health_considerations,
+    share_with_household: profile.share_with_household,
+  });
 }
 export function fetchWeightTrend(householdId: string) {
   return apiGet<WeightTrend>(`/households/${householdId}/wellness/me/weight`);
 }
 export function addWeightEntry(householdId: string, weight_kg: number, measured_at: string) {
   return apiPost(`/households/${householdId}/wellness/me/weight`, { weight_kg, measured_at });
+}
+export type MeasurementMetric =
+  'WEIGHT' | 'WAIST_CIRCUMFERENCE' | 'BODY_FAT_PERCENT' | 'RESTING_HEART_RATE' | 'BLOOD_PRESSURE';
+export interface BodyMeasurementEntry {
+  id: string;
+  metric_type: MeasurementMetric;
+  value: number;
+  secondary_value: number | null;
+  unit_code: string;
+  measured_at: string;
+  source: 'MANUAL';
+  note: string | null;
+}
+export interface BodyMeasurementTrend {
+  metric_type: MeasurementMetric;
+  label: string;
+  unit: string;
+  entries: BodyMeasurementEntry[];
+  latest_value: number;
+  latest_secondary_value: number | null;
+  change: number;
+}
+export interface BodyMeasurementSummary {
+  metrics: BodyMeasurementTrend[];
+  derived: {
+    bmi: { value: number; measured_at: string; based_on: string[] } | null;
+  };
+  total_entries: number;
+  evidence: {
+    source: 'USER_RECORDED';
+    profile_height_available: boolean;
+    measurement_count: number;
+  };
+  limitations: string[];
+}
+export function fetchBodyMeasurements(householdId: string) {
+  return apiGet<BodyMeasurementSummary>(`/households/${householdId}/wellness/me/measurements`);
+}
+export function addBodyMeasurement(
+  householdId: string,
+  input: {
+    metric_type: MeasurementMetric;
+    value: number;
+    secondary_value?: number;
+    measured_at: string;
+    note?: string;
+  },
+) {
+  return apiPost<BodyMeasurementEntry>(
+    `/households/${householdId}/wellness/me/measurements`,
+    input,
+  );
+}
+export function deleteBodyMeasurement(householdId: string, measurementId: string) {
+  return apiDelete<{ deleted: boolean }>(
+    `/households/${householdId}/wellness/me/measurements/${measurementId}`,
+  );
 }
 export function fetchPersonalizedMeals(householdId: string) {
   return apiGet<PersonalizedMeals>(`/households/${householdId}/wellness/me/meal-suggestions`);
@@ -356,10 +441,26 @@ export interface ShoppingListItemView {
   recipe_name: string | null;
   created_at: string;
 }
+export interface AddMissingRecipeItemsResult {
+  recipe_id: string;
+  added_count: number;
+  items: Array<{
+    id: string;
+    food_id: string;
+    quantity: string | null;
+    unit_code: string | null;
+    status: string;
+    source: string;
+    recipe_id: string | null;
+  }>;
+}
 export function fetchMealSuggestions(householdId: string): Promise<MealSuggestionView[]> {
   return apiGet(`/households/${householdId}/meal-suggestions`);
 }
-export function addMissingRecipeItems(householdId: string, recipeId: string) {
+export function addMissingRecipeItems(
+  householdId: string,
+  recipeId: string,
+): Promise<AddMissingRecipeItemsResult> {
   return apiPost(`/households/${householdId}/meal-suggestions/${recipeId}/add-missing`, {});
 }
 export function fetchShoppingList(householdId: string): Promise<ShoppingListItemView[]> {

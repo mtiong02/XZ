@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import Big from 'big.js';
 import type { Pool } from 'pg';
 import { z } from 'zod';
-import { ChannelSchema, COMMAND_PAYLOAD_SCHEMAS } from '@xz/contracts';
+import { ChannelSchema, COMMAND_PAYLOAD_SCHEMAS, type InventoryZoneView } from '@xz/contracts';
 import { PG_POOL } from '../../infra/db/database.module';
 import { FoodCategoryService } from '../food-knowledge/food-category.service';
 import { MembershipService } from '../household/membership.service';
@@ -98,6 +98,11 @@ interface VoiceJobRow {
 }
 
 const REPLIABLE_STATUSES = new Set(['AWAITING_CONFIRMATION', 'AWAITING_CLARIFICATION']);
+const READ_ONLY_QUERY_INTENTS = new Set([
+  'QUERY_INVENTORY',
+  'QUERY_REMINDERS',
+  'QUERY_SHOPPING_LIST',
+]);
 
 const JOB_COLUMNS = `id, household_id, status, transcript_raw, transcript_normalized,
        candidate_command_json, confidence_json, requires_confirmation, error_code,
@@ -145,9 +150,16 @@ export class VoiceService {
     const outcome =
       parsed.intent === 'CREATE_REMINDER'
         ? await this.buildReminderOutcome(input.household_id, userId, input.transcript_text, parsed)
-        : parsed.intent === 'QUERY_SHOPPING_LIST'
-          ? await this.buildShoppingListQueryOutcome(input.household_id, userId)
-          : this.buildOutcome(parsed);
+        : parsed.intent === 'QUERY_REMINDERS'
+          ? await this.buildReminderQueryOutcome(
+              input.household_id,
+              userId,
+              normalized,
+              membership.timezone,
+            )
+          : parsed.intent === 'QUERY_SHOPPING_LIST'
+            ? await this.buildShoppingListQueryOutcome(input.household_id, userId)
+            : this.buildOutcome(parsed);
     if (parsed.intent === 'QUERY_INVENTORY') {
       outcome.spokenPrompt = await this.buildInventoryQueryPrompt(
         input.household_id,
@@ -306,6 +318,24 @@ export class VoiceService {
     };
   }
 
+  private async buildReminderQueryOutcome(
+    householdId: string,
+    userId: string,
+    normalized: string,
+    timezone: string,
+  ) {
+    const tasks = (await this.notifications.listReminderTasks(householdId, userId)) as Array<{
+      reminder_text: string;
+      scheduled_for: Date | string;
+    }>;
+    return {
+      status: 'COMPLETED',
+      candidate: null,
+      errorCode: null,
+      spokenPrompt: reminderQueryPrompt(tasks, normalized, timezone),
+    };
+  }
+
   private async buildReminderOutcome(
     householdId: string,
     userId: string,
@@ -338,7 +368,13 @@ export class VoiceService {
             relativeFraction,
           )
         : null;
-    const foodText = item ? (relativeFoodText ?? reminderFoodText(item)) : undefined;
+    const isPurchaseReminder = /买|购买|采购|补充|添置/.test(rawText);
+    const genericText = extractReminderText(rawText);
+    const foodText = isPurchaseReminder
+      ? (genericText ?? (item ? reminderFoodText(item) : undefined))
+      : item
+        ? (relativeFoodText ?? reminderFoodText(item))
+        : genericText;
     const editsExisting = /改成|改为|修改|调整/.test(rawText);
     const existingReminder =
       editsExisting && item
@@ -369,12 +405,12 @@ export class VoiceService {
         spokenPrompt: '你希望我在什么时候提醒？',
       };
     }
-    if (!item) {
+    if (!item && !foodText) {
       return {
         status: 'AWAITING_CLARIFICATION',
         candidate,
         errorCode: null,
-        spokenPrompt: '你想让我提醒你处理哪种食材？',
+        spokenPrompt: '你想让我提醒你做什么？例如“明天买绿叶菜”或“明天吃药”。',
       };
     }
     if (relativeFraction && !relativeFoodText) {
@@ -382,7 +418,7 @@ export class VoiceService {
         status: 'AWAITING_CLARIFICATION',
         candidate,
         errorCode: null,
-        spokenPrompt: `我暂时无法按当前库存换算${item.food_name}的一半。请告诉我要提醒你吃掉多少。`,
+        spokenPrompt: `我暂时无法按当前库存换算${item?.food_name ?? '这项食材'}的一半。请告诉我要提醒你吃掉多少。`,
       };
     }
     return {
@@ -391,7 +427,7 @@ export class VoiceService {
       errorCode: null,
       spokenPrompt: reminderConfirmationPrompt(
         scheduled.toISOString(),
-        foodText ?? reminderFoodText(item),
+        foodText ?? (item ? reminderFoodText(item) : '处理这件事'),
       ),
     };
   }
@@ -424,7 +460,9 @@ export class VoiceService {
     parsed: ParseResult,
   ): Promise<string> {
     const inventory = await this.queries.getInventoryView(householdId, userId);
-    let items = inventory.zones.flatMap((zone) => zone.items);
+    const selectedZones = selectInventoryZones(inventory.zones, normalized);
+    const requestedZone = selectedZones.length === 1 ? selectedZones[0] : null;
+    let items = selectedZones.flatMap((zone) => zone.items);
     const requestedIds = new Set(parsed.items.map((item) => item.food_id));
     if (requestedIds.size > 0) items = items.filter((item) => requestedIds.has(item.food_id));
 
@@ -448,9 +486,15 @@ export class VoiceService {
     if (items.length === 0) {
       if (requestedIds.size > 0) {
         const names = parsed.items.map((item) => item.food_name).join('、');
-        return `目前库存里没有${names}。`;
+        return requestedZone
+          ? `${requestedZone.name}目前没有${names}。`
+          : `目前库存里没有${names}。`;
       }
-      if (categoryRequest) return `目前库存里没有${categoryRequest.label}。`;
+      if (categoryRequest)
+        return requestedZone
+          ? `${requestedZone.name}目前没有${categoryRequest.label}。`
+          : `目前库存里没有${categoryRequest.label}。`;
+      if (requestedZone) return `${requestedZone.name}目前是空的。`;
       return asksExpiry ? '目前没有临期或已经过期的食材。' : '目前库存还是空的。';
     }
 
@@ -481,9 +525,16 @@ export class VoiceService {
     const suffix = items.length > 8 ? `等${items.length}种食材` : '';
     if (asksExpiry)
       return `需要优先处理的有：${descriptions.join('、')}${suffix ? `，${suffix}` : ''}。`;
-    if (requestedIds.size > 0) return `目前有${descriptions.join('、')}。`;
+    if (requestedIds.size > 0)
+      return requestedZone
+        ? `${requestedZone.name}目前有${descriptions.join('、')}。`
+        : `目前有${descriptions.join('、')}。`;
     if (categoryRequest)
-      return `你现在有${categoryRequest.label}：${descriptions.join('、')}${suffix ? `，${suffix}` : ''}。`;
+      return requestedZone
+        ? `${requestedZone.name}现在有${categoryRequest.label}：${descriptions.join('、')}${suffix ? `，${suffix}` : ''}。`
+        : `你现在有${categoryRequest.label}：${descriptions.join('、')}${suffix ? `，${suffix}` : ''}。`;
+    if (requestedZone)
+      return `${requestedZone.name}现在有：${descriptions.join('、')}${suffix ? `，${suffix}` : ''}。`;
     return `你现在有：${descriptions.join('、')}${suffix ? `，${suffix}` : ''}。`;
   }
 
@@ -549,6 +600,19 @@ export class VoiceService {
       throw new DomainError('CONFLICT', 'VOICE_JOB_NOT_REPLIABLE', `Voice job is ${job.status}.`);
     }
     const catalog = await this.loadCatalog(job.household_id);
+    const replacement = parseTranscript(normalizeTranscript(input.text), catalog);
+    if (READ_ONLY_QUERY_INTENTS.has(replacement.intent)) {
+      await this.pool.query(
+        `update voice_jobs set status='CANCELLED',completed_at=now() where id=$1`,
+        [job.id],
+      );
+      return this.createTextJob(userId, {
+        household_id: job.household_id,
+        transcript_text: input.text,
+        locale: 'zh',
+        channel: ChannelSchema.parse(job.source_channel),
+      });
+    }
     const turns = [
       ...job.dialogue_turns,
       { role: 'user' as const, text: input.text, at: nowIso() },
@@ -592,8 +656,7 @@ export class VoiceService {
       !relativeFraction &&
       interp.kind === 'CONFIRM' &&
       payload.reminder_text &&
-      payload.scheduled_for &&
-      payload.food_id
+      payload.scheduled_for
     ) {
       await this.executeCandidate(job, userId, undefined, turns);
       return this.getJob(job.id, userId);
@@ -606,10 +669,16 @@ export class VoiceService {
 
       const parsed = parseTranscript(normalizeTranscript(normalizedReply), catalog);
       const item = parsed.items[0];
+      const purchaseReminder = /买|购买|采购|补充|添置/.test(normalizedReply);
       if (item) {
         payload.food_id = item.food_id;
         payload.food_name = item.food_name;
-        payload.reminder_text = reminderFoodText(item);
+        payload.reminder_text = purchaseReminder
+          ? (extractReminderText(normalizedReply) ?? reminderFoodText(item))
+          : reminderFoodText(item);
+      } else {
+        const genericText = extractReminderText(normalizedReply);
+        if (genericText) payload.reminder_text = genericText;
       }
       if (relativeFraction && payload.food_id && payload.food_name) {
         const relativeText = await this.resolveRelativeReminderText(
@@ -641,11 +710,11 @@ export class VoiceService {
         userId,
       });
     }
-    if (!payload.food_id || !payload.reminder_text) {
+    if (!payload.reminder_text) {
       return this.persistTurn(job, {
         status: 'AWAITING_CLARIFICATION',
         candidate,
-        spokenPrompt: '你想让我提醒你处理哪种食材？',
+        spokenPrompt: '你想让我提醒你做什么？例如“明天买绿叶菜”或“明天吃药”。',
         turns,
         userId,
       });
@@ -670,6 +739,18 @@ export class VoiceService {
     const candidate = job.candidate_command_json;
     const items = candidate?.payload?.items ?? [];
     const interp = interpretReply(replyText, catalog);
+
+    if (interp.kind === 'REJECT') {
+      turns.push({ role: 'system', text: CANCELLED_PROMPT, at: nowIso() });
+      await this.pool.query(
+        `update voice_jobs
+         set status = 'CANCELLED', spoken_prompt = $2, turn_count = turn_count + 1,
+             dialogue_turns = $3, completed_at = now()
+         where id = $1`,
+        [job.id, CANCELLED_PROMPT, JSON.stringify(turns)],
+      );
+      return this.getJob(job.id, userId);
+    }
 
     let filled = false;
     let relativePrompt = '';
@@ -1002,6 +1083,78 @@ export class VoiceService {
   }
 }
 
+export function selectInventoryZones(
+  zones: InventoryZoneView[],
+  normalized: string,
+): InventoryZoneView[] {
+  const requestedCode = /冷冻(?:室|区|层|柜)?/.test(normalized)
+    ? 'FREEZER'
+    : /冷藏(?:室|区|层|柜)?/.test(normalized)
+      ? 'FRIDGE'
+      : /常温(?:区|室|柜)?/.test(normalized)
+        ? 'PANTRY'
+        : null;
+  return requestedCode ? zones.filter((zone) => zone.code === requestedCode) : zones;
+}
+
+export function reminderQueryPrompt(
+  tasks: Array<{ reminder_text: string; scheduled_for: Date | string }>,
+  normalized: string,
+  requestedTimezone: string,
+  now = new Date(),
+): string {
+  const timezone = validTimezone(requestedTimezone);
+  const day = /后天/.test(normalized)
+    ? { offset: 2, label: '后天' }
+    : /明天/.test(normalized)
+      ? { offset: 1, label: '明天' }
+      : /今天|今晚/.test(normalized)
+        ? { offset: 0, label: '今天' }
+        : null;
+  const targetDateKey = day
+    ? localDateKey(new Date(now.getTime() + day.offset * 86_400_000), timezone)
+    : null;
+  const selected = tasks
+    .map((task) => ({ ...task, scheduledDate: new Date(task.scheduled_for) }))
+    .filter((task) => Number.isFinite(task.scheduledDate.getTime()))
+    .filter(
+      (task) =>
+        targetDateKey === null || localDateKey(task.scheduledDate, timezone) === targetDateKey,
+    )
+    .sort((left, right) => left.scheduledDate.getTime() - right.scheduledDate.getTime());
+  const label = day?.label ?? '接下来';
+  if (selected.length === 0) return `${label}没有已设置的提醒安排。`;
+  const descriptions = selected.slice(0, 6).map((task) => {
+    const time = new Intl.DateTimeFormat('zh-CN', {
+      timeZone: timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(task.scheduledDate);
+    return `${time}${task.reminder_text}`;
+  });
+  const suffix = selected.length > 6 ? `，另外还有${selected.length - 6}项` : '';
+  return `${label}的提醒安排是：${descriptions.join('；')}${suffix}。这些提醒不会自动扣减库存。`;
+}
+
+function validTimezone(timezone: string): string {
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date());
+    return timezone;
+  } catch {
+    return 'Asia/Shanghai';
+  }
+}
+
+function localDateKey(date: Date, timezone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -1016,6 +1169,21 @@ function reminderFoodText(item: {
     return `吃掉${item.quantity}${unitSpokenLabel(item.unit)}${item.food_name}`;
   }
   return `把${item.food_name}吃完`;
+}
+
+/** 从提醒语句中提取不一定对应标准食材的动作，例如“买绿叶菜”“交水费”。 */
+export function extractReminderText(text: string): string | null {
+  const normalized = normalizeReminderSpeech(text)
+    .replace(/[，。！？,.!?；;]+/g, ' ')
+    .trim();
+  const purchase = normalized.match(/(?:买|购买|采购|补充|添置)(?:一些|一点|几样)?\s*(.+)$/);
+  if (purchase?.[1]) return `买${purchase[1].replace(/吧|呢|吗$/g, '').trim()}`;
+  const generic = normalized.match(/(?:提醒(?:一下)?我?|定(?:一个|个)?提醒(?:吧)?|记得)(.+)$/);
+  if (!generic?.[1]) return null;
+  const subject = generic[1]
+    .replace(/^(?:今天|明天|后天)(?:上午|中午|下午|晚上|早上)?(?:\d{1,2}点)?/, '')
+    .trim();
+  return subject ? subject.replace(/吧|呢|吗$/g, '').trim() : null;
 }
 
 function reminderConfirmationPrompt(scheduledFor: string, reminderText: string): string {

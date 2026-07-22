@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { float32ToPcm16, isEndConversation, isWakePhrase, normalizeRealtimeTranscript } from './minimax-realtime';
+import {
+  float32ToPcm16,
+  isEndConversation,
+  isWakePhrase,
+  normalizeRealtimeTranscript,
+} from './minimax-realtime';
 
 describe('float32ToPcm16', () => {
   it('downsamples 48kHz float audio to 24kHz signed PCM', () => {
@@ -39,6 +44,8 @@ describe('isEndConversation', () => {
   it.each([
     '结束对话',
     '结束对',
+    '结束兑换',
+    '退出本次绘话',
     '退出本次',
     '我们先这样吧',
     '没事了',

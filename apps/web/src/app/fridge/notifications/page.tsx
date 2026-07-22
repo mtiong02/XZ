@@ -53,6 +53,8 @@ export default function NotificationsPage() {
     }
   }
   if (loading || !household) return <div className="empty">加载中…</div>;
+  const unreadCount = items.filter((item) => item.status === 'UNREAD').length;
+  const criticalCount = items.filter((item) => item.severity === 'CRITICAL').length;
   return (
     <>
       <AppHeader
@@ -64,73 +66,98 @@ export default function NotificationsPage() {
           </Link>
         }
       />
-      <main className="container">
+      <main className="container workspace-page notifications-page">
         {error ? <div className="error-box">{error}</div> : null}
-        <section className="zone">
-          <h2>今日摘要</h2>
-          <p className="qty">
-            {items.filter((i) => i.status === 'UNREAD').length} 条未读 ·{' '}
-            {items.filter((i) => i.severity === 'CRITICAL').length} 条需要立即确认 ·{' '}
-            {reminders.length} 项定时任务
-          </p>
+        <section className="workspace-hero workspace-hero-compact">
+          <div className="workspace-hero-copy">
+            <span>今天的小知提醒</span>
+            <h2>{criticalCount > 0 ? '先处理最需要关注的事情' : '今天的安排都在这里'}</h2>
+            <p>定时提醒和临期消息分别管理，任何提醒都不会自动修改库存。</p>
+          </div>
+          <div className="workspace-summary-grid">
+            <div>
+              <strong>{unreadCount}</strong>
+              <span>未读消息</span>
+            </div>
+            <div className={criticalCount > 0 ? 'attention' : ''}>
+              <strong>{criticalCount}</strong>
+              <span>优先确认</span>
+            </div>
+            <div>
+              <strong>{reminders.length}</strong>
+              <span>定时任务</span>
+            </div>
+          </div>
         </section>
-        <section className="zone">
-          <h2>定时提醒</h2>
-          {reminders.length === 0 ? (
-            <p className="empty">目前没有待执行的定时提醒</p>
-          ) : (
-            <div className="items">
-              {reminders.map((reminder) => (
-                <div className="item-card" key={reminder.id}>
-                  <div>
-                    <div className="name">{reminder.reminder_text}</div>
-                    <div className="qty">
-                      {new Date(reminder.scheduled_for).toLocaleString('zh-CN')}
-                      {reminder.food_name ? ` · ${reminder.food_name}` : ''}
+        <div className="workspace-layout workspace-layout-two">
+          <section className="zone workspace-section">
+            <div className="workspace-section-heading">
+              <div>
+                <span>按时间执行</span>
+                <h2>定时提醒</h2>
+              </div>
+              <small>{reminders.length} 项待执行</small>
+            </div>
+            {reminders.length === 0 ? (
+              <p className="empty workspace-empty">目前没有待执行的定时提醒</p>
+            ) : (
+              <div className="workspace-card-list">
+                {reminders.map((reminder) => (
+                  <article className="workspace-card" key={reminder.id}>
+                    <div>
+                      <div className="name">{reminder.reminder_text}</div>
+                      <div className="qty">
+                        {new Date(reminder.scheduled_for).toLocaleString('zh-CN')}
+                        {reminder.food_name ? ` · ${reminder.food_name}` : ''}
+                      </div>
                     </div>
-                  </div>
-                  <button
-                    className="danger"
-                    disabled={cancelling === reminder.id}
-                    onClick={() => void removeReminder(reminder.id)}
-                  >
-                    {cancelling === reminder.id ? '取消中…' : '取消提醒'}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          <p className="qty" style={{ marginTop: 12 }}>
-            取消只会移除这次提醒，不会扣减库存。
-          </p>
-        </section>
-        <section className="zone">
-          <h2>临期与过期</h2>
-          {items.length === 0 ? (
-            <p className="empty">目前没有需要处理的提醒</p>
-          ) : (
-            <div className="items">
-              {items.map((item) => (
-                <div className="item-card" key={item.id}>
-                  <div>
-                    <div className="name">{item.title}</div>
-                    <div className="qty">{item.body}</div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {item.status === 'UNREAD' ? (
-                      <button onClick={() => void act(item, 'READ')}>已读</button>
-                    ) : null}
-                    <button onClick={() => void act(item, 'SNOOZE')}>明天提醒</button>
-                    <button className="primary" onClick={() => void act(item, 'ACTIONED')}>
-                      去处理
+                    <button
+                      className="danger"
+                      disabled={cancelling === reminder.id}
+                      onClick={() => void removeReminder(reminder.id)}
+                    >
+                      {cancelling === reminder.id ? '取消中…' : '取消'}
                     </button>
-                  </div>
-                </div>
-              ))}
+                  </article>
+                ))}
+              </div>
+            )}
+            <p className="workspace-section-note">取消只会移除这次提醒，不会扣减库存。</p>
+          </section>
+          <section className="zone workspace-section">
+            <div className="workspace-section-heading">
+              <div>
+                <span>按食材状态生成</span>
+                <h2>临期与过期</h2>
+              </div>
+              <small>{items.length} 条消息</small>
             </div>
-          )}
-        </section>
-        <p className="qty">
+            {items.length === 0 ? (
+              <p className="empty workspace-empty">目前没有需要处理的提醒</p>
+            ) : (
+              <div className="workspace-card-list">
+                {items.map((item) => (
+                  <article className="workspace-card workspace-card-stack" key={item.id}>
+                    <div>
+                      <div className="name">{item.title}</div>
+                      <div className="qty">{item.body}</div>
+                    </div>
+                    <div className="workspace-card-actions">
+                      {item.status === 'UNREAD' ? (
+                        <button onClick={() => void act(item, 'READ')}>已读</button>
+                      ) : null}
+                      <button onClick={() => void act(item, 'SNOOZE')}>明天提醒</button>
+                      <button className="primary" onClick={() => void act(item, 'ACTIONED')}>
+                        去处理
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+        <p className="workspace-footnote">
           “去处理”只标记提醒状态，不会直接扣减库存；实际使用或丢弃仍需在库存操作中确认。
         </p>
       </main>

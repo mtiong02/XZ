@@ -40,11 +40,25 @@ export function relativeInventoryFraction(rawReply: string): string | null {
   return /一半|半数|0\.5数?|百分之50|50%/.test(normalized) ? '0.5' : null;
 }
 
+/** 明确结束当前会话；覆盖“结束兑换/绘话”等常见 ASR 近音字，但不误伤“结束后提醒我”。 */
+export function isDialogueExit(rawReply: string): boolean {
+  const compact = rawReply.replace(/[\s，。！？、,.!?：:；;“”‘’'"`]/g, '');
+  return (
+    /^(?:我(?:们)?(?:要|想|先)?|请)?(?:结束|退出|关闭|停止)(?:这段|本次|当前)?(?:对话|对换|兑换|绘话|会话|聊天|对|聊|会)?(?:了|吧)?$/.test(
+      compact,
+    ) ||
+    /^(?:我们?)?(?:先这样|就这样|没事了|没有别的了|不聊了|结束吧|退下吧|先退下|你先退下)(?:吧|了)?$/.test(
+      compact,
+    )
+  );
+}
+
 /**
  * 探测回复中是否携带"新数量/新食材"——这类回复即便含"不"字也是修正而非纯拒绝。
  * 复用意图解析器的食材/数量抽取。
  */
 export function interpretReply(rawReply: string, catalog: FoodCatalogEntry[]): ReplyInterpretation {
+  if (isDialogueExit(rawReply)) return { kind: 'REJECT' };
   const normalized = normalizeTranscript(rawReply);
 
   // 1. 先看是否是携带新值的修正（"不是两盒是三盒"里的"三盒"）

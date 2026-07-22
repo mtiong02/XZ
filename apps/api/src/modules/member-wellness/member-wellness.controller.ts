@@ -13,6 +13,7 @@ import { AuthGuard, type AuthenticatedUser } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import {
   MemberWellnessService,
+  MeasurementEntrySchema,
   WellnessProfileSchema,
   WeightEntrySchema,
 } from './member-wellness.service';
@@ -71,6 +72,36 @@ export class MemberWellnessController {
     @Param('measurementId', ParseUUIDPipe) measurementId: string,
   ) {
     return this.wellness.removeWeight(householdId, user.userId, measurementId);
+  }
+
+  @Get('measurements')
+  measurements(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('householdId', ParseUUIDPipe) householdId: string,
+  ) {
+    return this.wellness.measurementsSummary(householdId, user.userId);
+  }
+
+  @Post('measurements')
+  addMeasurement(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('householdId', ParseUUIDPipe) householdId: string,
+    @Body() body: unknown,
+  ) {
+    return this.wellness.addMeasurement(
+      householdId,
+      user.userId,
+      MeasurementEntrySchema.parse(body),
+    );
+  }
+
+  @Delete('measurements/:measurementId')
+  deleteMeasurement(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('householdId', ParseUUIDPipe) householdId: string,
+    @Param('measurementId', ParseUUIDPipe) measurementId: string,
+  ) {
+    return this.wellness.removeMeasurement(householdId, user.userId, measurementId);
   }
 
   @Get('meal-suggestions')

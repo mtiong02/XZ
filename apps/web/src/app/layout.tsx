@@ -6,6 +6,10 @@ export const metadata: Metadata = {
   title: 'XZ 鲜知',
   description: '家庭食材、提醒与饮食管理',
   manifest: '/manifest.webmanifest',
+  icons: {
+    icon: '/mascot/xiaozhi.png',
+    apple: '/mascot/xiaozhi.png',
+  },
 };
 
 export const viewport: Viewport = {
