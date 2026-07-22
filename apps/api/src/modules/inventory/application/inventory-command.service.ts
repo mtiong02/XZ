@@ -150,11 +150,18 @@ export class InventoryCommandService {
 
       let expiresAt: Date | null = item.expires_at ? new Date(item.expires_at) : null;
       let expirySource = item.expiry_source;
-      if (!expiresAt && food.default_shelf_life_days !== null) {
-        expiresAt = new Date(
-          ctx.now.getTime() + food.default_shelf_life_days * 24 * 60 * 60 * 1000,
+      if (!expiresAt) {
+        const zoneCode = await this.getZoneCode(ctx, zoneId);
+        const shelfLifeDays = await this.getZoneShelfLifeDays(
+          ctx,
+          food.id,
+          food.default_shelf_life_days,
+          zoneCode,
         );
-        expirySource = 'RULE_ESTIMATED';
+        if (shelfLifeDays !== null) {
+          expiresAt = new Date(ctx.now.getTime() + shelfLifeDays * 24 * 60 * 60 * 1000);
+          expirySource = 'RULE_ESTIMATED';
+        }
       }
 
       const lot = (
@@ -389,6 +396,7 @@ export class InventoryCommandService {
       throw new DomainError('NOT_FOUND', 'LOT_NOT_FOUND', '部分库存批次不存在或已用完。');
     }
 
+    const targetZoneCode = await this.getZoneCode(ctx, payload.target_storage_zone_id);
     const moves: Array<{ lot_id: string; from_zone_id: string; to_zone_id: string }> = [];
     const foodIds = new Set<string>();
     for (const lot of lots) {
@@ -396,10 +404,26 @@ export class InventoryCommandService {
       await this.assertStorageRule(ctx, food, payload.target_storage_zone_id);
       foodIds.add(food.id);
       if (lot.storage_zone_id === payload.target_storage_zone_id) continue;
-      await ctx.client.query(
-        `update inventory_lots set storage_zone_id=$2,version=version+1,updated_at=now() where id=$1`,
-        [lot.id, payload.target_storage_zone_id],
+
+      const shelfLifeDays = await this.getZoneShelfLifeDays(
+        ctx,
+        food.id,
+        food.default_shelf_life_days,
+        targetZoneCode,
       );
+      if (shelfLifeDays !== null) {
+        const newExpiresAt = new Date(ctx.now.getTime() + shelfLifeDays * 24 * 60 * 60 * 1000);
+        await ctx.client.query(
+          `update inventory_lots set storage_zone_id=$2, expires_at=$3, expiry_source='RULE_ESTIMATED', version=version+1, updated_at=now() where id=$1`,
+          [lot.id, payload.target_storage_zone_id, newExpiresAt],
+        );
+      } else {
+        await ctx.client.query(
+          `update inventory_lots set storage_zone_id=$2, version=version+1, updated_at=now() where id=$1`,
+          [lot.id, payload.target_storage_zone_id],
+        );
+      }
+
       moves.push({
         lot_id: lot.id,
         from_zone_id: lot.storage_zone_id,
@@ -637,6 +661,34 @@ export class InventoryCommandService {
     if ((result.rowCount ?? 0) === 0) {
       throw new DomainError('NOT_FOUND', 'ZONE_NOT_FOUND', 'Storage zone not found.');
     }
+  }
+
+  private async getZoneCode(ctx: CommandContext, zoneId: string): Promise<string> {
+    const result = await ctx.client.query<{ code: string }>(
+      `select code from storage_zones where id = $1 and household_id = $2`,
+      [zoneId, ctx.householdId],
+    );
+    return result.rows[0]?.code ?? 'FRIDGE';
+  }
+
+  private async getZoneShelfLifeDays(
+    ctx: CommandContext,
+    foodId: string,
+    defaultDays: number | null,
+    zoneCode: string,
+  ): Promise<number | null> {
+    const ruleResult = await ctx.client.query<{ max_days: number | null }>(
+      `select max_days from shelf_life_rules where food_id = $1 and storage_zone_code = $2 limit 1`,
+      [foodId, zoneCode],
+    );
+    if (ruleResult.rows[0]?.max_days) {
+      return ruleResult.rows[0].max_days;
+    }
+    const baseDays = defaultDays ?? 7;
+    if (zoneCode === 'FREEZER') {
+      return Math.max(90, baseDays * 6);
+    }
+    return defaultDays;
   }
 
   private async lockActiveLots(

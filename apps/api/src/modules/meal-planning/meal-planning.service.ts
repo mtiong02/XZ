@@ -105,8 +105,7 @@ export class MealPlanningService {
        from recipes r join recipe_ingredients ri on ri.recipe_id=r.id
        join food_catalog fc on fc.id=ri.food_id group by r.id order by r.name`,
     );
-    return recipes.rows
-      .map((recipe) => {
+    const mapped = recipes.rows.map((recipe) => {
         const ingredients = recipe.ingredients.map((ingredient) => {
           const item = stocked.get(ingredient.food_id);
           const enough =
@@ -134,13 +133,30 @@ export class MealPlanningService {
           missing: required.filter((item) => !item.available),
           expiring_ingredient_count: expiringCount,
         };
-      })
-      .sort(
-        (left, right) =>
-          Number(right.can_make) - Number(left.can_make) ||
-          right.expiring_ingredient_count - left.expiring_ingredient_count ||
-          right.coverage - left.coverage,
-      );
+      });
+
+    // 食材指纹去重：防止“牛肉炖土豆”与“土豆炖牛腩”等同质化菜谱同时冗余推送
+    const seenKeys = new Set<string>();
+    const deduplicated = mapped.filter((recipe) => {
+      const ingredientFingerprint = recipe.ingredients
+        .filter((item) => !item.optional)
+        .map((item) => item.food_id)
+        .sort()
+        .join(':');
+      if (!ingredientFingerprint) return true;
+      if (seenKeys.has(ingredientFingerprint)) return false;
+      seenKeys.add(ingredientFingerprint);
+      return true;
+    });
+
+    return deduplicated.sort(
+      (left, right) =>
+        Number(right.can_make) - Number(left.can_make) ||
+        right.expiring_ingredient_count - left.expiring_ingredient_count ||
+        right.coverage - left.coverage ||
+        left.missing.length - right.missing.length ||
+        left.name.localeCompare(right.name, 'zh-CN'),
+    );
   }
 
   /** 将用户口语菜名映射到已审核菜谱；只用于只读的“缺什么”问答，不会自动写购物清单。 */

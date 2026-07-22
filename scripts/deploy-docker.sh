@@ -34,7 +34,14 @@ docker compose -p xz-platform build
 echo "🚀 Starting Docker containers..."
 docker compose -p xz-platform up -d
 
-# 3. Cleanup unused images
+# 3. Apply DB migrations
+echo "🗄️ Running database migrations..."
+for f in $(ls -1 supabase/migrations/*.sql 2>/dev/null | sort); do
+  echo "Applying migration $f..."
+  docker exec -i xz-db psql -U postgres -d postgres < "$f" || true
+done
+
+# 4. Cleanup unused images
 echo "🧹 Cleaning up old Docker images..."
 docker image prune -f
 

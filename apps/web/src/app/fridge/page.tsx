@@ -82,6 +82,32 @@ export default function FridgePage() {
   const highlightTouchStartY = useRef<number | null>(null);
   const suppressHighlightClick = useRef(false);
 
+  const [ignoredAuditIds, setIgnoredAuditIds] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const saved = localStorage.getItem('xz-ignored-storage-audit');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  const ignoreSuggestion = (foodId: string) => {
+    setIgnoredAuditIds((prev) => {
+      const next = new Set(prev);
+      next.add(foodId);
+      try {
+        localStorage.setItem('xz-ignored-storage-audit', JSON.stringify([...next]));
+      } catch {}
+      return next;
+    });
+  };
+
+  const visibleStorageAudit = useMemo(
+    () => storageAudit.filter((item) => !ignoredAuditIds.has(item.food_id)),
+    [storageAudit, ignoredAuditIds],
+  );
+
   const reload = useCallback(async () => {
     if (!household) return;
     try {
@@ -435,21 +461,37 @@ export default function FridgePage() {
           </section>
         ) : null}
 
-        {storageAudit.length > 0 ? (
+        {visibleStorageAudit.length > 0 ? (
           <section className="zone storage-guidance">
             <h2>存放建议</h2>
             <p className="sub">
               根据食材类型检查现有位置。移动前需要你确认，操作后仍可在家庭动态中撤销。
             </p>
             <div className="items">
-              {storageAudit.map((item) => (
-                <article className="item-card" key={`${item.food_id}-${item.current_zone_id}`}>
-                  <div>
-                    <div className="name">{item.food_name}</div>
-                    <div className="qty">
-                      当前在{item.current_zone_name}，建议移到{item.recommended_zone_name}
+              {visibleStorageAudit.map((item) => (
+                <article className="storage-advice-card" key={`${item.food_id}-${item.current_zone_id}`}>
+                  <div className="advice-header">
+                    <div className="advice-title-row">
+                      <span className="advice-food-name">{item.food_name}</span>
+                      <span className="badge warn">建议移到{item.recommended_zone_name}</span>
                     </div>
-                    <div className="qty">{item.condition_note}</div>
+                    <button
+                      type="button"
+                      className="advice-ignore-btn"
+                      title="忽略此建议"
+                      onClick={() => ignoreSuggestion(item.food_id)}
+                    >
+                      忽略
+                    </button>
+                  </div>
+
+                  <div className="advice-body">
+                    <p className="advice-desc">
+                      当前在{item.current_zone_name}。{item.condition_note}
+                    </p>
+                  </div>
+
+                  <div className="advice-footer">
                     <a
                       href={item.source_reference}
                       target="_blank"
@@ -458,38 +500,41 @@ export default function FridgePage() {
                     >
                       查看储存依据
                     </a>
+
+                    {pendingMove === item.food_id ? (
+                      <div className="storage-confirm">
+                        <button className="ghost" onClick={() => setPendingMove(null)}>
+                          取消
+                        </button>
+                        <button
+                          className="primary"
+                          disabled={moving}
+                          onClick={async () => {
+                            setMoving(true);
+                            try {
+                              await executeCommand(household.id, 'MOVE_INVENTORY', {
+                                lot_ids: item.lot_ids,
+                                target_storage_zone_id: item.recommended_zone_id,
+                                reason: 'STORAGE_RECOMMENDATION',
+                              });
+                              setPendingMove(null);
+                              await reload();
+                            } catch (caught) {
+                              setError(caught instanceof Error ? caught.message : '移动失败');
+                            } finally {
+                              setMoving(false);
+                            }
+                          }}
+                        >
+                          {moving ? '移动中…' : `确认移到${item.recommended_zone_name}`}
+                        </button>
+                      </div>
+                    ) : (
+                      <button className="primary advice-action-btn" onClick={() => setPendingMove(item.food_id)}>
+                        调整位置
+                      </button>
+                    )}
                   </div>
-                  {pendingMove === item.food_id ? (
-                    <div className="storage-confirm">
-                      <button className="ghost" onClick={() => setPendingMove(null)}>
-                        取消
-                      </button>
-                      <button
-                        className="primary"
-                        disabled={moving}
-                        onClick={async () => {
-                          setMoving(true);
-                          try {
-                            await executeCommand(household.id, 'MOVE_INVENTORY', {
-                              lot_ids: item.lot_ids,
-                              target_storage_zone_id: item.recommended_zone_id,
-                              reason: 'STORAGE_RECOMMENDATION',
-                            });
-                            setPendingMove(null);
-                            await reload();
-                          } catch (caught) {
-                            setError(caught instanceof Error ? caught.message : '移动失败');
-                          } finally {
-                            setMoving(false);
-                          }
-                        }}
-                      >
-                        {moving ? '移动中…' : `确认移到${item.recommended_zone_name}`}
-                      </button>
-                    </div>
-                  ) : (
-                    <button onClick={() => setPendingMove(item.food_id)}>调整位置</button>
-                  )}
                 </article>
               ))}
             </div>
