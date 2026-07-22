@@ -10,6 +10,7 @@ import { NotificationModule } from './modules/notification/notification.module';
 import { MealPlanningModule } from './modules/meal-planning/meal-planning.module';
 import { MemberWellnessModule } from './modules/member-wellness/member-wellness.module';
 import { NutritionModule } from './modules/nutrition/nutrition.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 /**
  * 模块化单体入口（docs/02 §7）。
@@ -27,6 +28,7 @@ import { NutritionModule } from './modules/nutrition/nutrition.module';
     MealPlanningModule,
     MemberWellnessModule,
     NutritionModule,
+    AdminModule,
   ],
 })
 export class AppModule {}

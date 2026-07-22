@@ -99,7 +99,7 @@ select {
 
 .app-header-inner {
   width: min(100% - 32px, var(--content));
-  min-height: 66px;
+  min-height: 72px;
   margin: 0 auto;
   display: flex;
   align-items: center;
@@ -107,7 +107,7 @@ select {
 }
 
 .brand {
-  min-height: 44px;
+  min-height: 52px;
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -116,27 +116,34 @@ select {
   flex: 0 0 auto;
 }
 .brand-mark {
-  width: 34px;
-  height: 34px;
-  overflow: hidden;
+  width: 52px;
+  height: 52px;
+  overflow: visible;
   display: grid;
   place-items: center;
-  border-radius: 12px;
-  background: var(--green);
-  color: white;
-  font-weight: 800;
-  letter-spacing: -0.05em;
-  box-shadow: 0 7px 18px rgb(40 122 91 / 22%);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 43%, rgb(235 255 246 / 96%), rgb(214 244 229 / 78%) 70%, transparent 71%);
+  filter: drop-shadow(0 7px 10px rgb(31 88 64 / 17%));
 }
 .brand-mark img {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  transform: translateY(-1px);
 }
 .brand-name {
   font-size: 18px;
   font-weight: 760;
   letter-spacing: 0.04em;
+}
+.brand-name small {
+  display: block;
+  margin-top: 1px;
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 720;
+  letter-spacing: 0.13em;
+  line-height: 1;
 }
 
 .desktop-nav {
@@ -287,8 +294,8 @@ select {
     linear-gradient(105deg, rgb(255 242 239 / 95%), rgb(255 255 255 / 78%));
 }
 .fridge-greeting-mascot {
-  width: 118px;
-  height: 118px;
+  width: 132px;
+  height: 132px;
   flex: 0 0 auto;
   object-fit: contain;
   filter: drop-shadow(0 10px 11px rgb(31 88 64 / 13%));
@@ -1984,8 +1991,8 @@ label {
 }
 .mascot-image {
   position: relative;
-  width: 76px;
-  height: 76px;
+  width: 88px;
+  height: 88px;
   object-fit: contain;
   flex: 0 0 auto;
   transform-origin: 50% 85%;
@@ -2241,12 +2248,12 @@ label {
   }
   .app-header-inner {
     width: min(100% - 24px, var(--content));
-    min-height: 58px;
+    min-height: 64px;
   }
   .brand-mark {
-    width: 31px;
-    height: 31px;
-    border-radius: 10px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
   }
   .brand-name {
     font-size: 17px;
@@ -2625,8 +2632,8 @@ label {
     min-height: 68px;
   }
   .mascot-image {
-    width: 62px;
-    height: 62px;
+    width: 70px;
+    height: 70px;
   }
   .mascot-copy strong {
     font-size: 14px;

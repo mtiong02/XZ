@@ -53,9 +53,9 @@ services:
     environment:
       - NODE_ENV=production
       - SPEECH_PORT=6010
-      - MINIMAX_API_KEY=sk-cp-7Rsl8cRIoL41jvprK0vQHF2kf45kN-CyH29Fo9ptB4BAaGLhXaIr_u9d-SSPM8vrpPQjSIqal1kWAUQ6PqFcSLQ7Q__WqL5jj9Kqg-eEErF1r21y0y-hsDA
-      - MINIMAX_REALTIME_MODEL=abab6.5s-chat
-      - MINIMAX_REALTIME_VOICE=female-shaonv
+      - MINIMAX_API_KEY=${MINIMAX_API_KEY:?MINIMAX_API_KEY is required}
+      - MINIMAX_REALTIME_MODEL=${MINIMAX_REALTIME_MODEL:-abab6.5s-chat}
+      - MINIMAX_REALTIME_VOICE=${MINIMAX_REALTIME_VOICE:-female-shaonv}
 
   web:
     build:
@@ -83,6 +83,8 @@ services:
       - DATABASE_URL=postgresql://postgres:postgrespassword@db:5432/postgres
       - SUPABASE_URL=http://gotrue:9999
       - SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+      # 仅由 API 容器读取；严禁放入 web/public 或 NEXT_PUBLIC_ 变量。
+      - ADMIN_TOKEN=${ADMIN_TOKEN:?ADMIN_TOKEN is required}
     depends_on:
       - db
       - gotrue

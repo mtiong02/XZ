@@ -38,11 +38,11 @@ export function AppHeader({
     <>
       <header className="app-header">
         <div className="app-header-inner">
-          <Link href="/fridge" className="brand" aria-label="鲜知首页">
+          <Link href="/fridge" className="brand" aria-label="鲜知小知首页">
             <span className="brand-mark" aria-hidden="true">
-              <Image src="/mascot/xiaozhi.png" alt="" width={40} height={40} priority />
+              <Image src="/mascot/xiaozhi.png" alt="" width={52} height={52} priority />
             </span>
-            <span className="brand-name">鲜知</span>
+            <span className="brand-name">鲜知 <small>小知</small></span>
           </Link>
           {showNavigation ? (
             <nav className="desktop-nav" aria-label="主导航">
