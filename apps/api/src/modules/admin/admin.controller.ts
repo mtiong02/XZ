@@ -364,6 +364,13 @@ export class AdminController {
     this.checkToken(token);
     const days = Math.min(Math.max(Number(daysStr) || 30, 1), 180);
 
+    const toIso = (val: unknown): string => {
+      if (!val) return new Date().toISOString();
+      if (val instanceof Date) return val.toISOString();
+      if (typeof val === 'string') return val;
+      return new Date(val as any).toISOString();
+    };
+
     // 1. 获取全量内测家庭与成员信息（包含 Auth 邮箱/手机）
     const householdsResult = await this.pool.query<{
       household_id: string;
@@ -382,7 +389,7 @@ export class AdminController {
       `select
          h.id as household_id,
          h.name as household_name,
-         h.created_at,
+         h.created_at::text as created_at,
          count(distinct hm.id)::int as member_count,
          coalesce(
            json_agg(
@@ -413,7 +420,7 @@ export class AdminController {
       created_at: string;
       completed_at: string | null;
     }>(
-      `select id, household_id, status, turn_count, created_at, completed_at
+      `select id, household_id, status, turn_count, created_at::text as created_at, completed_at::text as completed_at
        from voice_jobs
        where created_at >= now() - ($1::text || ' days')::interval
        order by household_id, created_at asc`,
@@ -494,9 +501,11 @@ export class AdminController {
     };
 
     for (const job of jobsResult.rows) {
-      const jobStart = new Date(job.created_at).getTime();
-      const jobEnd = job.completed_at ? new Date(job.completed_at).getTime() : jobStart;
-      const dateKey = job.created_at.slice(0, 10);
+      const createdAtIso = toIso(job.created_at);
+      const completedAtIso = job.completed_at ? toIso(job.completed_at) : createdAtIso;
+      const jobStart = new Date(createdAtIso).getTime();
+      const jobEnd = new Date(completedAtIso).getTime();
+      const dateKey = createdAtIso.slice(0, 10);
 
       let stat = householdStats.get(job.household_id);
       if (!stat) {
@@ -510,8 +519,8 @@ export class AdminController {
         householdStats.set(job.household_id, stat);
       }
       stat.active_days.add(dateKey);
-      if (!stat.last_active || job.created_at > stat.last_active) {
-        stat.last_active = job.created_at;
+      if (!stat.last_active || createdAtIso > stat.last_active) {
+        stat.last_active = createdAtIso;
       }
 
       if (
@@ -547,11 +556,13 @@ export class AdminController {
       totalSessionsAll += stat.session_count;
 
       const durationMinutes = Math.round(stat.total_duration_ms / 60000);
+      const createdAtStr = toIso(h.created_at);
+      const lastActiveStr = stat.last_active ? toIso(stat.last_active) : createdAtStr;
 
       return {
         household_id: h.household_id,
         household_name: h.household_name || '未命名用户',
-        created_at: h.created_at,
+        created_at: createdAtStr,
         member_count: h.member_count,
         members: Array.isArray(h.members) ? h.members : [],
         session_count: stat.session_count,
@@ -564,7 +575,7 @@ export class AdminController {
             ? `${(durationMinutes / 60).toFixed(1)} 小时`
             : `${durationMinutes} 分钟`,
         active_days_count: stat.active_days.size,
-        last_active: stat.last_active || h.created_at,
+        last_active: lastActiveStr,
       };
     });
 
