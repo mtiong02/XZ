@@ -28,3 +28,9 @@ output/
 
 # downloaded local speech models
 local-models/
+
+# deployment secrets & scripts
+*.pem
+deploy_key.pem
+deploy.sh
+
