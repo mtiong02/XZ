@@ -55,11 +55,20 @@ describe('isEndConversation', () => {
     '不聊了',
     '结束吧',
     '先退下',
+    '好的谢谢结束',
+    '那我们今天先这样吧',
+    '就到这里吧',
+    '下次再聊',
+    '我先忙了，谢谢你',
+    '别再听了',
+    '不用继续说了',
+    '拜拜',
+    '晚安',
   ])('recognizes session ending: %s', (text) => {
     expect(isEndConversation(text)).toBe(true);
   });
 
-  it.each(['结束后提醒我', '继续聊聊', '没有牛奶了'])(
+  it.each(['结束后提醒我', '结束后提醒我买牛奶', '继续聊聊', '没有牛奶了', '请继续说']) (
     'keeps ordinary speech active: %s',
     (text) => {
       expect(isEndConversation(text)).toBe(false);

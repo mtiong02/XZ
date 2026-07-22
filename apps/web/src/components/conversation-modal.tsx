@@ -66,6 +66,34 @@ function isLikelySpeakerEcho(heard: string, spoken: string): boolean {
   return spokenText.includes(heardText) || heardText.includes(spokenText);
 }
 
+/** 在库存/闲聊路由之前识别结束词，避免“好的谢谢结束”被模型当作普通聊天。 */
+function isDialogueExit(text: string): boolean {
+  const compact = normalizedSpeech(text);
+  if (/结束后提醒/.test(compact)) return false;
+  const courtesy = '(?:谢谢(?:力|你|啦)?|多谢|辛苦了|麻烦你了|拜拜|再见|晚安|了|吧)*';
+
+  if (/^(?:(?:好(?:的)?)?(?:结束|退出|关闭|停止|取消|拜拜|再见|退下)(?:这段|本次|当前)?(?:对话|对换|兑换|绘话|会话|聊天|谈话|通话|对|聊|会|吧|了|谢谢)*)+$/i.test(compact)) {
+    return true;
+  }
+
+  return (
+    new RegExp(
+      `^(?:好(?:的)?|那|嗯|啊|行|可以)?(?:我(?:们)?(?:要|想|先)?|请)?(?:(?:结束|退出|关闭|停止)(?:这段|本次|当前)?(?:对话|对换|兑换|绘话|会话|聊天|谈话|通话|对|聊|会)?${courtesy})+$`,
+      'i',
+    ).test(compact) ||
+    new RegExp(
+      `^(?:好(?:的)?|那|嗯|啊|行|可以)?(?:(?:我们|咱们|我)(?:今天)?(?:就|先)?|今天)?(?:就|先)?(?:先这样|就这样|到这(?:里)?|先到这(?:里)?|没事了|没有别的了|不聊了|下次再聊|回头再聊|我先走了|我先忙了|先挂了|挂了|结束吧|退下吧|先退下|你先退下|拜拜|再见|晚安)${courtesy}$`,
+      'i',
+    ).test(compact) ||
+    new RegExp(
+      `^(?:好(?:的)?|那|嗯|啊)?(?:(?:先)?(?:别|不要|不用)(?:再|继续)?(?:听|收音|说|说话|聊天|聊|回答|播报)|(?:不用|不需要)再(?:听|收音|说|说话|聊天|聊|回答|播报))${courtesy}$`,
+      'i',
+    ).test(compact) ||
+    new RegExp(`^(?:好(?:的)?)?(?:谢谢(?:你|啦)?|多谢)?(?:结束|退出)${courtesy}$`, 'i').test(compact) ||
+    new RegExp(`^(?:结束|退出|取消|算了|不用了|不加了)(?:对话|会话|对换|聊天|谈话|通话|谢谢|吧|了)?${courtesy}$`, 'i').test(compact)
+  );
+}
+
 /** 一次打开麦克风后持续收音；句末不重连，播报期间也可说话打断。 */
 export function ConversationModal({
   householdId,
@@ -91,6 +119,7 @@ export function ConversationModal({
   const realtimeRef = useRef<RealtimeVoiceHandle | null>(null);
   const closedRef = useRef(false);
   const speakingRef = useRef(false);
+  const sessionEndingRef = useRef(false);
   const handlingRef = useRef(false);
   const queuedTextRef = useRef<string | null>(null);
   const lastPromptRef = useRef('');
@@ -237,6 +266,14 @@ export function ConversationModal({
     async (rawText: string, source: SpeechSource = 'online-audio') => {
       const text = correctInventoryHomophones(stripWakePhrase(rawText.trim()));
       if (!text || closedRef.current) return;
+      if (isDialogueExit(text)) {
+        sessionEndingRef.current = true;
+        abandonPendingJob();
+        realtimeRef.current?.endSession();
+        setInterim('正在结束本次对话…');
+        setPhase('processing');
+        return;
+      }
       const normalized = normalizedSpeech(text);
       const now = Date.now();
       const lastDispatch = lastDispatchRef.current;
@@ -297,7 +334,7 @@ export function ConversationModal({
         handlingRef.current = false;
       }
     },
-    [handleJob, sendFirst, sendReply],
+    [abandonPendingJob, handleJob, sendFirst, sendReply],
   );
   dispatchRef.current = (text: string, source: SpeechSource = 'online-audio') =>
     void dispatchRecognized(text, source);
@@ -323,6 +360,7 @@ export function ConversationModal({
           setPhase('listening');
         },
         onWake: () => {
+          sessionEndingRef.current = false;
           setInterim('已唤醒，可以说话');
           setPhase('listening');
           speakingRef.current = false;
@@ -332,16 +370,18 @@ export function ConversationModal({
           if (!speakingRef.current) setPhase('standby');
         },
         onSessionActive: () => {
+          sessionEndingRef.current = false;
           setInterim('会话进行中，可以继续说');
           setPhase('listening');
         },
         onSessionEnding: () => {
+          sessionEndingRef.current = true;
           abandonPendingJob();
           setInterim('正在结束本次对话…');
           setPhase('processing');
         },
         onSessionEnded: () => {
-          abandonPendingJob();
+          sessionEndingRef.current = false;
           setInterim('');
           setPhase('standby');
         },
@@ -362,7 +402,7 @@ export function ConversationModal({
         onAudioDone: () => {
           speakingRef.current = false;
           setInterim('');
-          setPhase('listening');
+          setPhase(sessionEndingRef.current ? 'processing' : 'listening');
         },
         onError: (message) => {
           setInterim('');

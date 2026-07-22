@@ -5,6 +5,11 @@ import { PG_POOL } from '../../infra/db/database.module';
 import { MembershipService } from '../household/membership.service';
 import { InventoryQueryService } from '../inventory/application/inventory-query.service';
 import { DomainError } from '../inventory/domain/errors';
+import {
+  buildMealContextRecommendation,
+  parseMealContext,
+} from '../interaction/dialogue/meal-recommendations';
+import { PersonalizedMealAgentService } from './personalized-meal-agent.service';
 
 export const AddShoppingItemSchema = z.object({
   food_id: z.string().uuid(),
@@ -22,15 +27,56 @@ export const ShoppingItemStatusSchema = z.object({
   status: z.enum(['PURCHASED', 'CANCELLED']),
 });
 
+export const PersonalizedMealRequestSchema = z.object({
+  request_text: z.string().trim().min(2).max(300),
+});
+
+export interface MealSuggestion {
+  id: string;
+  name: string;
+  description: string;
+  instructions: string[];
+  tags: string[];
+  servings: number;
+  ingredients: Array<{
+    food_id: string;
+    food_name: string;
+    quantity: string | null;
+    unit_code: string | null;
+    optional: boolean;
+    allergen_codes: string[];
+    available: boolean;
+    inventory_quantity: string | null;
+    inventory_unit: string | null;
+    expiry_status: string | null;
+  }>;
+  coverage: number;
+  can_make: boolean;
+  missing: Array<{
+    food_id: string;
+    food_name: string;
+    quantity: string | null;
+    unit_code: string | null;
+    optional: boolean;
+    allergen_codes: string[];
+    available: boolean;
+    inventory_quantity: string | null;
+    inventory_unit: string | null;
+    expiry_status: string | null;
+  }>;
+  expiring_ingredient_count: number;
+}
+
 @Injectable()
 export class MealPlanningService {
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
     @Inject(MembershipService) private readonly memberships: MembershipService,
     @Inject(InventoryQueryService) private readonly inventory: InventoryQueryService,
+    @Inject(PersonalizedMealAgentService) private readonly mealAgent: PersonalizedMealAgentService,
   ) {}
 
-  async suggestions(householdId: string, userId: string) {
+  async suggestions(householdId: string, userId: string): Promise<MealSuggestion[]> {
     const inventory = await this.inventory.getInventoryView(householdId, userId);
     const stocked = new Map(
       inventory.zones.flatMap((zone) => zone.items).map((item) => [item.food_id, item]),
@@ -95,6 +141,88 @@ export class MealPlanningService {
           right.expiring_ingredient_count - left.expiring_ingredient_count ||
           right.coverage - left.coverage,
       );
+  }
+
+  /** 将用户口语菜名映射到已审核菜谱；只用于只读的“缺什么”问答，不会自动写购物清单。 */
+  async findSuggestedRecipeForVoiceRequest(
+    householdId: string,
+    userId: string,
+    normalizedText: string,
+  ): Promise<MealSuggestion | null> {
+    const canonicalName =
+      /土豆.*(?:牛腩|牛肉)|(?:牛腩|牛肉).*土豆/.test(normalizedText)
+        ? '土豆炖牛腩'
+        : null;
+    if (!canonicalName) return null;
+    return (
+      (await this.suggestions(householdId, userId)).find((recipe) => recipe.name === canonicalName) ??
+      null
+    );
+  }
+
+  /**
+   * 语音餐食推荐的应用服务：库存与菜谱是事实来源；场景理解只改变候选排序与表达，绝不写库存。
+   * 家庭/聚会未明确人数时，使用家庭成员记录作为份量提示，仍提醒用户在制作前复核备料。
+   */
+  async buildVoiceMealRecommendation(
+    householdId: string,
+    userId: string,
+    text: string,
+    inventoryItems: ReadonlyArray<{
+      name: string;
+      total_quantity?: string;
+      unit?: string;
+      expiry_status?: string;
+    }>,
+  ): Promise<string> {
+    const member = await this.memberships.assertMembership(householdId, userId);
+    const context = parseMealContext(text);
+    const [recipes, memberCount] = await Promise.all([
+      this.suggestions(householdId, userId),
+      this.pool.query<{ count: string }>(
+        `select count(*)::text as count from household_members where household_id=$1`,
+        [householdId],
+      ),
+    ]);
+    const householdMemberCount = Math.max(1, Number(memberCount.rows[0]?.count ?? 1));
+    const fallbackAnswer = buildMealContextRecommendation(
+      context,
+      inventoryItems,
+      recipes,
+      householdMemberCount,
+    );
+    return this.mealAgent.recommend({
+      householdId,
+      memberId: member.memberId,
+      requestText: text,
+      inventory: inventoryItems.map((item) => ({
+        name: item.name,
+        ...(item.total_quantity ? { quantity: item.total_quantity } : {}),
+        ...(item.unit ? { unit: item.unit } : {}),
+        ...(item.expiry_status ? { expiryStatus: item.expiry_status } : {}),
+      })),
+      recipes: recipes.slice(0, 10).map((recipe) => ({
+        name: recipe.name,
+        description: recipe.description,
+        servings: recipe.servings,
+        canMake: recipe.can_make,
+        coverage: recipe.coverage,
+        ingredients: recipe.ingredients.map((item) => item.food_name),
+        missing: recipe.missing.map((item) => item.food_name),
+        expiringIngredientCount: recipe.expiring_ingredient_count,
+      })),
+      householdMemberCount,
+      fallbackAnswer,
+    });
+  }
+
+  /** 手动页面与语音复用同一套按需 Agent；调用只生成建议，不产生库存副作用。 */
+  async personalizedRecommendation(householdId: string, userId: string, requestText: string) {
+    const inventory = await this.inventory.getInventoryView(householdId, userId);
+    const items = inventory.zones.flatMap((zone) => zone.items);
+    return {
+      text: await this.buildVoiceMealRecommendation(householdId, userId, requestText, items),
+    };
   }
 
   async addMissingFromRecipe(householdId: string, recipeId: string, userId: string) {

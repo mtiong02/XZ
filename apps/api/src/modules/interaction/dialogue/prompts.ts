@@ -15,6 +15,7 @@ const ACTION_VERB: Record<string, string> = {
   ADD_INVENTORY: '添加',
   CONSUME_INVENTORY: '用掉',
   DISCARD_INVENTORY: '丢弃',
+  MOVE_INVENTORY: '移动',
 };
 
 function listItems(items: SpokenItem[]): string {
@@ -68,4 +69,4 @@ export function executedPrompt(commandType: string): string {
 export const CANCELLED_PROMPT = '好的，已取消。';
 export const UNCLEAR_PROMPT = '抱歉没听清，请说"对"确认，或直接说正确的数量。';
 export const UNRECOGNIZED_PROMPT =
-  '我听清了，但当前离线模式只会处理库存操作。你可以说“加两盒牛奶”或“土豆还有多少”。';
+  '我没完全听明白。你可以直接说查库存、推荐一餐、设置提醒，或添加、使用、移动食材；例如“推荐一份少油晚餐”或“把猪肉移到冷冻室”。';

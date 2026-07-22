@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>鲜知 Admin · 对话日志</title>
+  <link rel="icon" type="image/png" href="/mascot/xiaozhi.png" />
+  <link rel="apple-touch-icon" href="/mascot/xiaozhi.png" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -429,7 +431,7 @@
 <!-- ─── Login ─── -->
 <div id="login-screen">
   <div class="login-card">
-    <div class="login-icon">🔐</div>
+    <div class="login-icon"><img src="/mascot/xiaozhi.png" alt="小知" style="width: 80px; height: 80px; object-fit: contain; margin-bottom: 8px; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));" /></div>
     <div class="login-title">鲜知管理后台</div>
     <div class="login-sub">请输入管理员访问令牌</div>
     <input type="password" id="token-input" placeholder="Admin Token" onkeydown="if(event.key==='Enter') login()" />
@@ -441,7 +443,7 @@
 <!-- ─── Main App ─── -->
 <div id="app" style="display:none;flex-direction:column;min-height:100vh;">
   <header>
-    <div class="logo">鲜<span>知</span> Admin</div>
+    <div class="logo" style="display:flex;align-items:center;gap:10px;"><img src="/mascot/xiaozhi.png" alt="小知" style="width: 36px; height: 36px; object-fit: contain; filter: drop-shadow(0 2px 6px rgba(124,108,250,0.3));" /><div>鲜<span>知</span> Admin</div></div>
     <div class="badge">INTERNAL</div>
     <div class="spacer"></div>
     <button class="logout-btn" onclick="logout()">退出</button>
@@ -450,6 +452,7 @@
   <div class="tabs">
     <div class="tab active" data-tab="conversations" onclick="switchTab('conversations')">对话日志</div>
     <div class="tab" data-tab="stats" onclick="switchTab('stats')">统计分析</div>
+    <div class="tab" data-tab="runtime" onclick="switchTab('runtime')">实时性能</div>
     <div class="tab" data-tab="insights" onclick="switchTab('insights')">优化洞察</div>
   </div>
 
@@ -488,6 +491,20 @@
     </div>
   </div>
 
+  <!-- Runtime performance Tab -->
+  <div id="runtime-tab" class="content" style="display:none">
+    <div class="insight-intro">
+      <div>
+        <div class="eyebrow">RUNTIME · NO USER CONTENT</div>
+        <h2>实时语音性能</h2>
+        <p>只展示当前语音服务进程的连接数、错误数与耗时聚合，不保存音频、文本或身份信息。部署重启后统计会重新开始。</p>
+      </div>
+      <div class="insight-scope"><button onclick="loadRuntimeMetrics()">刷新数据</button></div>
+    </div>
+    <div class="stats-grid" id="runtime-metrics"><div class="loading">正在加载性能数据…</div></div>
+    <div id="runtime-detail" class="insight-summary"></div>
+  </div>
+
   <!-- Product insight Tab -->
   <div id="insights-tab" class="content">
     <div class="insight-intro">
@@ -512,10 +529,9 @@
 
 
 <script>
-// 同域部署时走当前站点；本地开发时明确连接本地 API，避免误把测试对话发往生产环境。
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? 'http://localhost:3001/api/v1'
-  : `${window.location.origin}/api/v1`;
+// 管理端只通过当前线上域名访问 API，避免浏览器误连本机 :3001。
+// admin.html 是实现文件；正式入口始终为 https://busybeeenglish.site/admin。
+const API_BASE = `${window.location.origin}/api/v1`;
 let adminToken = '';
 let currentOffset = 0;
 const PAGE_SIZE = 30;
@@ -547,9 +563,42 @@ function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   document.getElementById('conversations-tab').style.display = name === 'conversations' ? 'block' : 'none';
   document.getElementById('stats-tab').style.display = name === 'stats' ? 'block' : 'none';
+  document.getElementById('runtime-tab').style.display = name === 'runtime' ? 'block' : 'none';
   document.getElementById('insights-tab').style.display = name === 'insights' ? 'block' : 'none';
   if (name === 'stats') loadStats();
+  if (name === 'runtime') loadRuntimeMetrics();
   if (name === 'insights') loadInsights();
+}
+
+function formatMs(value) {
+  return Number.isFinite(value) ? `${Math.round(value)} ms` : '暂无样本';
+}
+
+function loadRuntimeMetrics() {
+  const box = document.getElementById('runtime-metrics');
+  box.innerHTML = '<div class="loading">正在加载性能数据…</div>';
+  fetch(`${window.location.origin}/speech/metrics`, { headers: { 'x-admin-token': adminToken }, cache: 'no-store' })
+    .then(r => { if (!r.ok) throw new Error('failed'); return r.json(); })
+    .then(data => {
+      const latency = data.latency_ms || {};
+      const firstAudio = latency.turn_to_first_audio_ms || {};
+      const transcript = latency.turn_to_transcript_ms || {};
+      const upstream = latency.upstream_ready_ms || {};
+      const cards = [
+        ['当前语音连接', String(data.connections?.active ?? 0), `累计打开 ${data.connections?.opened_total ?? 0} 次`],
+        ['已提交语音轮次', String(data.turns_committed_total ?? 0), '自本次服务启动以来'],
+        ['说完到首段语音 P50', formatMs(firstAudio.p50_ms), `P95 ${formatMs(firstAudio.p95_ms)} · ${firstAudio.count ?? 0} 个样本`],
+        ['说完到转写 P50', formatMs(transcript.p50_ms), `P95 ${formatMs(transcript.p95_ms)} · ${transcript.count ?? 0} 个样本`],
+        ['MiniMax 连接就绪 P50', formatMs(upstream.p50_ms), `P95 ${formatMs(upstream.p95_ms)} · ${upstream.count ?? 0} 个样本`],
+        ['上游连接异常', String(data.upstream?.failed_total ?? 0), `成功建立 ${data.upstream?.ready_total ?? 0} 次`],
+      ];
+      box.innerHTML = cards.map(([label, value, description], index) => `<div class="stat-card ${index === 2 ? 'accent' : index === 5 && Number(data.upstream?.failed_total) ? 'danger' : ''}"><div class="label">${label}</div><div class="value">${value}</div><div style="margin-top:7px;color:var(--muted);font-size:12px;line-height:1.45">${description}</div></div>`).join('');
+      document.getElementById('runtime-detail').innerHTML = `<h3>统计口径</h3><p>${escHtml(data.retention || '')}<br>服务已运行 ${Math.floor(Number(data.uptime_seconds || 0) / 60)} 分钟；生成时间：${fmtTime(data.generated_at)}。</p>`;
+    })
+    .catch(() => {
+      box.innerHTML = '<div class="error-msg">性能数据加载失败。请确认管理员令牌与语音服务状态。</div>';
+      document.getElementById('runtime-detail').innerHTML = '';
+    });
 }
 
 function fmtTime(iso) {

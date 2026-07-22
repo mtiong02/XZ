@@ -42,6 +42,29 @@ const catalog: FoodCatalogEntry[] = [
     aliases: ['马铃薯'],
   },
   { id: 'f-bread', canonicalName: '面包', defaultUnitCode: 'pack', aliases: ['吐司'] },
+  {
+    id: 'f-apple',
+    canonicalName: '苹果',
+    category: 'FRUIT',
+    defaultUnitCode: 'piece',
+    aliases: [],
+  },
+  {
+    id: 'f-lettuce',
+    canonicalName: '生菜',
+    category: 'VEGETABLE',
+    defaultUnitCode: 'g',
+    preferredUnitCodes: ['g', 'jin', 'kg', 'piece'],
+    aliases: [],
+  },
+  {
+    id: 'f-chicken-breast',
+    canonicalName: '鸡胸肉',
+    category: 'MEAT',
+    defaultUnitCode: 'g',
+    preferredUnitCodes: ['piece', 'jin', 'g', 'kg'],
+    aliases: ['鸡胸', '机胸肉'],
+  },
 ];
 
 interface EvalCase {
@@ -125,6 +148,13 @@ const cases: EvalCase[] = [
   { text: '这些食材能够做什么美食', intent: 'QUERY_INVENTORY' },
   { text: '结合冰箱现有食物推荐一些减脂餐', intent: 'QUERY_INVENTORY' },
   { text: '这些食物可以吃什么样的减脂餐', intent: 'QUERY_INVENTORY' },
+  { text: '我今天下午想吃个下午茶冰箱里面有什么东西可以推荐的吗', intent: 'QUERY_INVENTORY' },
+  { text: '我要吃一个下午茶你来推荐一个根据我们冰箱里面的食材推荐一个吃的', intent: 'QUERY_INVENTORY' },
+  { text: '今晚四个人家庭晚餐，简单一点，按冰箱食材推荐', intent: 'QUERY_INVENTORY' },
+  { text: '一个人吃午餐有什么简单推荐', intent: 'QUERY_INVENTORY' },
+  { text: '我想要一个少油少盐的食谱', intent: 'QUERY_INVENTORY' },
+  { text: '继续刚才的食谱', intent: 'QUERY_INVENTORY' },
+  { text: '把所有猪肉移到冷冻室里', intent: 'MOVE_INVENTORY' },
   { text: '帮我下单买一些面包', intent: 'EXTERNAL_PURCHASE' },
   { text: '帮我下单买一些面包冰箱里面没有面包', intent: 'EXTERNAL_PURCHASE' },
   { text: '把面包加入购物清单', intent: 'ADD_SHOPPING_ITEM' },
@@ -164,6 +194,8 @@ describe('normalizeTranscript', () => {
   it('converts Chinese numerals to digits', () => {
     expect(normalizeTranscript('两盒牛奶和十个鸡蛋')).toBe('2盒牛奶和10个鸡蛋');
     expect(normalizeTranscript('二十五个')).toBe('25个');
+    expect(normalizeTranscript('两百克生菜')).toBe('200克生菜');
+    expect(normalizeTranscript('三百克鸡胸肉')).toBe('300克鸡胸肉');
     expect(normalizeTranscript('半盒')).toBe('0.5盒');
   });
 
@@ -206,5 +238,42 @@ describe('parseTranscript evaluation set', () => {
     const result = parseTranscript(normalizeTranscript('买了三瓶土豆'), catalog);
     expect(result.items[0]?.unit_reasonable).toBe(false);
     expect(result.items[0]?.suggested_units).toEqual(['piece', 'jin', 'g', 'kg']);
+  });
+
+  it('treats a quantified fridge declaration as an add candidate, not a query', () => {
+    const result = parseTranscript(normalizeTranscript('我冰箱里面有三颗苹果'), catalog);
+    expect(result.intent).toBe('ADD_INVENTORY');
+    expect(result.items[0]).toMatchObject({ food_id: 'f-apple', quantity: '3', unit: 'piece' });
+  });
+
+  it('keeps a hundreds quantity instead of falling back to one', () => {
+    const result = parseTranscript(normalizeTranscript('帮我添加两百克生菜'), catalog);
+    expect(result.intent).toBe('ADD_INVENTORY');
+    expect(result.items[0]).toMatchObject({ food_id: 'f-lettuce', quantity: '200', unit: 'g' });
+  });
+
+  it('does not turn meal or shopping advice into an inventory consumption', () => {
+    expect(parseTranscript(normalizeTranscript('我想吃土豆牛腩还要买什么'), catalog).intent).toBe(
+      'QUERY_INVENTORY',
+    );
+  });
+
+  it('keeps recipe follow-ups and storage corrections out of consume flow', () => {
+    expect(parseTranscript(normalizeTranscript('给我推荐晚上六个人的菜谱'), catalog).intent).toBe(
+      'QUERY_INVENTORY',
+    );
+    expect(parseTranscript(normalizeTranscript('把猪肉都挪到冷冻室'), catalog).intent).toBe(
+      'MOVE_INVENTORY',
+    );
+  });
+
+  it('keeps spoken unit quantities for leafy vegetables and chicken breast', () => {
+    expect(normalizeTranscript('帮我添加一下两百克生菜')).toBe('帮我添加一下200克生菜');
+    expect(parseTranscript(normalizeTranscript('添加两块鸡胸肉'), catalog).items[0]).toMatchObject({
+      food_name: '鸡胸肉',
+      quantity: '2',
+      unit: 'piece',
+      quantity_explicit: true,
+    });
   });
 });

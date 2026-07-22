@@ -18,9 +18,12 @@ function getRealtimeUrl(): string {
 
 const CONNECT_TIMEOUT_MS = 12000;
 const SPEECH_THRESHOLD = 0.011;
-const END_SILENCE_MS = 900;
+// 中文口语在补充数量、菜谱偏好时常有自然停顿；过短会在一句未完时提交。
+// 1.4 秒仍能保持低延迟，同时给用户完成一个自然语义单元的时间。
+const END_SILENCE_MS = 1400;
 const MIN_SPEECH_MS = 260;
 const PRE_ROLL_CHUNKS = 8;
+const HEARTBEAT_MS = 25_000;
 
 interface ServerMessage {
   type?:
@@ -64,6 +67,7 @@ export interface RealtimeVoiceHandle {
   sendText(text: string): void;
   noteAssistant(text: string): void;
   speakText(text: string): void;
+  endSession(): void;
   cancelResponse(): void;
   stop(): void;
 }
@@ -86,7 +90,11 @@ class PcmPlayer {
     const source = this.context.createBufferSource();
     source.buffer = buffer;
     source.connect(this.context.destination);
-    const startAt = Math.max(this.context.currentTime + 0.025, this.nextStartAt);
+    // 给流式音频一个很小的抗抖动缓冲。25ms 在移动网络上容易发生下溢卡顿；
+    // 90ms 仍接近实时，但能吸收相邻 PCM 分片的网络抖动。
+    const bufferLead =
+      this.nextStartAt <= this.context.currentTime + 0.03 ? 0.09 : 0.025;
+    const startAt = Math.max(this.context.currentTime + bufferLead, this.nextStartAt);
     source.start(startAt);
     this.nextStartAt = startAt + buffer.duration;
     this.sources.add(source);
@@ -152,6 +160,9 @@ export async function startRealtimeVoice(
   let armed = false;
   let speechMs = 0;
   let silenceMs = 0;
+  const voiceStartedAt = performance.now();
+  let committedAt: number | null = null;
+  let heartbeat: number | null = null;
   const preRoll: ArrayBuffer[] = [];
 
   const sendControl = (value: object): void => {
@@ -160,6 +171,8 @@ export async function startRealtimeVoice(
   const cleanup = (): void => {
     if (stopped) return;
     stopped = true;
+    if (heartbeat) window.clearInterval(heartbeat);
+    heartbeat = null;
     player.stop();
     processor?.disconnect();
     source?.disconnect();
@@ -220,7 +233,10 @@ export async function startRealtimeVoice(
               speechMs += chunkMs;
               silenceMs = voiced ? 0 : silenceMs + chunkMs;
               if (silenceMs >= END_SILENCE_MS && speechMs >= MIN_SPEECH_MS) {
-                if (armed && !responsePlaying) sendControl({ type: 'commit' });
+                if (armed && !responsePlaying) {
+                  committedAt = performance.now();
+                  sendControl({ type: 'commit' });
+                }
                 turnPending = armed;
                 speechActive = false;
                 speechMs = 0;
@@ -234,6 +250,8 @@ export async function startRealtimeVoice(
             sendControl({ type: 'start', sampleRate: context.sampleRate });
             ready = true;
             window.clearTimeout(timer);
+            sendControl({ type: 'metric', metric: 'client_ready_ms', elapsedMs: performance.now() - voiceStartedAt });
+            heartbeat = window.setInterval(() => sendControl({ type: 'ping' }), HEARTBEAT_MS);
             callbacks.onReady?.();
             resolve({
               respond: () => {
@@ -246,6 +264,12 @@ export async function startRealtimeVoice(
                 turnPending = false;
               },
               speakText: (text) => sendControl({ type: 'speak', text }),
+              endSession: () => {
+                armed = false;
+                turnPending = false;
+                speechActive = false;
+                sendControl({ type: 'end-session' });
+              },
               cancelResponse: () => {
                 sendControl({ type: 'cancel' });
                 player.stop();
@@ -298,8 +322,15 @@ export async function startRealtimeVoice(
       } else if (message.type === 'partial' && message.text && armed) {
         callbacks.onUserInterim?.(message.text);
       } else if (message.type === 'transcript' && message.text?.trim() && armed) {
+        if (committedAt !== null) {
+          sendControl({ type: 'metric', metric: 'turn_to_transcript_ms', elapsedMs: performance.now() - committedAt });
+        }
         callbacks.onTranscript(message.text.trim());
       } else if (message.type === 'audio-start') {
+        if (committedAt !== null) {
+          sendControl({ type: 'metric', metric: 'turn_to_first_audio_ms', elapsedMs: performance.now() - committedAt });
+          committedAt = null;
+        }
         responsePlaying = true;
         suppressAssistantText = false;
         audioGeneration += 1;

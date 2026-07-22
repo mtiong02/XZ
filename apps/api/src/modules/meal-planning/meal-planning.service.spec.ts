@@ -20,6 +20,7 @@ describe('MealPlanningService.addShoppingItem', () => {
       { query } as never,
       { assertMembership: vi.fn().mockResolvedValue({ memberId: 'member-1' }) } as never,
       {} as never,
+      { recommend: vi.fn() } as never,
     );
 
     await service.addShoppingItem('33333333-3333-4333-8333-333333333333', 'user-1', {

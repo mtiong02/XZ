@@ -14,6 +14,13 @@ export function useRealtimeInventory(householdId: string | null, onChange: () =>
 
   useEffect(() => {
     if (!householdId) return;
+    // 线上当前只部署了 GoTrue 鉴权服务，没有 Supabase Realtime Gateway。
+    // 不要让客户端盲连 /realtime/v1（会产生 504）；默认用权威 HTTP 快照轮询。
+    // 将来部署完整 Realtime 服务后才显式打开这个开关。
+    if (process.env.NEXT_PUBLIC_ENABLE_SUPABASE_REALTIME !== 'true') {
+      const timer = window.setInterval(() => onChangeRef.current(), 30_000);
+      return () => window.clearInterval(timer);
+    }
     const supabase = getSupabase();
     const channel = supabase
       .channel(`household:${householdId}`, { config: { private: false } })

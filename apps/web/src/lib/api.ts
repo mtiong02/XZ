@@ -108,6 +108,25 @@ export interface FoodSummary {
   source_reference?: string | null;
   allergen_codes?: string[];
   review_status?: 'CURATED' | 'VERIFIED' | 'HOUSEHOLD';
+  shelf_life_rules?: Array<{
+    storage_zone_code: 'FRIDGE' | 'FREEZER' | 'PANTRY';
+    min_days: number | null;
+    max_days: number;
+    condition_note: string | null;
+    source_reference: string | null;
+  }>;
+  nutrition_profile?: {
+    source_name: string;
+    basis_quantity: string;
+    basis_unit_code: string;
+    energy_kcal: string | null;
+    protein_g: string | null;
+    fat_g: string | null;
+    carbohydrate_g: string | null;
+    fiber_g: string | null;
+    sodium_mg: string | null;
+    verified_at: string;
+  } | null;
 }
 
 export interface FoodCategorySummary {
@@ -469,6 +488,14 @@ export interface AddMissingRecipeItemsResult {
 }
 export function fetchMealSuggestions(householdId: string): Promise<MealSuggestionView[]> {
   return apiGet(`/households/${householdId}/meal-suggestions`);
+}
+export function fetchPersonalizedMealRecommendation(
+  householdId: string,
+  requestText: string,
+): Promise<{ text: string }> {
+  return apiPost(`/households/${householdId}/meal-agent/recommend`, {
+    request_text: requestText,
+  });
 }
 export function addMissingRecipeItems(
   householdId: string,

@@ -57,4 +57,17 @@ describe('nutritionGroupForCategory', () => {
       true,
     );
   });
+
+  it('recognizes seafood, dairy and legumes as valid protein sources', () => {
+    const observations = buildNutritionObservations([
+      { code: 'PROTEIN', label: '蛋白质来源', present: false, food_count: 0, foods: [] },
+      { code: 'SEAFOOD', label: '海鲜水产', present: true, food_count: 1, foods: ['鲈鱼'] },
+      { code: 'DAIRY', label: '奶类', present: false, food_count: 0, foods: [] },
+      { code: 'LEGUME', label: '豆类', present: false, food_count: 0, foods: [] },
+    ]);
+    expect(observations.find((item) => item.code === 'PROTEIN_PRESENT')?.evidence_foods).toEqual([
+      '鲈鱼',
+    ]);
+    expect(observations.some((item) => item.code === 'PROTEIN_GAP')).toBe(false);
+  });
 });

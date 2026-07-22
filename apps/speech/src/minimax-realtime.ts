@@ -1,5 +1,6 @@
 import { WebSocket, type RawData } from 'ws';
 import { MINIMAX_ASSISTANT_INSTRUCTIONS } from './assistant-policy';
+import type { SpeechLatencyMetric } from './runtime-metrics';
 
 export interface MiniMaxRealtimeOptions {
   apiKey: string;
@@ -16,6 +17,13 @@ export interface MiniMaxRealtimeOptions {
     onTranscript?: (text: string) => void;
     onWake?: () => void;
   };
+  metrics?: {
+    upstreamReady(elapsedMs: number): void;
+    upstreamFailed(): void;
+    turnCommitted(): void;
+    recordLatency(metric: SpeechLatencyMetric, elapsedMs: number): void;
+    connectionClosed(): void;
+  };
 }
 
 interface ClientControl {
@@ -28,10 +36,15 @@ interface ClientControl {
     | 'assistant'
     | 'speak'
     | 'server-wake'
+    | 'end-session'
     | 'activity'
+    | 'ping'
+    | 'metric'
     | 'playback-done';
   sampleRate?: number;
   text?: string;
+  metric?: SpeechLatencyMetric;
+  elapsedMs?: number;
 }
 
 interface MiniMaxEvent {
@@ -53,10 +66,37 @@ const GOODBYE_TEXT = '如果没有其他问题，我就先退下了。需要我�
 const WAKE_GREETING_TEXT = '我在，请说。';
 const TRANSCRIPT_DEDUP_WINDOW_MS = 2500;
 
+function isPhoneticExitText(text: string): boolean {
+  const clean = text.replace(/[\s，。！？、,.!?：:；;"“”'‘’]/g, '');
+  if (!clean || /结束后提醒/.test(clean)) return false;
+  return /^(?:好(?:的)?)?(?:结束|退出|关闭|停止|退下|拜拜|再见|取消|算了)+/i.test(clean);
+}
+
 export function isEndConversation(text: string): boolean {
   const compact = text.replace(/[\s，。！？、,.!?：:；;“”‘’'"`]/g, '');
-  return /结束对话|退出对话|结束会话|退出会话|关闭对话|不用了|算了吧|不聊了|先这样|就这样|没事了|没有别的了|退下吧|先退下|拜拜|再见|期待下次|祝您一切顺利|生活愉快|祝你生活愉快/.test(
-    compact,
+  if (/结束后提醒/.test(compact)) return false;
+  if (isPhoneticExitText(compact)) return true;
+  const courtesy = '(?:谢谢(?:你|啦)?|多谢|辛苦了|麻烦你了|拜拜|再见|晚安|了|吧)*';
+
+  if (/^(?:(?:好(?:的)?)?(?:结束|退出|关闭|停止|取消|拜拜|再见|退下)(?:这段|本次|当前)?(?:对话|对换|兑换|绘话|会话|聊天|谈话|通话|对|聊|会|吧|了|谢谢)*)+$/i.test(compact)) {
+    return true;
+  }
+
+  return (
+    new RegExp(
+      `^(?:好(?:的)?|那|嗯|啊|行|可以)?(?:我(?:们)?(?:要|想|先)?|请)?(?:(?:结束|退出|关闭|停止)(?:这段|本次|当前)?(?:对话|对换|兑换|绘话|会话|聊天|谈话|通话|对|聊|会)?${courtesy})+$`,
+      'i',
+    ).test(compact) ||
+    new RegExp(
+      `^(?:好(?:的)?|那|嗯|啊|行|可以)?(?:(?:我们|咱们|我)(?:今天)?(?:就|先)?|今天)?(?:就|先)?(?:先这样|就这样|到这(?:里)?|先到这(?:里)?|没事了|没有别的了|不聊了|下次再聊|回头再聊|我先走了|我先忙了|先挂了|挂了|结束吧|退下吧|先退下|你先退下|拜拜|再见|晚安)${courtesy}$`,
+      'i',
+    ).test(compact) ||
+    new RegExp(
+      `^(?:好(?:的)?|那|嗯|啊)?(?:(?:先)?(?:别|不要|不用)(?:再|继续)?(?:听|收音|说|说话|聊天|聊|回答|播报)|(?:不用|不需要)再(?:听|收音|说|说话|聊天|聊|回答|播报))${courtesy}$`,
+      'i',
+    ).test(compact) ||
+    new RegExp(`^(?:好(?:的)?)?(?:谢谢(?:你|啦)?|多谢)?(?:结束|退出)${courtesy}$`, 'i').test(compact) ||
+    new RegExp(`^(?:结束|退出|取消|算了|不用了|不加了)(?:对话|会话|对换|聊天|谈话|通话|谢谢|吧|了)?${courtesy}$`, 'i').test(compact)
   );
 }
 
@@ -131,6 +171,7 @@ export function handleMiniMaxRealtime(client: WebSocket, options: MiniMaxRealtim
   });
   let sourceRate = 48000;
   let responseInProgress = false;
+  let audioStarted = false;
   let closed = false;
   let armed = false;
   let pendingWake = false;
@@ -141,8 +182,13 @@ export function handleMiniMaxRealtime(client: WebSocket, options: MiniMaxRealtim
   let suppressResponseOutput = false;
   let currentResponseKind: 'assistant' | 'system' = 'assistant';
   let sessionTimer: ReturnType<typeof setTimeout> | null = null;
+  const connectedAt = Date.now();
+  let committedAt: number | null = null;
+  let metricsClosed = false;
+  let upstreamFailureRecorded = false;
   const requestResponse = (kind: 'assistant' | 'system' = 'assistant'): void => {
     responseInProgress = true;
+    audioStarted = false;
     suppressResponseOutput = false;
     currentResponseKind = kind;
     sendJson(upstream, {
@@ -233,6 +279,12 @@ export function handleMiniMaxRealtime(client: WebSocket, options: MiniMaxRealtim
   if (options.transcriber) options.transcriber.onWake = () => wakeDetected('小知小知');
   if (options.transcriber) {
     options.transcriber.onTranscript = (text) => {
+      // 待机或播报阶段的音频可能是扬声器回声。只有明确唤醒后才允许进入业务对话；
+      // 同时用 ASR 近音结果兜底 KWS 的漏检。
+      if (!armed) {
+        wakeDetected(text);
+        return;
+      }
       if (isEndConversation(text)) {
         finishSession();
         return;
@@ -285,6 +337,10 @@ export function handleMiniMaxRealtime(client: WebSocket, options: MiniMaxRealtim
     if (closed) return;
     closed = true;
     if (sessionTimer) clearTimeout(sessionTimer);
+    if (!metricsClosed) {
+      metricsClosed = true;
+      options.metrics?.connectionClosed();
+    }
     options.transcriber?.close();
     if (client.readyState === WebSocket.OPEN) client.close();
     if (upstream.readyState === WebSocket.OPEN || upstream.readyState === WebSocket.CONNECTING) {
@@ -339,6 +395,7 @@ export function handleMiniMaxRealtime(client: WebSocket, options: MiniMaxRealtim
       return;
     }
     if (event.type === 'session.updated') {
+      options.metrics?.upstreamReady(Date.now() - connectedAt);
       sendJson(client, { type: 'ready', provider: 'minimax-realtime', sampleRate: 24000 });
       return;
     }
@@ -365,6 +422,10 @@ export function handleMiniMaxRealtime(client: WebSocket, options: MiniMaxRealtim
         };
       }
       options.transcriber?.onTranscript?.(transcript);
+      if (committedAt !== null) {
+        options.metrics?.recordLatency('turn_to_transcript_ms', Date.now() - committedAt);
+        committedAt = null;
+      }
     }
 
     if (event.type === 'response.created') {
@@ -374,8 +435,11 @@ export function handleMiniMaxRealtime(client: WebSocket, options: MiniMaxRealtim
       armed = false;
       options.transcriber?.setMode('standby');
       sendJson(client, { type: 'standby' });
-      sendJson(client, { type: 'audio-start' });
     } else if (event.type === 'response.audio.delta' && event.delta && !suppressResponseOutput) {
+      if (!audioStarted) {
+        audioStarted = true;
+        sendJson(client, { type: 'audio-start' });
+      }
       if (client.readyState === WebSocket.OPEN) client.send(Buffer.from(event.delta, 'base64'));
     } else if (
       (event.type === 'response.audio_transcript.delta' || event.type === 'response.text.delta') &&
@@ -416,9 +480,17 @@ export function handleMiniMaxRealtime(client: WebSocket, options: MiniMaxRealtim
   });
 
   upstream.on('error', (error) => {
+    if (!upstreamFailureRecorded) {
+      upstreamFailureRecorded = true;
+      options.metrics?.upstreamFailed();
+    }
     sendJson(client, { type: 'error', message: `MiniMax Realtime 连接失败：${error.message}` });
   });
   upstream.on('close', (code) => {
+    if (!closed && !upstreamFailureRecorded) {
+      upstreamFailureRecorded = true;
+      options.metrics?.upstreamFailed();
+    }
     if (!closed) sendJson(client, { type: 'error', message: `MiniMax Realtime 已断开（${code}）` });
     closeBoth();
   });
@@ -437,12 +509,18 @@ export function handleMiniMaxRealtime(client: WebSocket, options: MiniMaxRealtim
         wakeDetected('小知小知');
         return;
       }
+      if (message.type === 'end-session') {
+        finishSession();
+        return;
+      }
       if (message.type === 'start' && Number.isFinite(message.sampleRate)) {
         sourceRate = Math.max(8000, Math.min(96000, Math.round(message.sampleRate ?? 48000)));
         options.transcriber?.setSampleRate(sourceRate);
       } else if (message.type === 'commit') {
         if (responseInProgress) return;
         options.transcriber?.finishTurn();
+        committedAt = Date.now();
+        options.metrics?.turnCommitted();
         if (!armed) return;
         if (sessionTimer) clearTimeout(sessionTimer);
         sessionTimer = null;
@@ -450,6 +528,8 @@ export function handleMiniMaxRealtime(client: WebSocket, options: MiniMaxRealtim
         // 对话后，前端才用 text + respond 请求 MiniMax，避免模型与工具同时抢答。
       } else if (message.type === 'activity') {
         scheduleSessionTimeout();
+      } else if (message.type === 'metric' && message.metric && Number.isFinite(message.elapsedMs)) {
+        options.metrics?.recordLatency(message.metric, Number(message.elapsedMs));
       } else if (message.type === 'playback-done' && awaitingPlaybackDone) {
         awaitingPlaybackDone = false;
         if (endingSession) {

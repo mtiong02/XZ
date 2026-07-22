@@ -13,6 +13,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import {
   AddShoppingItemSchema,
   MealPlanningService,
+  PersonalizedMealRequestSchema,
   ShoppingItemStatusSchema,
 } from './meal-planning.service';
 
@@ -36,6 +37,16 @@ export class MealPlanningController {
     @Param('recipeId', ParseUUIDPipe) recipeId: string,
   ) {
     return this.meals.addMissingFromRecipe(householdId, recipeId, user.userId);
+  }
+
+  @Post('meal-agent/recommend')
+  personalizedRecommendation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('householdId', ParseUUIDPipe) householdId: string,
+    @Body() body: unknown,
+  ) {
+    const input = PersonalizedMealRequestSchema.parse(body);
+    return this.meals.personalizedRecommendation(householdId, user.userId, input.request_text);
   }
 
   @Get('shopping-list')

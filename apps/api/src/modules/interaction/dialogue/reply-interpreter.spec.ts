@@ -9,7 +9,7 @@ const catalog: FoodCatalogEntry[] = [
 
 describe('interpretReply', () => {
   it('recognizes plain confirmation', () => {
-    for (const yes of ['对', '对的', '是的', '是', '是的对', '是对', '没错', '好的', '确认', 'yes', 'OK']) {
+    for (const yes of ['对', '对的', '是的', '是', '是的对', '是对', '是的对是的对', '对的确认', '没错', '好的', '确认', 'yes', 'OK']) {
       expect(interpretReply(yes, catalog).kind).toBe('CONFIRM');
     }
   });
@@ -61,6 +61,11 @@ describe('interpretReply', () => {
 
   it('does not treat a later reminder as session exit', () => {
     expect(isDialogueExit('结束后提醒我买牛奶')).toBe(false);
+  });
+
+  it('recognizes a short polite ending', () => {
+    expect(isDialogueExit('好谢谢结束')).toBe(true);
+    expect(isDialogueExit('好的谢谢结束')).toBe(true);
   });
 
   it.each(['用掉一半吧', '吃掉半数', '使用50%'])(

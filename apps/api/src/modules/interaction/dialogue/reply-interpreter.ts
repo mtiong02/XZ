@@ -31,7 +31,7 @@ export type ReplyInterpretation =
   | { kind: 'UNCLEAR' };
 
 const CONFIRM_PATTERN =
-  /^(?:是对的|是的对|是对|是|是的|对|对的|对对|没错|好的|确认|可以|嗯|行|ok|yes|correct|right|yep|sure)$/i;
+  /^(?:(?:是的?|对的?|确认|没错|好的|可以|嗯|行|ok|yes|correct|right|yep|sure|是|对))+$/i;
 const REJECT_PATTERN =
   /(不对|不是的|不要|取消|算了|错了|不用了|重来|结束|退出|不用|多谢|就这|算了吧|不加了|不做|no|cancel|wrong|nope)/i;
 
@@ -41,18 +41,38 @@ export function relativeInventoryFraction(rawReply: string): string | null {
   return /一半|半数|0\.5数?|百分之50|50%/.test(normalized) ? '0.5' : null;
 }
 
-/** 明确结束当前会话；覆盖“结束兑换/绘话”等常见 ASR 近音字，但不误伤“结束后提醒我”。 */
+import { isPhoneticallyExit } from './phonetic-matcher';
+
+/** 明确结束当前会话；使用拼音音元智能匹配 + 容错识别 ASR 错别字（如“结束兑换”），但不误伤“结束后提醒我”。 */
 export function isDialogueExit(rawReply: string): boolean {
   const compact = rawReply.replace(/[\s，。！？、,.!?：:；;“”‘’'"`]/g, '');
   if (/结束后提醒/.test(compact)) return false;
+
+  // 优先进行拼音音元智能匹配 (支持近音字、错别字及重复短语)
+  if (isPhoneticallyExit(compact)) return true;
+
+  const courtesy = '(?:谢谢(?:你|啦)?|多谢|辛苦了|麻烦你了|拜拜|再见|晚安|了|吧)*';
+  
+  // 1. 如果整个词是由重复的“结束对话/结束兑换/结束对换/结束通话/拜拜/退下”组成的，直接返回 true
+  if (/^(?:(?:好(?:的)?)?(?:结束|退出|关闭|停止|取消|拜拜|再见|退下)(?:这段|本次|当前)?(?:对话|对换|兑换|绘话|会话|聊天|谈话|通话|对|聊|会|吧|了|谢谢)*)+$/i.test(compact)) {
+    return true;
+  }
+
   return (
-    /^(?:我(?:们)?(?:要|想|先)?|请)?(?:结束|退出|关闭|停止)(?:这段|本次|当前)?(?:对话|对换|兑换|绘话|会话|聊天|对|聊|会)?(?:谢谢|多谢|拜拜|了|吧)?$/.test(
-      compact,
-    ) ||
-    /^(?:我们?)?(?:先这样|就这样|没事了|没有别的了|不聊了|结束吧|退下吧|先退下|你先退下)(?:谢谢|多谢|拜拜|吧|了)?$/.test(
-      compact,
-    ) ||
-    /^(?:结束|退出|取消|算了|不用了|不加了)(?:对话|会话|对换|聊天|谢谢|吧|了)?$/.test(compact)
+    new RegExp(
+      `^(?:好(?:的)?|那|嗯|啊|行|可以)?(?:我(?:们)?(?:要|想|先)?|请)?(?:(?:结束|退出|关闭|停止)(?:这段|本次|当前)?(?:对话|对换|兑换|绘话|会话|聊天|谈话|通话|对|聊|会)?${courtesy})+$`,
+      'i',
+    ).test(compact) ||
+    new RegExp(
+      `^(?:好(?:的)?|那|嗯|啊|行|可以)?(?:(?:我们|咱们|我)(?:今天)?(?:就|先)?|今天)?(?:就|先)?(?:先这样|就这样|到这(?:里)?|先到这(?:里)?|没事了|没有别的了|不聊了|下次再聊|回头再聊|我先走了|我先忙了|先挂了|挂了|结束吧|退下吧|先退下|你先退下|拜拜|再见|晚安)${courtesy}$`,
+      'i',
+    ).test(compact) ||
+    new RegExp(
+      `^(?:好(?:的)?|那|嗯|啊)?(?:(?:先)?(?:别|不要|不用)(?:再|继续)?(?:听|收音|说|说话|聊天|聊|回答|播报)|(?:不用|不需要)再(?:听|收音|说|说话|聊天|聊|回答|播报))${courtesy}$`,
+      'i',
+    ).test(compact) ||
+    new RegExp(`^(?:好(?:的)?)?(?:谢谢(?:你|啦)?|多谢)?(?:结束|退出)${courtesy}$`, 'i').test(compact) ||
+    new RegExp(`^(?:结束|退出|取消|算了|不用了|不加了)(?:对话|会话|对换|聊天|谈话|通话|谢谢|吧|了)?${courtesy}$`, 'i').test(compact)
   );
 }
 
@@ -88,4 +108,4 @@ export function interpretReply(rawReply: string, catalog: FoodCatalogEntry[]): R
 
 // 裸数量+单位（无食材词），如"三盒"、"3个"、"改成两瓶"
 const BARE_QUANTITY_PATTERN =
-  /\d+(?:\.\d+)?\s*(千克|公斤|毫升|克|盒|瓶|包|袋|把|个|只|颗|枚|根|斤|升|kg|ml|g|l)/i;
+  /\d+(?:\.\d+)?\s*(千克|公斤|毫升|克|盒|瓶|包|袋|把|个|只|颗|枚|根|片|块|段|斤|升|kg|ml|g|l)/i;

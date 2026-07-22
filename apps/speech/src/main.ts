@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
 import { handleMiniMaxRealtime } from './minimax-realtime';
+import { createSpeechRuntimeMetrics } from './runtime-metrics';
 
 interface OnlineResult {
   text: string;
@@ -79,6 +80,8 @@ const PORT = Number(process.env.SPEECH_PORT ?? 6010);
 const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY?.trim() ?? '';
 const MINIMAX_REALTIME_MODEL = process.env.MINIMAX_REALTIME_MODEL?.trim() || 'abab6.5s-chat';
 const MINIMAX_REALTIME_VOICE = process.env.MINIMAX_REALTIME_VOICE?.trim() || 'female-shaonv';
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN?.trim() ?? '';
+const runtimeMetrics = createSpeechRuntimeMetrics();
 const MODEL_ROOT = process.env.SPEECH_MODEL_ROOT
   ? path.resolve(process.env.SPEECH_MODEL_ROOT)
   : path.resolve(__dirname, '../../../local-models');
@@ -438,6 +441,16 @@ const server = createServer(async (request, response) => {
     );
     return;
   }
+  if (request.method === 'GET' && request.url === '/metrics') {
+    if (!ADMIN_TOKEN || request.headers['x-admin-token'] !== ADMIN_TOKEN) {
+      response.writeHead(403).end();
+      return;
+    }
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('Content-Type', 'application/json');
+    response.end(JSON.stringify(runtimeMetrics.snapshot()));
+    return;
+  }
   if (request.method === 'POST' && request.url === '/tts') {
     try {
       const body = (await readJson(request)) as { text?: unknown };
@@ -461,6 +474,7 @@ const asrSockets = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024
 const realtimeSockets = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 asrSockets.on('connection', handleAsrConnection);
 realtimeSockets.on('connection', (socket) => {
+  runtimeMetrics.connectionOpened();
   const transcriber = createRealtimeTranscriber(socket, (text) => {
     void text;
   });
@@ -470,6 +484,7 @@ realtimeSockets.on('connection', (socket) => {
     voice: MINIMAX_REALTIME_VOICE,
     debug: process.env.MINIMAX_REALTIME_DEBUG === 'true',
     transcriber,
+    metrics: runtimeMetrics,
   });
 });
 server.on('upgrade', (request, socket, head) => {

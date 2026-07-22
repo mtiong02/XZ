@@ -17,6 +17,7 @@ export type ParsedIntent =
   | 'ADD_INVENTORY'
   | 'CONSUME_INVENTORY'
   | 'DISCARD_INVENTORY'
+  | 'MOVE_INVENTORY'
   | 'QUERY_INVENTORY'
   | 'QUERY_REMINDERS'
   | 'CREATE_REMINDER'
@@ -62,7 +63,7 @@ const INTENT_RULES: { intent: ParsedIntent; patterns: RegExp[]; weight: number }
     intent: 'ADD_INVENTORY',
     // 含裸"加"（"加两盒牛奶"），但排除"加热"等非入库动词
     patterns: [
-      /买了|新买|购入|添加|加了|放了|放进|存了|入库|带回|加(?!热|工)|bought|add(ed)?|got/i,
+      /买了|新买|购入|添加|添(?:加)?|加了|放了|放进|存了|入库|带回|加(?!热|工)|bought|add(ed)?|got/i,
     ],
     weight: 0.95,
   },
@@ -80,6 +81,9 @@ const UNIT_WORDS: Record<string, string> = {
   颗: 'piece',
   枚: 'piece',
   根: 'piece',
+  片: 'piece',
+  块: 'piece',
+  段: 'piece',
   盒: 'box',
   瓶: 'bottle',
   包: 'pack',
@@ -98,17 +102,39 @@ const UNIT_WORDS: Record<string, string> = {
 };
 
 const QUANTITY_PATTERN =
-  /(\d+(?:\.\d+)?)\s*(千克|公斤|毫升|克|盒|瓶|包|袋|把|个|只|颗|枚|根|斤|升|kg|ml|g|l)/gi;
+  /(\d+(?:\.\d+)?)\s*(千克|公斤|毫升|克|盒|瓶|包|袋|把|个|只|颗|枚|根|片|块|段|斤|升|kg|ml|g|l)/gi;
 
 const INFORMATION_REQUEST = /请用\d+句|怎么|怎样|如何|做什么|介绍|告诉我|能否|能不能|是否|可以.+吗/;
 const INVENTORY_CATEGORY_QUERY =
   /(?:有|剩)(?:哪些|什么)(?:肉类?|荤菜|蔬菜|青菜|菜类|水果|海鲜|水产|鱼虾|龙虾|贝类|蛋奶|奶制品|乳制品|蛋类|豆制品|主食|粮食|谷物|菌菇|蘑菇|调味料|调料|佐料)|(?:肉类?|荤菜|蔬菜|青菜|菜类|水果|海鲜|水产|鱼虾|龙虾|贝类|蛋奶|奶制品|乳制品|蛋类|豆制品|主食|粮食|谷物|菌菇|蘑菇|调味料|调料|佐料)(?:有|剩)(?:哪些|什么|多少)/;
 const INVENTORY_QUERY_REQUEST =
   /(?:冰箱|冷藏|冷冻|常温|库存|家里).*(?:有|剩|哪些|什么)|(?:我|我们)?(?:有|剩)(?:哪些|什么)食材|(?:有哪些|有什么|列出|盘点|查找|查询).*(?:食材|东西|菜)|(?:哪些|什么).*(?:快过期|临期|已经过期)|(?:快过期|临期|过期).*(?:哪些|什么)|(?:今天|今晚|中午).*(?:吃什么|做什么菜|做点什么)|(?:这些|现有|冰箱里|库存里).*(?:能做|可以做|吃什么|怎么吃|美食|菜谱|减脂餐)|(?:减脂|减肥).*(?:餐|吃什么|怎么吃|推荐)/;
+const MEAL_OR_SHOPPING_ADVICE_REQUEST =
+  /(?:想吃|做).*(?:还要买|还缺|缺什么|买什么|怎么做)|(?:还要买|还缺|缺什么|买什么).*(?:菜|肉|汤|饭|牛腩|土豆)/;
+const SNACK_RECOMMENDATION_REQUEST =
+  /(?:下午茶|加餐|小点心|点心|零食).*(?:推荐|吃什么|有什么|做什么|怎么搭配|简单)|(?:推荐|吃什么|有什么|做什么|怎么搭配|简单).*(?:下午茶|加餐|小点心|点心|零食)/;
+const MEAL_RECOMMENDATION_REQUEST =
+  /(?:早餐|早饭|午餐|中饭|晚餐|晚饭|夜宵|宵夜|家庭餐|家庭晚餐|全家|一个人|聚会).*(?:推荐|吃什么|有什么|做什么|怎么搭配|简单|快手)|(?:推荐|吃什么|有什么|做什么|怎么搭配|简单|快手).*(?:早餐|早饭|午餐|中饭|晚餐|晚饭|夜宵|宵夜|家庭餐|家庭晚餐|全家|一个人|聚会)/;
+const RECIPE_FOLLOW_UP_REQUEST =
+  /食谱|菜谱|具体(?:的)?菜|给我.*(?:一道|几个|几道).*菜|继续.*(?:刚才|上一个|前面).*(?:食谱|菜|推荐)|(?:少油|少盐|清淡|低脂).*(?:做法|菜|餐|食谱|就好)|(?:晚餐|午餐|早餐|下午茶|聚会|朋友来|家庭晚餐).*(?:食谱|菜谱|几道菜|搭配)/;
+const MOVE_INVENTORY_REQUEST =
+  /(?:移到|移去|挪到|转到|换到|放到).*(?:冷冻|冷库|冷柜|冰柜|冷藏|保鲜|常温|室温|橱柜|储物柜)|(?:冷冻|冷库|冷柜|冰柜|冷藏|保鲜|常温|室温|橱柜|储物柜).*(?:移|挪|转|换)/;
 const REMINDER_QUERY_REQUEST =
   /(?:今天|明天|后天|今晚).*(?:安排|计划|提醒).*(?:什么|哪些|啥|有没有|查看|看一下|查一下)|(?:查看|看一下|查一下|告诉我).*(?:今天|明天|后天|今晚).*(?:安排|计划|提醒)|(?:今天|明天|后天|今晚).*(?:有什么|有哪些).*(?:安排|计划|提醒)|(?:今天|明天|后天|今晚).*有(?:安排|计划|提醒)(?:吗|呢)/;
 const EXPLICIT_COMPLETED_ACTION =
   /用了|用掉|吃了|吃掉|喝了|喝掉|买了|新买|购入|添加|加了|放进|入库|扔了|扔掉|丢了|丢掉|倒掉/;
+
+/** 用户陈述“冰箱里有三颗西瓜”时，视为待确认的入库候选，而不是库存查询。 */
+const INVENTORY_DECLARATION =
+  /^(?:嗯|呃|那个|好的)?(?:我)?(?:家里|冰箱)(?:里|里面)?有(?:\d|[一二两俩三四五六七八九十百千半])/;
+
+/** 将自然语言存放位置转为稳定区域代码；实际 zone id 由 Interaction 模块按家庭查询。 */
+export function requestedStorageZoneCode(normalized: string): 'FRIDGE' | 'FREEZER' | 'PANTRY' | null {
+  if (/冷冻|冷库|冷柜|冰柜/.test(normalized)) return 'FREEZER';
+  if (/冷藏|保鲜/.test(normalized)) return 'FRIDGE';
+  if (/常温|室温|橱柜|储物柜/.test(normalized)) return 'PANTRY';
+  return null;
+}
 
 /** 抽取文本中所有「数量+单位」，按出现顺序返回；斤保留为可播报单位，执行时再换算。 */
 export function extractQuantities(normalized: string): { quantity: string; unit: string }[] {
@@ -161,6 +187,24 @@ export function detectIntent(normalized: string): { intent: ParsedIntent; confid
   }
   if (/(?:帮我|替我|给我).*(?:下单|购买)|(?:下单|网购|外卖).*(?:买|购买)?/.test(normalized)) {
     return { intent: 'EXTERNAL_PURCHASE', confidence: 0.98 };
+  }
+  if (INVENTORY_DECLARATION.test(normalized)) {
+    return { intent: 'ADD_INVENTORY', confidence: 0.9 };
+  }
+  if (MOVE_INVENTORY_REQUEST.test(normalized) && requestedStorageZoneCode(normalized)) {
+    return { intent: 'MOVE_INVENTORY', confidence: 0.96 };
+  }
+  if (SNACK_RECOMMENDATION_REQUEST.test(normalized)) {
+    return { intent: 'QUERY_INVENTORY', confidence: 0.92 };
+  }
+  if (MEAL_RECOMMENDATION_REQUEST.test(normalized)) {
+    return { intent: 'QUERY_INVENTORY', confidence: 0.92 };
+  }
+  if (RECIPE_FOLLOW_UP_REQUEST.test(normalized)) {
+    return { intent: 'QUERY_INVENTORY', confidence: 0.9 };
+  }
+  if (MEAL_OR_SHOPPING_ADVICE_REQUEST.test(normalized)) {
+    return { intent: 'QUERY_INVENTORY', confidence: 0.88 };
   }
   if (INVENTORY_QUERY_REQUEST.test(normalized) || INVENTORY_CATEGORY_QUERY.test(normalized)) {
     return { intent: 'QUERY_INVENTORY', confidence: 0.95 };

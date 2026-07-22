@@ -125,13 +125,19 @@ export function buildNutritionObservations(
     groups.find((group) => group.code === code)?.foods ?? [];
   const observations: NutritionObservation[] = [];
 
-  if (has('PROTEIN')) {
+  const proteinFoods = [
+    ...foods('PROTEIN'),
+    ...foods('SEAFOOD'),
+    ...foods('DAIRY'),
+    ...foods('LEGUME'),
+  ];
+  if (proteinFoods.length > 0) {
     observations.push({
       code: 'PROTEIN_PRESENT',
       severity: 'POSITIVE',
       title: '已有蛋白质来源',
       detail: '库存中有肉、蛋或其他蛋白质食材，可以继续关注来源多样性和烹饪方式。',
-      evidence_foods: foods('PROTEIN'),
+      evidence_foods: [...new Set(proteinFoods)],
     });
   } else {
     observations.push({

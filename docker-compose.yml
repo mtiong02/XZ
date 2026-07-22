@@ -56,6 +56,9 @@ services:
       - MINIMAX_API_KEY=${MINIMAX_API_KEY:?MINIMAX_API_KEY is required}
       - MINIMAX_REALTIME_MODEL=${MINIMAX_REALTIME_MODEL:-abab6.5s-chat}
       - MINIMAX_REALTIME_VOICE=${MINIMAX_REALTIME_VOICE:-female-shaonv}
+      - ADMIN_TOKEN=${ADMIN_TOKEN:?ADMIN_TOKEN is required}
+    cpus: 2.0
+    mem_limit: 3g
 
   web:
     build:
@@ -67,6 +70,8 @@ services:
       - "3100:3000"
     environment:
       - NODE_ENV=production
+    cpus: 0.5
+    mem_limit: 768m
 
   api:
     build:
@@ -85,6 +90,12 @@ services:
       - SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
       # 仅由 API 容器读取；严禁放入 web/public 或 NEXT_PUBLIC_ 变量。
       - ADMIN_TOKEN=${ADMIN_TOKEN:?ADMIN_TOKEN is required}
+      # 仅餐食决策等需要推理的请求调用；库存、提醒和确认仍走本地确定性工具。
+      - MINIMAX_API_KEY=${MINIMAX_API_KEY:?MINIMAX_API_KEY is required}
+      - MINIMAX_AGENT_MODEL=${MINIMAX_AGENT_MODEL:-abab6.5s-chat}
+      - MINIMAX_AGENT_TIMEOUT_MS=${MINIMAX_AGENT_TIMEOUT_MS:-5500}
+    cpus: 0.75
+    mem_limit: 1g
     depends_on:
       - db
       - gotrue

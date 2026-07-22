@@ -1,9 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   addMissingRecipeItems,
   fetchMealSuggestions,
+  fetchPersonalizedMealRecommendation,
   fetchNutritionStructure,
   fetchShoppingList,
   updateShoppingItemStatus,
@@ -23,6 +25,16 @@ export default function MealsPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [addingRecipeId, setAddingRecipeId] = useState<string | null>(null);
+  const [focusFood, setFocusFood] = useState<{ id: string; name: string } | null>(null);
+  const [agentRecommendation, setAgentRecommendation] = useState('');
+  const [agentBusy, setAgentBusy] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('food');
+    const name = params.get('name');
+    setFocusFood(id && name ? { id, name } : null);
+  }, []);
 
   const reload = useCallback(async () => {
     if (!household) return;
@@ -42,8 +54,31 @@ export default function MealsPage() {
   }, [household]);
 
   useEffect(() => void reload(), [reload]);
+  useEffect(() => {
+    if (!household || !focusFood) return;
+    setAgentBusy(true);
+    setAgentRecommendation('');
+    fetchPersonalizedMealRecommendation(
+      household.id,
+      `请结合我们家当前库存、我的偏好和健康目标，优先用${focusFood.name}安排一份合适的餐食。不要重复最近推荐过的菜。`,
+    )
+      .then((result) => setAgentRecommendation(result.text))
+      .catch((caught: unknown) =>
+        setError(caught instanceof Error ? caught.message : '小知暂时无法生成餐食建议'),
+      )
+      .finally(() => setAgentBusy(false));
+  }, [focusFood, household]);
   if (loading || !household) return <div className="empty">加载中…</div>;
   const makeableCount = recipes.filter((recipe) => recipe.can_make).length;
+  const visibleRecipes = useMemo(
+    () =>
+      focusFood
+        ? recipes.filter((recipe) =>
+            recipe.ingredients.some((ingredient) => ingredient.food_id === focusFood.id),
+          )
+        : recipes,
+    [focusFood, recipes],
+  );
   const attentionObservations =
     nutrition?.observations
       .filter((observation) => observation.severity === 'ATTENTION')
@@ -55,6 +90,27 @@ export default function MealsPage() {
       <main className="container workspace-page meals-page">
         {error ? <div className="error-box">{error}</div> : null}
         {message ? <div className="success-box">{message}</div> : null}
+        {focusFood ? (
+          <section className="meal-food-focus">
+            <div>
+              <span>从食材指南带入</span>
+              <strong>优先查看使用“{focusFood.name}”的餐食</strong>
+            </div>
+            <Link href="/fridge/meals">查看全部餐食</Link>
+          </section>
+        ) : null}
+        {focusFood ? (
+          <section className="zone workspace-section meal-agent-card">
+            <div className="workspace-section-heading">
+              <div>
+                <span>小知个性化建议</span>
+                <h2>用{focusFood.name}安排这一餐</h2>
+              </div>
+              <small>{agentBusy ? '正在结合家庭情况分析…' : '已结合库存与个人档案'}</small>
+            </div>
+            <p>{agentBusy ? '小知正在想一个更适合你们家的方案。' : agentRecommendation}</p>
+          </section>
+        ) : null}
 
         <section className="workspace-hero workspace-hero-compact meal-hero">
           <div className="workspace-hero-copy">
@@ -102,10 +158,14 @@ export default function MealsPage() {
               <small>优先展示库存覆盖高的方案</small>
             </div>
             <div className="meal-recipe-list">
-              {recipes.length === 0 ? (
-                <p className="empty workspace-empty">暂无餐食候选，添加冰箱食材或自定义菜谱后，小知会为你智能推荐。</p>
+              {visibleRecipes.length === 0 ? (
+                <p className="empty workspace-empty">
+                  {focusFood
+                    ? `当前菜谱中还没有使用${focusFood.name}的合适候选。`
+                    : '暂无餐食候选，添加冰箱食材后，小知会结合库存为你推荐。'}
+                </p>
               ) : (
-                recipes.map((recipe) => (
+                visibleRecipes.map((recipe) => (
                   <article className="meal-recipe-card" key={recipe.id}>
                     <div className="meal-recipe-copy">
                       <div className="name">{recipe.name}</div>
@@ -114,12 +174,16 @@ export default function MealsPage() {
                       </div>
                       <div className="meal-ingredients">
                         {recipe.ingredients.map((item) => (
-                          <span className={item.available ? 'available' : ''} key={item.food_id}>
+                          <Link
+                            className={item.available ? 'available' : ''}
+                            href={`/fridge/foods?q=${encodeURIComponent(item.food_name)}`}
+                            key={item.food_id}
+                          >
                             {item.available ? '已有' : '缺少'} · {item.food_name}
                             {item.quantity
                               ? ` ${item.quantity}${unitLabel(item.unit_code ?? '')}`
                               : ''}
-                          </span>
+                          </Link>
                         ))}
                       </div>
                     </div>

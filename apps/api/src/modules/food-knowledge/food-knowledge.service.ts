@@ -48,7 +48,29 @@ export class FoodKnowledgeService {
               fc.preferred_unit_codes, fc.default_shelf_life_days,
               fc.data_source, fc.source_reference, fc.allergen_codes, fc.review_status,
               (fc.household_id is not null) as is_custom,
-              coalesce(array_agg(fa.alias order by fa.alias) filter (where fa.alias is not null), '{}') as aliases
+              coalesce(array_agg(fa.alias order by fa.alias) filter (where fa.alias is not null), '{}') as aliases,
+              coalesce((select jsonb_agg(jsonb_build_object(
+                'storage_zone_code', rule.storage_zone_code,
+                'min_days', rule.min_days,
+                'max_days', rule.max_days,
+                'condition_note', rule.condition_note,
+                'source_reference', rule.source_reference
+              ) order by case rule.storage_zone_code when 'PANTRY' then 1 when 'FRIDGE' then 2 else 3 end)
+              from shelf_life_rules rule where rule.food_id=fc.id), '[]'::jsonb) as shelf_life_rules,
+              (select jsonb_build_object(
+                'source_name', profile.source_name,
+                'basis_quantity', profile.basis_quantity::text,
+                'basis_unit_code', profile.basis_unit_code,
+                'energy_kcal', profile.energy_kcal::text,
+                'protein_g', profile.protein_g::text,
+                'fat_g', profile.fat_g::text,
+                'carbohydrate_g', profile.carbohydrate_g::text,
+                'fiber_g', profile.fiber_g::text,
+                'sodium_mg', profile.sodium_mg::text,
+                'verified_at', profile.verified_at
+              ) from nutrition_profiles profile
+              where profile.food_id=fc.id and profile.verified_at is not null
+              order by profile.verified_at desc limit 1) as nutrition_profile
        from food_catalog fc
        join category_paths cp on cp.code = fc.category_code
        left join food_aliases fa on fa.food_id = fc.id

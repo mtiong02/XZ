@@ -41,6 +41,15 @@ describe('parseReminderSchedule', () => {
     },
   );
 
+  it('keeps noon as 12:00 when the reminder also includes an item quantity', () => {
+    expect(
+      parseReminderSchedule(
+        '明天中午十二点把8个苹果吃了',
+        new Date('2026-07-22T08:00:00+08:00'),
+      )?.toISOString(),
+    ).toBe('2026-07-23T04:00:00.000Z');
+  });
+
   it('does not rewrite unrelated uses of 民间', () => {
     expect(normalizeReminderSpeech('这是一个民间故事')).toBe('这是一个民间故事');
   });

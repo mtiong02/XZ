@@ -5,6 +5,17 @@ set -e
 
 echo "🐳 Starting Docker deployment for XZ Platform..."
 
+# 部署凭据只保留在服务器受保护的环境文件中；rsync 不会同步该文件。
+if [ -f .env.deploy ]; then
+  set -a
+  . ./.env.deploy
+  set +a
+elif [ -f .env ]; then
+  set -a
+  . ./.env
+  set +a
+fi
+
 if [ -z "${ADMIN_TOKEN:-}" ]; then
   echo "❌ ADMIN_TOKEN is required. Export it in the server shell or load it from the server's protected .env file."
   exit 1

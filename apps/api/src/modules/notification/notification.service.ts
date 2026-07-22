@@ -52,7 +52,8 @@ export function parseReminderSchedule(text: string, now = new Date()): Date | nu
   if (/后天/.test(normalized)) future.setDate(future.getDate() + 2);
   else if (/明天|明日/.test(normalized)) future.setDate(future.getDate() + 1);
   else return null;
-  const explicit = /(\d{1,2})点/.exec(normalized)?.[1];
+  // 优先按时间短语解析，避免“中午十二点把苹果吃了”中的食材数量或其它数字干扰时间。
+  const explicit = /(?:上午|早上|早晨|中午|下午|晚上|今晚)?\s*(\d{1,2})点/.exec(normalized)?.[1];
   const hour = explicit
     ? Number(explicit)
     : /中午/.test(normalized)

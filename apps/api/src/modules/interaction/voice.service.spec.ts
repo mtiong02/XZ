@@ -2,10 +2,21 @@ import { describe, expect, it, vi } from 'vitest';
 import type { InventoryZoneView } from '@xz/contracts';
 import {
   extractReminderText,
+  isMealDecisionRequest,
   reminderQueryPrompt,
   selectInventoryZones,
   VoiceService,
 } from './voice.service';
+
+describe('isMealDecisionRequest', () => {
+  it('routes only decision-heavy meal requests to the model agent', () => {
+    expect(isMealDecisionRequest('晚上六个人家庭晚餐按库存推荐几道菜')).toBe(true);
+    expect(isMealDecisionRequest('推荐一份少油少盐的减脂下午茶')).toBe(true);
+    expect(isMealDecisionRequest('冰箱里面还有几个苹果')).toBe(false);
+    expect(isMealDecisionRequest('把猪肉移到冷冻室')).toBe(false);
+    expect(isMealDecisionRequest('明天中午提醒我吃苹果')).toBe(false);
+  });
+});
 
 describe('extractReminderText', () => {
   it('keeps a purchase reminder even when the subject is a category', () => {
@@ -108,7 +119,6 @@ describe('VoiceService clarification cancellation', () => {
     const service = new VoiceService(
       { query } as never,
       { assertMembership: vi.fn().mockResolvedValue({}) } as never,
-      {} as never,
       {} as never,
       {} as never,
       {} as never,

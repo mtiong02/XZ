@@ -10,7 +10,6 @@ import { InventoryCommandService } from '../inventory/application/inventory-comm
 import { InventoryQueryService } from '../inventory/application/inventory-query.service';
 import { DomainError } from '../inventory/domain/errors';
 import { MealPlanningService } from '../meal-planning/meal-planning.service';
-import { NutritionStructureService } from '../nutrition/nutrition.service';
 import {
   NotificationService,
   normalizeReminderSpeech,
@@ -20,6 +19,7 @@ import { normalizeTranscript } from './parser/normalizer';
 import {
   isReasonableUnitForFood,
   parseTranscript,
+  requestedStorageZoneCode,
   suggestedUnitsForFood,
   type FoodCatalogEntry,
   type ParseResult,
@@ -60,7 +60,20 @@ export interface CandidateItem {
   quantity: string;
   unit: string;
   quantity_explicit?: boolean;
+  storage_zone_id?: string;
 }
+
+type CandidatePayload = {
+  items?: CandidateItem[];
+  food_id?: string;
+  food_name?: string;
+  reminder_text?: string;
+  scheduled_for?: string;
+  reminder_id?: string;
+  lot_ids?: string[];
+  target_storage_zone_id?: string;
+  reason?: string;
+};
 
 export interface DialogueTurn {
   role: 'user' | 'system';
@@ -76,14 +89,7 @@ interface VoiceJobRow {
   transcript_normalized: string | null;
   candidate_command_json: {
     command_type?: string;
-    payload?: {
-      items?: CandidateItem[];
-      food_id?: string;
-      food_name?: string;
-      reminder_text?: string;
-      scheduled_for?: string;
-      reminder_id?: string;
-    };
+    payload?: CandidatePayload;
   } | null;
   confidence_json: unknown;
   requires_confirmation: boolean;
@@ -125,7 +131,6 @@ export class VoiceService {
     @Inject(FoodCategoryService) private readonly foodCategories: FoodCategoryService,
     @Inject(NotificationService) private readonly notifications: NotificationService,
     @Inject(MealPlanningService) private readonly meals: MealPlanningService,
-    @Inject(NutritionStructureService) private readonly nutrition: NutritionStructureService,
   ) {}
 
   /**
@@ -159,7 +164,10 @@ export class VoiceService {
             )
           : parsed.intent === 'QUERY_SHOPPING_LIST'
             ? await this.buildShoppingListQueryOutcome(input.household_id, userId)
+            : parsed.intent === 'MOVE_INVENTORY'
+              ? await this.buildMoveOutcome(input.household_id, userId, normalized, parsed)
             : this.buildOutcome(parsed);
+    await this.applyRequestedStorageZone(input.household_id, normalized, outcome.candidate);
     if (parsed.intent === 'QUERY_INVENTORY') {
       outcome.spokenPrompt = await this.buildInventoryQueryPrompt(
         input.household_id,
@@ -205,7 +213,7 @@ export class VoiceService {
 
   private buildOutcome(parsed: ParseResult): {
     status: string;
-    candidate: { command_type: string; payload: { items?: CandidateItem[] } } | null;
+    candidate: { command_type: string; payload: CandidatePayload } | null;
     errorCode: string | null;
     spokenPrompt: string | null;
   } {
@@ -250,12 +258,22 @@ export class VoiceService {
       };
     }
     const commandType = INTENT_TO_COMMAND[parsed.intent];
-    if (!commandType || parsed.items.length === 0) {
+    if (!commandType) {
       return {
         status: 'FAILED',
         candidate: null,
         errorCode: 'AMBIGUOUS_COMMAND',
         spokenPrompt: UNRECOGNIZED_PROMPT,
+      };
+    }
+
+    if (parsed.items.length === 0) {
+      const action = commandType === 'ADD_INVENTORY' ? '添加' : commandType === 'CONSUME_INVENTORY' ? '用掉' : '处理';
+      return {
+        status: 'AWAITING_CLARIFICATION',
+        candidate: { command_type: commandType, payload: { items: [] } },
+        errorCode: null,
+        spokenPrompt: `你想${action}什么食材？请把食材和数量一起告诉我。`,
       };
     }
 
@@ -296,6 +314,99 @@ export class VoiceService {
       errorCode: null,
       spokenPrompt: confirmPrompt(commandType, toSpokenItems(items)),
     };
+  }
+
+  /**
+   * “把猪肉移到冷冻室”是位置更正，不是新增或消耗。
+   * 仅选择当前仍有余量的批次，仍必须由用户确认后才发出 MOVE_INVENTORY 命令。
+   */
+  private async buildMoveOutcome(
+    householdId: string,
+    userId: string,
+    normalized: string,
+    parsed: ParseResult,
+  ): Promise<{
+    status: string;
+    candidate: { command_type: string; payload: CandidatePayload } | null;
+    errorCode: string | null;
+    spokenPrompt: string | null;
+  }> {
+    const targetCode = requestedStorageZoneCode(normalized);
+    const foodIds = [...new Set(parsed.items.map((item) => item.food_id))];
+    if (!targetCode || foodIds.length === 0) {
+      return {
+        status: 'FAILED',
+        candidate: null,
+        errorCode: 'MOVE_FOOD_OR_ZONE_MISSING',
+        spokenPrompt: '请说清要移动哪种食材和目标位置，例如“把猪肉移到冷冻室”。',
+      };
+    }
+    const target = await this.pool.query<{ id: string; name: string }>(
+      `select id, name from storage_zones where household_id=$1 and code=$2 limit 1`,
+      [householdId, targetCode],
+    );
+    const targetZone = target.rows[0];
+    if (!targetZone) {
+      return {
+        status: 'FAILED', candidate: null, errorCode: 'MOVE_TARGET_ZONE_MISSING',
+        spokenPrompt: '没有找到目标存放区域，请稍后在冰箱页面检查冷藏、冷冻和常温区。',
+      };
+    }
+    const lots = await this.pool.query<{ id: string; canonical_name: string }>(
+      `select l.id, fc.canonical_name
+       from inventory_lots l
+       join food_catalog fc on fc.id=l.food_id
+       where l.household_id=$1 and l.food_id = any($2::uuid[])
+         and l.status='ACTIVE' and l.remaining_quantity>0 and l.storage_zone_id<>$3
+       order by fc.canonical_name, l.expires_at nulls last`,
+      [householdId, foodIds, targetZone.id],
+    );
+    if (lots.rows.length === 0) {
+      const names = parsed.items.map((item) => item.food_name).join('、');
+      return {
+        status: 'COMPLETED', candidate: null, errorCode: null,
+        spokenPrompt: `${names}目前没有需要移动的在库批次。`,
+      };
+    }
+    const names = [...new Set(lots.rows.map((lot) => lot.canonical_name))].join('、');
+
+    // 目标食材与区域明确时，直接执行移动更新，一步到位生效
+    try {
+      await this.commands.execute(
+        {
+          command_type: 'MOVE_INVENTORY',
+          schema_version: '1.0',
+          household_id: householdId,
+          source: {
+            channel: 'WEB_VOICE',
+            client: 'voice',
+          },
+          idempotency_key: `voice-move-${householdId}-${Date.now()}`,
+          payload: {
+            lot_ids: lots.rows.map((lot) => lot.id),
+            target_storage_zone_id: targetZone.id,
+            reason: 'USER_CHOICE',
+          },
+        },
+        userId,
+      );
+      return {
+        status: 'COMPLETED',
+        candidate: null,
+        errorCode: null,
+        spokenPrompt: `好的，已帮您将${names}移动到${targetZone.name}了。`,
+      };
+    } catch {
+      return {
+        status: 'AWAITING_CONFIRMATION',
+        candidate: {
+          command_type: 'MOVE_INVENTORY',
+          payload: { lot_ids: lots.rows.map((lot) => lot.id), target_storage_zone_id: targetZone.id, reason: 'USER_CHOICE' },
+        },
+        errorCode: null,
+        spokenPrompt: `你是说，把${names}移到${targetZone.name}，对吗？`,
+      };
+    }
   }
 
   private async buildShoppingListQueryOutcome(householdId: string, userId: string) {
@@ -459,6 +570,25 @@ export class VoiceService {
     normalized: string,
     parsed: ParseResult,
   ): Promise<string> {
+    const recipe = await this.meals.findSuggestedRecipeForVoiceRequest(
+      householdId,
+      userId,
+      normalized,
+    );
+    if (recipe) {
+      if (recipe.missing.length === 0)
+        return `做${recipe.name}需要的食材你都有了：${recipe.ingredients
+          .filter((item) => !item.optional)
+          .map((item) => `${item.food_name}${item.quantity ?? ''}${item.unit_code ? unitSpokenLabel(item.unit_code) : ''}`)
+          .join('、')}。这是库存核对，不会自动扣减。`;
+      const missing = recipe.missing.map(
+        (item) => `${item.food_name}${item.quantity ?? ''}${item.unit_code ? unitSpokenLabel(item.unit_code) : ''}`,
+      );
+      const available = recipe.ingredients
+        .filter((item) => !item.optional && item.available)
+        .map((item) => item.food_name);
+      return `做${recipe.name}还缺：${missing.join('、')}。${available.length ? `现有${available.join('、')}。` : ''}如果需要，我可以在你明确说“加入购物清单”后再为你创建待购项。`;
+    }
     const inventory = await this.queries.getInventoryView(householdId, userId);
     const selectedZones = selectInventoryZones(inventory.zones, normalized);
     const requestedZone = selectedZones.length === 1 ? selectedZones[0] : null;
@@ -473,10 +603,7 @@ export class VoiceService {
     }
 
     const asksExpiry = /快过期|临期|过期/.test(normalized);
-    const asksMealIdea =
-      /(?:今天|今晚|中午).*(?:吃什么|做什么菜|做点什么)|(?:能做|可以做|吃什么|怎么吃|美食|菜谱|减脂餐)|(?:减脂|减肥)/.test(
-        normalized,
-      );
+    const asksMealIdea = isMealDecisionRequest(normalized);
     if (asksExpiry) {
       items = items.filter(
         (item) => item.expiry_status === 'EXPIRING' || item.expiry_status === 'EXPIRED',
@@ -499,24 +626,7 @@ export class VoiceService {
     }
 
     if (asksMealIdea) {
-      const prioritized = [...items].sort((left, right) => {
-        const rank = (status: string) => (status === 'EXPIRED' ? 0 : status === 'EXPIRING' ? 1 : 2);
-        return rank(left.expiry_status) - rank(right.expiry_status);
-      });
-      const names = prioritized
-        .slice(0, 5)
-        .map((item) => item.name)
-        .join('、');
-      const goalNote = /减脂|减肥/.test(normalized)
-        ? '如果目标是控制体重，可以优先采用蒸、煮、炖等少油做法，具体份量仍需结合个人情况。'
-        : '可以优先采用蒸、煮、炖等简单做法。';
-      const structure = await this.nutrition.householdStructure(householdId, userId);
-      const attention = structure.observations
-        .filter((observation) => observation.severity === 'ATTENTION')
-        .slice(0, 1)
-        .map((observation) => `另外，${observation.detail}`)
-        .join('');
-      return `根据当前库存，可以优先用${names}搭配一餐。${goalNote}${attention}${'这只是基于库存结构的餐食建议，不会自动扣减食材。'}`;
+      return this.meals.buildVoiceMealRecommendation(householdId, userId, normalized, items);
     }
 
     const descriptions = items
@@ -780,9 +890,12 @@ export class VoiceService {
 
     if (!filled && interp.kind === 'CORRECTION') {
       if (interp.hasFood && interp.items[0]) {
-        // 用户直接补了"两盒牛奶"
+        // 用户直接补了“两个苹果”。若上轮只缺食材，先把完整候选补齐。
         const first = interp.items[0];
-        if (items[0]) {
+        if (!items.length) {
+          items.push(...interp.items.map(toCandidateItem));
+          filled = interp.items.every((item) => item.quantity_explicit);
+        } else if (items[0]) {
           items[0].quantity = first.quantity;
           items[0].unit = first.unit;
           filled = true;
@@ -793,6 +906,8 @@ export class VoiceService {
         filled = true;
       }
     }
+
+    await this.applyRequestedStorageZone(job.household_id, normalizeTranscript(replyText), candidate);
 
     if (!filled || !candidate?.command_type) {
       // 没听清数量，继续追问
@@ -852,6 +967,8 @@ export class VoiceService {
   ) {
     const candidate = job.candidate_command_json;
     const interp = interpretReply(replyText, catalog);
+
+    await this.applyRequestedStorageZone(job.household_id, normalizeTranscript(replyText), candidate);
 
     if (interp.kind === 'REJECT') {
       turns.push({ role: 'system', text: CANCELLED_PROMPT, at: nowIso() });
@@ -1081,6 +1198,23 @@ export class VoiceService {
       aliases: row.aliases,
     }));
   }
+
+  private async applyRequestedStorageZone(
+    householdId: string,
+    normalized: string,
+    candidate: VoiceJobRow['candidate_command_json'],
+  ): Promise<void> {
+    if (candidate?.command_type !== 'ADD_INVENTORY' || !candidate.payload?.items?.length) return;
+    const code = requestedStorageZoneCode(normalized);
+    if (!code) return;
+    const result = await this.pool.query<{ id: string }>(
+      `select id from storage_zones where household_id=$1 and code=$2 limit 1`,
+      [householdId, code],
+    );
+    const zoneId = result.rows[0]?.id;
+    if (!zoneId) return;
+    for (const item of candidate.payload.items) item.storage_zone_id = zoneId;
+  }
 }
 
 export function selectInventoryZones(
@@ -1095,6 +1229,13 @@ export function selectInventoryZones(
         ? 'PANTRY'
         : null;
   return requestedCode ? zones.filter((zone) => zone.code === requestedCode) : zones;
+}
+
+/** 只有确实需要组合、权衡和个性化的餐食请求才进入大模型 Agent。 */
+export function isMealDecisionRequest(normalized: string): boolean {
+  return /(?:今天|今晚|中午).*(?:吃什么|做什么菜|做点什么)|(?:早餐|早饭|午餐|中饭|晚餐|晚饭|夜宵|宵夜|家庭餐|家庭晚餐|全家|一个人|聚会).*(?:推荐|吃什么|有什么|做什么|怎么搭配|简单|快手|食谱|菜谱|几道菜)|(?:下午茶|加餐|小点心|点心|零食).*(?:推荐|吃什么|有什么|做什么|怎么搭配|简单|食谱|菜谱)|(?:能做|可以做|吃什么|怎么吃|美食|菜谱|食谱|减脂餐)|(?:减脂|减肥|少油|少盐|清淡|低脂)/.test(
+    normalized,
+  );
 }
 
 export function reminderQueryPrompt(
@@ -1240,7 +1381,13 @@ function applyCorrection(
   candidate: NonNullable<VoiceJobRow['candidate_command_json']>,
   interp: {
     hasFood: boolean;
-    items: { food_id: string; food_name: string; quantity: string; unit: string }[];
+    items: {
+      food_id: string;
+      food_name: string;
+      quantity: string;
+      unit: string;
+      quantity_explicit?: boolean;
+    }[];
     bareQuantity: { quantity: string; unit: string } | null;
   },
 ): boolean {
@@ -1253,12 +1400,23 @@ function applyCorrection(
       if (existing) {
         existing.quantity = ci.quantity;
         existing.unit = ci.unit;
+      } else if (items.length === 1 && interp.items.length === 1 && items[0]) {
+        // 对单项候选说“不是鸡蛋，是鸭蛋”属于替换，不应同时保留鸡蛋和鸭蛋。
+        const previous = items[0];
+        items[0] = {
+          food_id: ci.food_id,
+          display_text: ci.food_name,
+          quantity: ci.quantity_explicit === false ? previous.quantity : ci.quantity,
+          unit: ci.quantity_explicit === false ? previous.unit : ci.unit,
+          ...(ci.quantity_explicit === undefined ? {} : { quantity_explicit: ci.quantity_explicit }),
+        };
       } else {
         items.push({
           food_id: ci.food_id,
           display_text: ci.food_name,
           quantity: ci.quantity,
           unit: ci.unit,
+          ...(ci.quantity_explicit === undefined ? {} : { quantity_explicit: ci.quantity_explicit }),
         });
       }
     }

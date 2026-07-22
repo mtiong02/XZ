@@ -6,6 +6,7 @@ import {
   apiGet,
   executeCommand,
   type CommandType,
+  type FoodCategorySummary,
   type FoodSummary,
   type UnitSummary,
 } from '../lib/api';
@@ -26,6 +27,33 @@ const COMMAND_TYPES: Record<ActionKind, CommandType> = {
   DISCARD: 'DISCARD_INVENTORY',
   CORRECT: 'CORRECT_INVENTORY',
 };
+
+const QUICK_EXPIRY_DAYS = [2, 3, 5, 7, 10, 14];
+
+/**
+ * 面向家庭采购的入口，采用《中国居民膳食指南》常用的食物大类；
+ * 仅用于展示和筛选，数据库仍以完整分类树为唯一事实来源。
+ */
+const FOOD_ENTRY_GROUPS = [
+  { label: '蔬菜', codes: ['VEGETABLE'] },
+  { label: '水果', codes: ['FRUIT'] },
+  { label: '肉禽蛋', codes: ['MEAT', 'EGG'] },
+  { label: '水产海鲜', codes: ['AQUATIC'] },
+  { label: '奶类乳品', codes: ['DAIRY'] },
+  { label: '主食杂粮', codes: ['GRAIN_STAPLE'] },
+  { label: '豆制品坚果', codes: ['LEGUME_SOY'] },
+  { label: '菌菇海藻', codes: ['FUNGI'] },
+  { label: '调味料', codes: ['SEASONING'] },
+  { label: '饮品', codes: ['BEVERAGE'] },
+  { label: '即食加工', codes: ['PROCESSED_FOOD'] },
+] as const;
+
+function dateAfterDays(days: number): string {
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
 
 interface Props {
   kind: ActionKind;
@@ -50,23 +78,32 @@ export function ActionModal({
   onDone,
 }: Props) {
   const [foods, setFoods] = useState<FoodSummary[]>([]);
+  const [categories, setCategories] = useState<FoodCategorySummary[]>([]);
   const [units, setUnits] = useState<UnitSummary[]>([]);
-  const [query, setQuery] = useState('');
   const [foodId, setFoodId] = useState(presetFoodId ?? '');
+  const [selectedGroup, setSelectedGroup] = useState('');
+  const [chosenFood, setChosenFood] = useState<FoodSummary | null>(null);
   const [quantity, setQuantity] = useState('');
   const [unit, setUnit] = useState('');
   const [zoneId, setZoneId] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
+  const [customExpiryDays, setCustomExpiryDays] = useState('');
   const [reason, setReason] = useState(kind === 'DISCARD' ? 'SPOILED' : 'PHYSICAL_COUNT');
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiGet<FoodSummary[]>(`/households/${householdId}/foods?q=${encodeURIComponent(query)}`)
+    apiGet<FoodSummary[]>(`/households/${householdId}/foods`)
       .then(setFoods)
       .catch(() => setFoods([]));
-  }, [householdId, query]);
+  }, [householdId]);
+
+  useEffect(() => {
+    apiGet<FoodCategorySummary[]>('/food-categories')
+      .then(setCategories)
+      .catch(() => setCategories([]));
+  }, []);
 
   useEffect(() => {
     apiGet<UnitSummary[]>('/units')
@@ -74,7 +111,27 @@ export function ActionModal({
       .catch(() => setUnits([]));
   }, []);
 
-  const selectedFood = useMemo(() => foods.find((f) => f.id === foodId), [foods, foodId]);
+  const selectedFood = useMemo(
+    () => foods.find((food) => food.id === foodId) ?? chosenFood ?? undefined,
+    [chosenFood, foodId, foods],
+  );
+
+  const categoryByCode = useMemo(
+    () => new Map(categories.map((category) => [category.code, category])),
+    [categories],
+  );
+  const visibleFoods = useMemo(() => {
+    const group = FOOD_ENTRY_GROUPS.find((item) => item.label === selectedGroup);
+    if (!group) return [];
+    return foods.filter((food) => {
+      let code: string | null | undefined = food.category_code;
+      while (code) {
+        if ((group.codes as readonly string[]).includes(code)) return true;
+        code = categoryByCode.get(code)?.parent_code;
+      }
+      return false;
+    });
+  }, [categoryByCode, foods, selectedGroup]);
 
   const orderedUnits = useMemo(() => {
     const preferred = new Set(selectedFood?.preferred_unit_codes ?? []);
@@ -88,6 +145,31 @@ export function ActionModal({
   useEffect(() => {
     if (selectedFood && !unit) setUnit(selectedFood.default_unit_code);
   }, [selectedFood, unit]);
+
+  const quickQuantities = useMemo(() => {
+    const unitKind = units.find((item) => item.code === unit)?.kind;
+    if (selectedFood?.category_code === 'EGG' || selectedFood?.category_path?.includes('蛋类')) {
+      return ['1', '5', '10', '20'];
+    }
+    if (unit === 'JIN') return ['0.5', '1', '2', '3'];
+    if (unitKind === 'MASS') return ['100', '200', '300', '500', '1000'];
+    if (unitKind === 'VOLUME') return ['250', '500', '1000'];
+    return ['1', '2', '3', '5'];
+  }, [selectedFood, unit, units]);
+
+  function chooseFood(food: FoodSummary) {
+    setFoodId(food.id);
+    setChosenFood(food);
+    setUnit(food.default_unit_code);
+    setQuantity('');
+    setExpiresAt('');
+    setCustomExpiryDays('');
+  }
+
+  function chooseExpiryDays(days: number) {
+    setExpiresAt(dateAfterDays(days));
+    setCustomExpiryDays(String(days));
+  }
 
   const currentTotal = useMemo(() => {
     if (!inventory || !foodId) return null;
@@ -167,46 +249,54 @@ export function ActionModal({
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal food-action-modal" onClick={(e) => e.stopPropagation()}>
         <h3>{TITLES[kind]}</h3>
 
         {!confirming ? (
           <>
             {!presetFoodId ? (
               <>
-                <div className="field">
-                  <label htmlFor="food-search">搜索食材</label>
-                  <input
-                    id="food-search"
-                    placeholder="例如：鸡蛋 / 番茄 / 牛奶"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="food-select">食材</label>
-                  <select
-                    id="food-select"
-                    value={foodId}
-                    onChange={(e) => {
-                      const nextFoodId = e.target.value;
-                      setFoodId(nextFoodId);
-                      const nextFood = foods.find((food) => food.id === nextFoodId);
-                      setUnit(nextFood?.default_unit_code ?? '');
-                    }}
-                  >
-                    <option value="">请选择</option>
-                    {foods.map((food) => (
-                      <option key={food.id} value={food.id}>
-                        {food.canonical_name}
-                        {food.category_path?.length
-                          ? ` · ${food.category_path.slice(1).join(' / ')}`
-                          : ''}
-                      </option>
+                <div className="food-picker field">
+                  <label>选择食材分类</label>
+                  <div className="food-picker-chips" aria-label="食材分类">
+                    {FOOD_ENTRY_GROUPS.map((group) => (
+                      <button
+                        type="button"
+                        className={selectedGroup === group.label ? 'selected' : ''}
+                        key={group.label}
+                        onClick={() => {
+                          setSelectedGroup((current) => current === group.label ? '' : group.label);
+                        }}
+                      >
+                        {group.label}
+                      </button>
                     ))}
-                  </select>
+                  </div>
+                  <div className="food-choice-list" aria-live="polite">
+                    {visibleFoods.slice(0, 24).map((food) => (
+                      <button
+                        type="button"
+                        className={foodId === food.id ? 'selected' : ''}
+                        key={food.id}
+                        onClick={() => chooseFood(food)}
+                      >
+                        <strong>{food.canonical_name}</strong>
+                        <small>{food.category_path?.slice(-1)[0] ?? '食材'}</small>
+                      </button>
+                    ))}
+                    {selectedGroup && visibleFoods.length === 0 ? <p>这个分类暂时还没有可选食材。</p> : null}
+                    {!selectedGroup ? <p>先点一种分类，再选择具体食材。</p> : null}
+                  </div>
                 </div>
               </>
+            ) : null}
+
+            {selectedFood ? (
+              <div className="selected-food-summary">
+                <span>已选食材</span>
+                <strong>{selectedFood.canonical_name}</strong>
+                {selectedFood.default_shelf_life_days ? <small>百科建议约 {selectedFood.default_shelf_life_days} 天内留意保鲜</small> : null}
+              </div>
             ) : null}
 
             <div className="field">
@@ -220,6 +310,15 @@ export function ActionModal({
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
               />
+              {selectedFood ? (
+                <div className="quick-choice-row" aria-label="常用数量">
+                  {quickQuantities.map((value) => (
+                    <button type="button" className={quantity === value ? 'selected' : ''} key={value} onClick={() => setQuantity(value)}>
+                      {value} {unitLabel(unit)}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
 
             <div className="field">
@@ -241,24 +340,41 @@ export function ActionModal({
             {kind === 'ADD' && inventory ? (
               <>
                 <div className="field">
-                  <label htmlFor="zone">存放区域</label>
-                  <select id="zone" value={zoneId} onChange={(e) => setZoneId(e.target.value)}>
-                    <option value="">智能推荐储存区域</option>
+                  <label>存放区域</label>
+                  <div className="quick-choice-row zone-choice-row">
+                    <button type="button" className={zoneId === '' ? 'selected' : ''} onClick={() => setZoneId('')}>智能推荐</button>
                     {inventory.zones.map((zone) => (
-                      <option key={zone.zone_id} value={zone.zone_id}>
-                        {zone.name}
-                      </option>
+                      <button type="button" className={zoneId === zone.zone_id ? 'selected' : ''} key={zone.zone_id} onClick={() => setZoneId(zone.zone_id)}>{zone.name}</button>
                     ))}
-                  </select>
+                  </div>
                 </div>
                 <div className="field">
-                  <label htmlFor="expires">到期日（留空则按食材默认保质期估算）</label>
-                  <input
-                    id="expires"
-                    type="date"
-                    value={expiresAt}
-                    onChange={(e) => setExpiresAt(e.target.value)}
-                  />
+                  <label>大概多久后到期？</label>
+                  <div className="quick-choice-row" aria-label="快捷到期日">
+                    <button type="button" className={expiresAt === '' ? 'selected' : ''} onClick={() => { setExpiresAt(''); setCustomExpiryDays(''); }}>按百科建议</button>
+                    {QUICK_EXPIRY_DAYS.map((days) => (
+                      <button type="button" className={expiresAt === dateAfterDays(days) ? 'selected' : ''} key={days} onClick={() => chooseExpiryDays(days)}>{days} 天后</button>
+                    ))}
+                  </div>
+                  <div className="expiry-custom-input">
+                    <span>其他：</span>
+                    <input
+                      aria-label="自定义到期天数"
+                      type="number"
+                      min="0"
+                      inputMode="numeric"
+                      placeholder="输入天数"
+                      value={customExpiryDays}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setCustomExpiryDays(value);
+                        const days = Number(value);
+                        setExpiresAt(Number.isInteger(days) && days >= 0 ? dateAfterDays(days) : '');
+                      }}
+                    />
+                    <span>天后</span>
+                  </div>
+                  {expiresAt ? <small className="expiry-preview">预计到期：{expiresAt.replaceAll('-', ' / ')}</small> : null}
                 </div>
               </>
             ) : null}
