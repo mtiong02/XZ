@@ -18,9 +18,9 @@ function getRealtimeUrl(): string {
 
 const CONNECT_TIMEOUT_MS = 12000;
 const SPEECH_THRESHOLD = 0.011;
-// 中文口语在补充数量、菜谱偏好时常有自然停顿；过短会在一句未完时提交。
-// 1.4 秒仍能保持低延迟，同时给用户完成一个自然语义单元的时间。
-const END_SILENCE_MS = 1400;
+// 中文口语在补充数量、思考或说话顿音时常有自然停顿；
+// 调至 2.2 秒静音容忍度，既确保用户不会说到一半被截断，又能流畅响应句末。
+const END_SILENCE_MS = 2200;
 const MIN_SPEECH_MS = 260;
 const PRE_ROLL_CHUNKS = 8;
 const HEARTBEAT_MS = 25_000;

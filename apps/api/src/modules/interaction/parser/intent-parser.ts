@@ -23,6 +23,8 @@ export type ParsedIntent =
   | 'CREATE_REMINDER'
   | 'EXTERNAL_PURCHASE'
   | 'ADD_SHOPPING_ITEM'
+  | 'REMOVE_SHOPPING_ITEM'
+  | 'MARK_SHOPPING_PURCHASED'
   | 'QUERY_SHOPPING_LIST'
   | 'UNKNOWN';
 
@@ -177,11 +179,25 @@ export function detectIntent(normalized: string): { intent: ParsedIntent; confid
   ) {
     return { intent: 'CREATE_REMINDER', confidence: 0.98 };
   }
-  if (/(?:加入|加到|添加到).{0,20}购物清单|购物清单.{0,10}(?:加|添加)/.test(normalized)) {
+  if (
+    /(?:从|在)?(?:购物清单|待购清单).*(?:移除|删除|删掉|取消|不要买|不要了)|(?:移除|删除|删掉|取消).*(?:购物清单|待购清单)/.test(
+      normalized,
+    )
+  ) {
+    return { intent: 'REMOVE_SHOPPING_ITEM', confidence: 0.98 };
+  }
+  if (
+    /(?:购物清单|待购清单).*(?:买好了|买了|已经买|已购买|划掉)|(?:买好了|买了|已经买|已购买).*(?:购物清单|待购清单)|(?:待购|清单|已买).*(?:买好了|买了|已经买|划掉)/.test(
+      normalized,
+    )
+  ) {
+    return { intent: 'MARK_SHOPPING_PURCHASED', confidence: 0.98 };
+  }
+  if (/(?:加入|加到|添加到).{0,20}(?:购物清单|待购清单)|(?:购物清单|待购清单).{0,10}(?:加|添加)/.test(normalized)) {
     return { intent: 'ADD_SHOPPING_ITEM', confidence: 0.98 };
   }
   if (
-    /(?:看看|查看|查询|读一下)?购物清单.*(?:有什么|有哪些|是什么|内容)|购物清单$/.test(normalized)
+    /(?:看看|查看|查询|读一下)?(?:购物清单|待购清单).*(?:有什么|有哪些|是什么|内容)|(?:购物清单|待购清单)$/.test(normalized)
   ) {
     return { intent: 'QUERY_SHOPPING_LIST', confidence: 0.98 };
   }

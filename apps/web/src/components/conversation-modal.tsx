@@ -382,11 +382,14 @@ export function ConversationModal({
         },
         onSessionEnded: () => {
           sessionEndingRef.current = false;
-          setInterim('');
+          speakingRef.current = false;
+          setInterim('已退下，喊“小知小知”再次唤醒');
           setPhase('standby');
         },
         onTranscript: (text) => {
           setInterim('');
+          // 当处于待机 (standby) 状态时，必须先通过唤醒词唤醒，忽略普通非唤醒短语
+          if (phase === 'standby') return;
           dispatchRef.current(text, 'online-audio');
         },
         onUserInterim: (text) => setInterim(text),
@@ -402,7 +405,13 @@ export function ConversationModal({
         onAudioDone: () => {
           speakingRef.current = false;
           setInterim('');
-          setPhase(sessionEndingRef.current ? 'processing' : 'listening');
+          if (sessionEndingRef.current) {
+            sessionEndingRef.current = false;
+            setInterim('已退下，喊“小知小知”再次唤醒');
+            setPhase('standby');
+          } else {
+            setPhase('listening');
+          }
         },
         onError: (message) => {
           setInterim('');
@@ -459,10 +468,13 @@ export function ConversationModal({
   startRef.current = start;
 
   useEffect(() => {
-    // 展开/收起和提醒列表刷新只改变视图/数据，不重建底层实时语音会话。
+    if (!expanded) {
+      stopListening();
+      return;
+    }
     const timer = window.setTimeout(() => void startRef.current(), 0);
     return () => window.clearTimeout(timer);
-  }, [householdId]);
+  }, [expanded, householdId, stopListening]);
 
   function submitManual(): void {
     const text = manualText.trim();

@@ -164,9 +164,13 @@ export class VoiceService {
             )
           : parsed.intent === 'QUERY_SHOPPING_LIST'
             ? await this.buildShoppingListQueryOutcome(input.household_id, userId)
-            : parsed.intent === 'MOVE_INVENTORY'
-              ? await this.buildMoveOutcome(input.household_id, userId, normalized, parsed)
-            : this.buildOutcome(parsed);
+            : parsed.intent === 'REMOVE_SHOPPING_ITEM'
+              ? await this.buildUpdateShoppingItemStatusOutcome(input.household_id, userId, parsed, 'CANCELLED')
+              : parsed.intent === 'MARK_SHOPPING_PURCHASED'
+                ? await this.buildUpdateShoppingItemStatusOutcome(input.household_id, userId, parsed, 'PURCHASED')
+                : parsed.intent === 'MOVE_INVENTORY'
+                  ? await this.buildMoveOutcome(input.household_id, userId, normalized, parsed)
+                  : this.buildOutcome(parsed);
     await this.applyRequestedStorageZone(input.household_id, normalized, outcome.candidate);
     if (parsed.intent === 'QUERY_INVENTORY') {
       outcome.spokenPrompt = await this.buildInventoryQueryPrompt(
@@ -421,6 +425,63 @@ export class VoiceService {
           )
           .join('、')}。`
       : '购物清单还是空的。';
+    return {
+      status: 'COMPLETED',
+      candidate: null,
+      errorCode: null,
+      spokenPrompt,
+    };
+  }
+
+  private async buildUpdateShoppingItemStatusOutcome(
+    householdId: string,
+    userId: string,
+    parsed: ParseResult,
+    targetStatus: 'PURCHASED' | 'CANCELLED',
+  ) {
+    const foodIds = [...new Set(parsed.items.map((item) => item.food_id))];
+    if (foodIds.length === 0) {
+      return {
+        status: 'FAILED',
+        candidate: null,
+        errorCode: 'SHOPPING_FOOD_MISSING',
+        spokenPrompt:
+          targetStatus === 'PURCHASED'
+            ? '请告诉我要把待购清单里的哪种食材标记为已购买。'
+            : '请告诉我要从待购清单中移除哪种食材。',
+      };
+    }
+
+    const activeItems = await this.pool.query<{ id: string; food_id: string; food_name: string }>(
+      `select sli.id, sli.food_id, fc.canonical_name as food_name
+       from shopping_list_items sli
+       join food_catalog fc on fc.id = sli.food_id
+       where sli.household_id = $1 and sli.status = 'PENDING' and sli.food_id = any($2::uuid[])`,
+      [householdId, foodIds],
+    );
+
+    if (activeItems.rows.length === 0) {
+      const names = parsed.items.map((item) => item.food_name).join('、');
+      return {
+        status: 'COMPLETED',
+        candidate: null,
+        errorCode: null,
+        spokenPrompt: `待购清单里目前没有找到未购买的${names}。`,
+      };
+    }
+
+    const updatedNames: string[] = [];
+    for (const item of activeItems.rows) {
+      await this.meals.updateShoppingItemStatus(householdId, item.id, userId, targetStatus);
+      updatedNames.push(item.food_name);
+    }
+
+    const namesStr = [...new Set(updatedNames)].join('、');
+    const spokenPrompt =
+      targetStatus === 'PURCHASED'
+        ? `好的，已将待购清单中的${namesStr}标记为已购买。`
+        : `好的，已将${namesStr}从待购清单中移除。`;
+
     return {
       status: 'COMPLETED',
       candidate: null,

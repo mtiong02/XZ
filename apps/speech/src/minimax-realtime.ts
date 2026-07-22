@@ -390,6 +390,7 @@ export function handleMiniMaxRealtime(client: WebSocket, options: MiniMaxRealtim
           output_audio_format: 'pcm16',
           temperature: 0.7,
           max_response_output_tokens: '500',
+          turn_detection: null, // 禁用云端自作主张的激进 VAD 截断，交由客户端以 2.2 秒平滑静音判定
         },
       });
       return;

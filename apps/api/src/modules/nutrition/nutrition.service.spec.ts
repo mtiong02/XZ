@@ -9,6 +9,8 @@ describe('nutritionGroupForCategory', () => {
     ['CITRUS_FRUIT', 'FRUIT'],
     ['ROOT_TUBER', 'STAPLE'],
     ['LIQUID_DAIRY', 'DAIRY'],
+    ['FERMENTED_DAIRY', 'DAIRY'],
+    ['CHEESE', 'DAIRY'],
     ['LEGUME', 'LEGUME'],
     ['TREE_NUT', 'HEALTHY_FAT'],
   ])('maps %s to %s', (category, expected) => {

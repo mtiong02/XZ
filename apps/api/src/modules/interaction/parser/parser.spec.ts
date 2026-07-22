@@ -184,6 +184,8 @@ const cases: EvalCase[] = [
     intent: 'ADD_INVENTORY',
     items: [{ food_id: 'f-milk', quantity: '2', unit: 'box' }],
   },
+  { text: '把西红柿从待购清单里删除', intent: 'REMOVE_SHOPPING_ITEM' },
+  { text: '待购清单里的西红柿已经买了', intent: 'MARK_SHOPPING_PURCHASED' },
   // 无法识别
   { text: '今天天气不错', intent: 'UNKNOWN' },
   { text: '请用三句话介绍你能怎样管理土豆、菠菜和牛奶', intent: 'UNKNOWN' },

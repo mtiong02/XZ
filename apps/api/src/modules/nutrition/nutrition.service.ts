@@ -67,7 +67,10 @@ export function nutritionGroupForCategory(categoryCode: string): NutritionGroupC
   if (['PORK', 'BEEF', 'LAMB', 'POULTRY', 'OTHER_POULTRY', 'GAME_MEAT', 'EGG'].includes(code))
     return 'PROTEIN';
   if (['FISH', 'CRAB', 'SHRIMP', 'CEPHALOPOD', 'BIVALVE'].includes(code)) return 'SEAFOOD';
-  if (code === 'DAIRY' || code === 'LIQUID_DAIRY' || code === 'MILK_PRODUCT') return 'DAIRY';
+  if (
+    ['DAIRY', 'LIQUID_DAIRY', 'FERMENTED_DAIRY', 'CHEESE', 'MILK_PRODUCT'].includes(code)
+  )
+    return 'DAIRY';
   if (code === 'LEGUME' || code === 'SOY_PRODUCT' || code === 'SOY') return 'LEGUME';
   if (code === 'NUT_SEED' || code === 'TREE_NUT' || code === 'PEANUT' || code === 'OIL_FAT')
     return 'HEALTHY_FAT';
