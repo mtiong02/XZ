@@ -47,10 +47,12 @@ function isFuzzyConfirmation(text: string): boolean {
   );
 }
 
-/** 相对库存数量。当前先支持最常见且无歧义的“一半”。 */
+/** 相对库存数量：支持“一半”(0.5) 和 “全部/都/全吃了/吃完了/删除/清空”(1.0)。 */
 export function relativeInventoryFraction(rawReply: string): string | null {
   const normalized = normalizeTranscript(rawReply);
-  return /一半|半数|0\.5数?|百分之50|50%/.test(normalized) ? '0.5' : null;
+  if (/一半|半数|0\.5数?|百分之50|50%/.test(normalized)) return '0.5';
+  if (/全部|都|全吃了|吃完了|用完了|所有.*删除|删掉|清空|全用掉/.test(normalized)) return '1.0';
+  return null;
 }
 
 import { isPhoneticallyExit, pinyinSimilarity } from './phonetic-matcher';
@@ -96,10 +98,11 @@ export function interpretReply(rawReply: string, catalog: FoodCatalogEntry[]): R
   if (isDialogueExit(rawReply)) return { kind: 'REJECT' };
   const normalized = normalizeTranscript(rawReply);
 
-  // 1. 先看是否是携带新值的修正（"不是两盒是三盒"里的"三盒"）
+  // 1. 先看是否是携带新值的修正（"不是两盒是三盒"里的"三盒"，"不是的我只用掉一"）
   const parsed = parseTranscript(normalized, catalog);
   const hasNewFood = parsed.items.length > 0;
-  const hasBareQuantity = BARE_QUANTITY_PATTERN.test(normalized);
+  const bareQty = extractCorrectionQuantity(normalized);
+  const hasBareQuantity = BARE_QUANTITY_PATTERN.test(normalized) || bareQty !== null;
 
   if (hasNewFood || hasBareQuantity) {
     // 纯确认词误伤保护：如果整句其实是"对"，parseTranscript 不会出食材，也无裸数量，走不到这里
@@ -107,11 +110,21 @@ export function interpretReply(rawReply: string, catalog: FoodCatalogEntry[]): R
       kind: 'CORRECTION',
       items: parsed.items,
       hasFood: hasNewFood,
-      bareQuantity: hasNewFood ? null : extractCorrectionQuantity(normalized),
+      bareQuantity: hasNewFood ? null : bareQty,
     };
   }
 
-  // 2. 无新值：判断确认 / 拒绝
+  // 2. 带有否定词 + 修正助词（如 "不是的我只..."、"不对只要..."）强推为 CORRECTION
+  if (/(?:不是|不对|错了|不要).*(?:只|要|改成|换成|变成|是用|用掉|吃了)/.test(normalized)) {
+    return {
+      kind: 'CORRECTION',
+      items: [],
+      hasFood: false,
+      bareQuantity: { quantity: '1', unit: '' },
+    };
+  }
+
+  // 3. 无新值：判断确认 / 拒绝
   const compactReply = normalized.replace(/[\s，。！？、,.!?：:；;“”‘’]/g, '');
   if (REJECT_PATTERN.test(compactReply)) return { kind: 'REJECT' };
   if (CONFIRM_PATTERN.test(compactReply) || isFuzzyConfirmation(compactReply)) {

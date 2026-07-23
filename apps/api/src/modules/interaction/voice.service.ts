@@ -211,7 +211,7 @@ export class VoiceService {
                   )
                 : parsed.intent === 'MOVE_INVENTORY'
                   ? await this.buildMoveOutcome(input.household_id, userId, normalized, parsed)
-                  : this.buildOutcome(parsed);
+                  : this.buildOutcome(parsed, normalized);
     const superseded = Boolean(
       task &&
       this.coordinator?.getActive(input.household_id, membership.memberId)?.taskId !== taskId,
@@ -351,7 +351,7 @@ export class VoiceService {
     return this.getJob(row.id, userId);
   }
 
-  private buildOutcome(parsed: ParseResult): {
+  private buildOutcome(parsed: ParseResult, normalized: string = ''): {
     status: string;
     candidate: { command_type: string; payload: CandidatePayload } | null;
     errorCode: string | null;
@@ -413,17 +413,20 @@ export class VoiceService {
           status: 'AWAITING_CLARIFICATION',
           candidate: { command_type: commandType, payload: { items: [] } },
           errorCode: null,
-          spokenPrompt:
-            '你想用掉哪种食材？先告诉我食材名称；如果你想让我按早餐、午餐或晚餐主动推荐，可以直接说“你来推荐”。',
+          spokenPrompt: '请问要用哪种食材？',
         };
       }
       if (commandType === 'ADD_INVENTORY') {
+        const isPureTrigger = /^(?:添加在?库?|添加食材|记一下|开始记录|开启连续记录|存入冰箱|放进冰箱)$/i.test(
+          normalized.replace(/[\s，。！？,.!?]/g, ''),
+        );
         return {
           status: 'AWAITING_CLARIFICATION',
           candidate: { command_type: commandType, payload: { items: [] } },
           errorCode: null,
-          spokenPrompt:
-            '好的，已为你开启连续记录！你可以把食材和数量一句句告诉我，比如‘薏米一盒’、‘五指毛桃一袋’；报完后说‘就这些’或‘以上全部入库’即可。',
+          spokenPrompt: isPureTrigger
+            ? '已开启连续记录，随时说食材和数量，完事说“就这些”。'
+            : '请问添加什么食材和数量？',
         };
       }
       const action = commandType === 'CONSUME_INVENTORY' ? '用掉' : '处理';
@@ -1202,7 +1205,7 @@ export class VoiceService {
         const itemNames = spokenList
           .map((i) => `${i.food_name}${i.quantity}${unitSpokenLabel(i.unit)}`)
           .join('、');
-        const prompt = `已为你整理好，准备入库 ${items.length} 样食材：${itemNames}。确认入库吗？`;
+        const prompt = `准备入库${items.length}样：${itemNames}，确认吗？`;
         return this.persistTurn(job, {
           status: 'AWAITING_CONFIRMATION',
           candidate,
@@ -1224,7 +1227,7 @@ export class VoiceService {
             (i) => `${i.food_name}${i.quantity_explicit ? i.quantity : '1'}${unitSpokenLabel(i.unit)}`,
           )
           .join('、');
-        const prompt = `已记下：${newSpoken}（当前共 ${items.length} 样）。可以继续报下一个，或者说‘就这些’完成录入。`;
+        const prompt = `已记下：${newSpoken}（共${items.length}样）。继续报或说“就这些”。`;
         return this.persistTurn(job, {
           status: 'AWAITING_CLARIFICATION',
           candidate,
@@ -1234,11 +1237,10 @@ export class VoiceService {
         });
       }
 
-      // 如果未产生新食材，且连续追问超过 2 轮（避免“请问要添加多少这个？”复读死循环）
+      // 如果未产生新食材，且连续追问超过 2 轮
       const userTurns = turns.filter((t) => t.role === 'user').length;
       if (items.length === 0 && userTurns >= 3) {
-        const fallbackPrompt =
-          '抱歉没有听清具体的食材和数量。您可以重新说出食材（如‘加两盒牛奶’），或者直接在屏幕上手动添加。';
+        const fallbackPrompt = '未听到有效食材，请重试或手动添加。';
         turns.push({ role: 'system', text: fallbackPrompt, at: nowIso() });
         await this.pool.query(
           `update voice_jobs set status='FAILED', spoken_prompt=$2, turn_count=turn_count+1, dialogue_turns=$3, completed_at=now(), error_code='CLARIFICATION_LOOP_PREVENTED' where id=$1`,
@@ -1655,14 +1657,29 @@ export class VoiceService {
        group by fc.id`,
       [householdId],
     );
-    return result.rows.map((row) => ({
-      id: row.id,
-      canonicalName: row.canonical_name,
-      category: row.category,
-      defaultUnitCode: row.default_unit_code,
-      preferredUnitCodes: row.preferred_unit_codes,
-      aliases: row.aliases,
-    }));
+    return result.rows.map((row) => {
+      const aliasSet = new Set<string>(row.aliases || []);
+      const canonical = row.canonical_name;
+      // 智能派生日常口语简称别名 (如 "猪排骨" -> "排骨", "红胡萝卜" -> "胡萝卜", "清远鸡" -> "鸡")
+      if (/^[猪牛羊鸡鸭鹅](?:肉|排骨|五花|骨|掌|爪|腿|翅)$/.test(canonical)) {
+        aliasSet.add(canonical.slice(1));
+      }
+      if (canonical.endsWith('排骨') && canonical.length > 2) {
+        aliasSet.add('排骨');
+      }
+      if (canonical.endsWith('五花') || canonical.endsWith('五花肉')) {
+        aliasSet.add('五花肉');
+        aliasSet.add('五花');
+      }
+      return {
+        id: row.id,
+        canonicalName: row.canonical_name,
+        category: row.category,
+        defaultUnitCode: row.default_unit_code,
+        preferredUnitCodes: row.preferred_unit_codes,
+        aliases: Array.from(aliasSet),
+      };
+    });
   }
 
   private async applyRequestedStorageZone(
@@ -1864,27 +1881,42 @@ function applyCorrection(
     bareQuantity: { quantity: string; unit: string } | null;
   },
 ): boolean {
-  const items = candidate.payload?.items;
+  let items = candidate.payload?.items;
   if (!items) return false;
 
-  if (interp.hasFood) {
+  // 首先在候选集中对同名食材强去重（防止历史遗留的重复项如 [1g 鸡胸肉, 250g 鸡胸肉]）
+  const deduped: typeof items = [];
+  for (const item of items) {
+    const idx = deduped.findIndex(
+      (d) => d.food_id === item.food_id || d.display_text === item.display_text,
+    );
+    if (idx === -1) deduped.push(item);
+    else deduped[idx] = item;
+  }
+  candidate.payload!.items = deduped;
+  items = deduped;
+
+  if (interp.hasFood && interp.items.length > 0) {
+    if (items.length === 1 && interp.items.length === 1 && items[0] && interp.items[0]) {
+      const ci = interp.items[0];
+      const previous = items[0];
+      items[0] = {
+        food_id: ci.food_id,
+        display_text: ci.food_name,
+        quantity: ci.quantity_explicit === false ? previous.quantity : ci.quantity,
+        unit: ci.unit ? ci.unit : previous.unit,
+        ...(ci.quantity_explicit === undefined ? {} : { quantity_explicit: ci.quantity_explicit }),
+      };
+      return true;
+    }
+
     for (const ci of interp.items) {
-      const existing = items.find((i) => i.food_id === ci.food_id);
+      const existing = items.find(
+        (i) => i.food_id === ci.food_id || i.display_text === ci.food_name,
+      );
       if (existing) {
         existing.quantity = ci.quantity;
-        existing.unit = ci.unit;
-      } else if (items.length === 1 && interp.items.length === 1 && items[0]) {
-        // 对单项候选说“不是鸡蛋，是鸭蛋”属于替换，不应同时保留鸡蛋和鸭蛋。
-        const previous = items[0];
-        items[0] = {
-          food_id: ci.food_id,
-          display_text: ci.food_name,
-          quantity: ci.quantity_explicit === false ? previous.quantity : ci.quantity,
-          unit: ci.quantity_explicit === false ? previous.unit : ci.unit,
-          ...(ci.quantity_explicit === undefined
-            ? {}
-            : { quantity_explicit: ci.quantity_explicit }),
-        };
+        if (ci.unit) existing.unit = ci.unit;
       } else {
         items.push({
           food_id: ci.food_id,
@@ -1902,8 +1934,11 @@ function applyCorrection(
 
   if (interp.bareQuantity && items.length === 1 && items[0]) {
     items[0].quantity = interp.bareQuantity.quantity;
-    items[0].unit = interp.bareQuantity.unit;
+    if (interp.bareQuantity.unit) {
+      items[0].unit = interp.bareQuantity.unit;
+    }
     return true;
   }
+
   return false;
 }

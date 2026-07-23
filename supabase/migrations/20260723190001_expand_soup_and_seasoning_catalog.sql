@@ -2,7 +2,7 @@
 
 with foods(name, legacy_category, category_code, unit_code, units, shelf_days) as (
   values
-    -- 1. 养生/煲汤/药膳食材 (GRAIN_STAPLE / FUNGI / VEGETABLE / LEGUME_SOY / OTHER)
+    -- 1. 养生/煲汤/药膳食材 (GRAIN_STAPLE / FUNGI / VEGETABLE / LEGUME_SOY / SEASONING)
     ('薏米', 'STAPLE', 'GRAIN_STAPLE', 'g', array['g','jin','box','bag','pack'], 180),
     ('芡实', 'STAPLE', 'GRAIN_STAPLE', 'g', array['g','jin','bag','pack'], 180),
     ('五指毛桃', 'OTHER', 'VEGETABLE', 'g', array['g','jin','bag','pack'], 180),
@@ -155,7 +155,7 @@ with foods(name, legacy_category, category_code, unit_code, units, shelf_days) a
     ('海米', 'SEAFOOD', 'CRUSTACEAN', 'g', array['g','jin','bag'], 180),
     ('干贝', 'SEAFOOD', 'MOLLUSK', 'g', array['g','jin','bag'], 180),
     ('瑶柱', 'SEAFOOD', 'MOLLUSK', 'g', array['g','jin','bag'], 180),
-    ('海参', 'SEAFOOD', 'OTHER', 'piece', array['piece','g','jin','box'], 180),
+    ('海参', 'SEAFOOD', 'FISH', 'piece', array['piece','g','jin','box'], 180),
     ('鱿鱼干', 'SEAFOOD', 'MOLLUSK', 'g', array['g','jin','piece'], 180),
     ('墨鱼干', 'SEAFOOD', 'MOLLUSK', 'g', array['g','jin','piece'], 180),
     ('蚝干', 'SEAFOOD', 'MOLLUSK', 'g', array['g','jin','bag'], 180),

@@ -188,7 +188,31 @@ export function extractCorrectionQuantity(
   normalized: string,
 ): { quantity: string; unit: string } | null {
   const all = extractQuantities(normalized);
-  return all[all.length - 1] ?? null;
+  if (all.length > 0 && all[all.length - 1]) {
+    return all[all.length - 1]!;
+  }
+  // 口语尾音截断与补字容错："只用掉一"、"只要一"、"吃了一" -> 取数值 1
+  const m = /(?:只(?:有|用掉|吃了|要|换成|变成|改|改成)?|用掉|只|改)\s*([一二两三四五六七八九十\d]+)$/.exec(
+    normalized.trim(),
+  );
+  if (m && m[1]) {
+    const numMap: Record<string, string> = {
+      一: '1',
+      二: '2',
+      两: '2',
+      三: '3',
+      四: '4',
+      五: '5',
+      六: '6',
+      七: '7',
+      八: '8',
+      九: '9',
+      十: '10',
+    };
+    const val = numMap[m[1]] ?? m[1];
+    return { quantity: val, unit: '' };
+  }
+  return null;
 }
 
 export function detectIntent(normalized: string): { intent: ParsedIntent; confidence: number } {
@@ -417,9 +441,60 @@ function buildItem(
 export function parseTranscript(normalized: string, catalog: FoodCatalogEntry[]): ParseResult {
   const { intent, confidence: intentConfidence } = detectIntent(normalized);
   const foodMatches = matchFoods(normalized, catalog);
-  const items = assignQuantities(normalized, foodMatches, collectQuantityMatches(normalized));
+  const quantityMatches = collectQuantityMatches(normalized);
+  let items = assignQuantities(normalized, foodMatches, quantityMatches);
 
-  const foodConfidence = foodMatches.length > 0 ? 0.95 : 0;
+  // 语法级别 Fallback 实体提取器：
+  // 当用户在语句中表达了【数量+单位】（如“500克”或“两包”），但未能精准命中知识库标准词时，
+  // 动态从数量之后抽取紧随的名词（如“500克的排骨”中的“排骨”），防止将有效食材丢弃导致降级错乱。
+  const unusedQuantities = quantityMatches.filter((q) => !q.used);
+  if (unusedQuantities.length > 0) {
+    for (const q of unusedQuantities) {
+      const sub = normalized.slice(q.end);
+      const m = /^\s*(?:的)?\s*([\u4e00-\u9fa5a-zA-Z0-9]{1,8})/.exec(sub);
+      if (m && m[1]) {
+        const rawName = m[1].replace(/^(?:然后|接着|再|帮我|入库|添加|放进|买|买了)+/, '').trim();
+        if (
+          rawName &&
+          rawName.length >= 1 &&
+          !/^(?:的|了|一下|看看|吧|啊|呢|吗|对|不对|取消|算了)$/.test(rawName)
+        ) {
+          const catalogHit = catalog.find(
+            (c) => c.canonicalName.includes(rawName) || rawName.includes(c.canonicalName),
+          );
+          items.push({
+            food_id: catalogHit ? catalogHit.id : `custom_${rawName}`,
+            food_name: catalogHit ? catalogHit.canonicalName : rawName,
+            quantity: q.quantity,
+            unit: q.unit ?? (catalogHit ? catalogHit.defaultUnitCode : 'piece'),
+            quantity_explicit: true,
+            unit_reasonable: catalogHit ? isReasonableUnitForFood(catalogHit, q.unit ?? 'piece') : true,
+            suggested_units: catalogHit ? suggestedUnitsForFood(catalogHit) : [q.unit ?? 'piece'],
+          });
+          q.used = true;
+        }
+      }
+    }
+  }
+
+  // 强去重与合并机制：同一个 food_id / food_name 绝对只保留一份（显式数量优先，后出现的覆盖先出现的）
+  const deduplicated: ParsedItem[] = [];
+  for (const item of items) {
+    const existingIndex = deduplicated.findIndex(
+      (d) => d.food_id === item.food_id || d.food_name === item.food_name,
+    );
+    if (existingIndex === -1) {
+      deduplicated.push(item);
+    } else {
+      const existing = deduplicated[existingIndex]!;
+      if (item.quantity_explicit || !existing.quantity_explicit) {
+        deduplicated[existingIndex] = item;
+      }
+    }
+  }
+  items = deduplicated;
+
+  const foodConfidence = items.length > 0 ? 0.95 : 0;
   const quantityConfidence =
     items.length === 0 ? 0 : items.every((item) => item.quantity_explicit) ? 0.9 : 0.5;
   const overall =

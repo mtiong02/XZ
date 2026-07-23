@@ -401,7 +401,7 @@ async function synthesize(text: string): Promise<Buffer> {
     try {
       const audio = await tts?.generateAsync({
         text,
-        generationConfig: { sid: 8, speed: 1.08, silenceScale: 0.2 },
+        generationConfig: { sid: 8, speed: 1.2, silenceScale: 0.15 },
       });
       if (!audio) throw new Error('TTS returned no audio');
       const wav = wavFromFloat32(audio.samples, audio.sampleRate);

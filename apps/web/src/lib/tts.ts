@@ -118,7 +118,7 @@ class TtsEngine {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'zh-CN';
       utterance.voice = this.preferredSystemVoice() ?? null;
-      utterance.rate = 1.06;
+      utterance.rate = 1.2;
       utterance.pitch = 1;
       utterance.volume = 1;
       const finish = () => {
