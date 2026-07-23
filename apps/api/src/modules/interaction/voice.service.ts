@@ -442,16 +442,21 @@ export class VoiceService {
     const payload = buildPayload(commandType, items);
     const candidate = { command_type: commandType, payload };
 
-    // 追问：单食材且数量未显式（"加牛奶" 未说几盒）-> 先问清楚再确认，不擅自默认（AGENTS.md §6）
+    // 追问：单食材且数量未显式（"加牛奶" 未说几盒）-> 先问清楚再确认
+    const relFrac = relativeInventoryFraction(normalized);
     const parsedItem = parsed.items.length === 1 ? parsed.items[0] : undefined;
     if (parsedItem && !parsedItem.quantity_explicit) {
-      const foodName = items[0]?.display_text ?? '这个';
-      return {
-        status: 'AWAITING_CLARIFICATION',
-        candidate,
-        errorCode: null,
-        spokenPrompt: clarifyQuantityPrompt(commandType, foodName, parsedItem.suggested_units),
-      };
+      if (relFrac && (commandType === 'CONSUME_INVENTORY' || commandType === 'DISCARD_INVENTORY')) {
+        parsedItem.quantity_explicit = true;
+      } else {
+        const foodName = items[0]?.display_text ?? '这个';
+        return {
+          status: 'AWAITING_CLARIFICATION',
+          candidate,
+          errorCode: null,
+          spokenPrompt: clarifyQuantityPrompt(commandType, foodName, parsedItem.suggested_units),
+        };
+      }
     }
 
     if (parsedItem && !parsedItem.unit_reasonable) {
@@ -1268,12 +1273,15 @@ export class VoiceService {
       if (matching.length > 0 && units.size === 1) {
         const quantity = matching
           .reduce((total, item) => total.plus(item.total_quantity), new Big(0))
-          .times(relativeFraction);
+          .times(new Big(relativeFraction));
         items[0].quantity = quantity.toString();
         items[0].unit = matching[0]?.unit ?? items[0].unit;
-        relativePrompt = `按当前库存计算，一半是${items[0].quantity}${unitSpokenLabel(items[0].unit)}。`;
-        filled = true;
+        relativePrompt =
+          relativeFraction === '1.0'
+            ? `按当前库存计算，全部是${items[0].quantity}${unitSpokenLabel(items[0].unit)}。`
+            : `按当前库存计算，一半是${items[0].quantity}${unitSpokenLabel(items[0].unit)}。`;
       }
+      filled = true;
     }
 
     if (!filled && interp.kind === 'CORRECTION') {

@@ -55,7 +55,7 @@ function unitChoices(units: string[]): string {
 
 /** 修正被采纳后重新确认 */
 export function correctedPrompt(commandType: string, items: SpokenItem[]): string {
-  return `改成${listItems(items)}，对吗？`;
+  return `改成${listItems(items)}，是吗？`;
 }
 
 export function executedPrompt(commandType: string): string {
