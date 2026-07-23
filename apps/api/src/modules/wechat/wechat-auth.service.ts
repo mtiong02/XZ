@@ -5,7 +5,13 @@ import { ENV, type Env } from '../../config/env';
 import { PG_POOL } from '../../infra/db/database.module';
 
 type WechatState = { createdAt: number; redirectTo: string };
-type WechatToken = { access_token?: string; openid?: string; unionid?: string; errcode?: number; errmsg?: string };
+type WechatToken = {
+  access_token?: string;
+  openid?: string;
+  unionid?: string;
+  errcode?: number;
+  errmsg?: string;
+};
 type WechatProfile = { nickname?: string; headimgurl?: string; unionid?: string; openid?: string };
 
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -21,16 +27,18 @@ export class WechatAuthService {
   ) {}
 
   isConfigured(): boolean {
-    return Boolean(this.env.WECHAT_APP_ID && this.env.WECHAT_APP_SECRET && this.env.SUPABASE_SERVICE_ROLE_KEY);
+    return Boolean(
+      this.env.WECHAT_APP_ID && this.env.WECHAT_APP_SECRET && this.env.SUPABASE_SERVICE_ROLE_KEY,
+    );
   }
 
   start(): string {
-    this.requireConfigured();
+    const config = this.requireConfigured();
     this.pruneStates();
     const state = randomBytes(24).toString('hex');
     this.states.set(state, { createdAt: Date.now(), redirectTo: this.env.WECHAT_SITE_URL });
     const params = new URLSearchParams({
-      appid: this.env.WECHAT_APP_ID!,
+      appid: config.appId,
       redirect_uri: this.env.WECHAT_AUTH_CALLBACK_URL,
       response_type: 'code',
       scope: 'snsapi_login',
@@ -40,7 +48,7 @@ export class WechatAuthService {
   }
 
   async complete(code: string, state: string): Promise<string> {
-    this.requireConfigured();
+    const config = this.requireConfigured();
     const pending = this.states.get(state);
     this.states.delete(state);
     if (!pending || Date.now() - pending.createdAt > STATE_TTL_MS) {
@@ -48,8 +56,8 @@ export class WechatAuthService {
     }
 
     const tokenParams = new URLSearchParams({
-      appid: this.env.WECHAT_APP_ID!,
-      secret: this.env.WECHAT_APP_SECRET!,
+      appid: config.appId,
+      secret: config.appSecret,
       code,
       grant_type: 'authorization_code',
     });
@@ -62,10 +70,17 @@ export class WechatAuthService {
       ? { openid: token.openid, unionid: token.unionid }
       : { openid: token.openid };
     try {
-      const profileParams = new URLSearchParams({ access_token: token.access_token, openid: token.openid, lang: 'zh_CN' });
-      profile = { ...profile, ...(await this.fetchJson<WechatProfile>(
-        `https://api.weixin.qq.com/sns/userinfo?${profileParams.toString()}`,
-      )) };
+      const profileParams = new URLSearchParams({
+        access_token: token.access_token,
+        openid: token.openid,
+        lang: 'zh_CN',
+      });
+      profile = {
+        ...profile,
+        ...(await this.fetchJson<WechatProfile>(
+          `https://api.weixin.qq.com/sns/userinfo?${profileParams.toString()}`,
+        )),
+      };
     } catch {
       // 用户资料不是登录的必要条件；微信部分应用不会返回头像/昵称。
     }
@@ -83,8 +98,12 @@ export class WechatAuthService {
     return redirect.toString();
   }
 
-  private async findOrCreateIdentity(profile: WechatProfile): Promise<{ email: string; password: string }> {
-    const openId = profile.openid!;
+  private async findOrCreateIdentity(
+    profile: WechatProfile,
+  ): Promise<{ email: string; password: string }> {
+    const config = this.requireConfigured();
+    const openId = profile.openid;
+    if (!openId) throw new Error('微信授权返回缺少 openid，无法建立登录身份。');
     const unionId = profile.unionid || null;
     const existing = (
       await this.pool.query<{ user_id: string }>(
@@ -97,21 +116,24 @@ export class WechatAuthService {
     const identityKey = openId;
     const email = `wx_${createHash('sha256').update(identityKey).digest('hex').slice(0, 32)}@wechat.xz.internal`;
     // 仅用于桥接到现有 GoTrue password token 接口；不回传、不写入业务库。
-    const password = createHmac('sha256', this.env.WECHAT_APP_SECRET!).update(identityKey).digest('hex');
+    const password = createHmac('sha256', config.appSecret).update(identityKey).digest('hex');
 
     if (!existing) {
-      const response = await fetch(`${this.env.SUPABASE_URL!.replace(/\/$/, '')}/auth/v1/admin/users`, {
+      const response = await fetch(`${config.supabaseUrl.replace(/\/$/, '')}/auth/v1/admin/users`, {
         method: 'POST',
         headers: {
-          apikey: this.env.SUPABASE_SERVICE_ROLE_KEY!,
-          authorization: `Bearer ${this.env.SUPABASE_SERVICE_ROLE_KEY!}`,
+          apikey: config.serviceRoleKey,
+          authorization: `Bearer ${config.serviceRoleKey}`,
           'content-type': 'application/json',
         },
         body: JSON.stringify({
           email,
           password,
           email_confirm: true,
-          user_metadata: { display_name: profile.nickname || '微信用户', avatar_url: profile.headimgurl || null },
+          user_metadata: {
+            display_name: profile.nickname || '微信用户',
+            avatar_url: profile.headimgurl || null,
+          },
           app_metadata: { provider: 'wechat' },
         }),
       });
@@ -130,14 +152,25 @@ export class WechatAuthService {
     return { email, password };
   }
 
-  private async signIn(email: string, password: string): Promise<{ access_token: string; refresh_token: string; expires_in?: number }> {
-    const response = await fetch(`${this.env.SUPABASE_URL!.replace(/\/$/, '')}/auth/v1/token?grant_type=password`, {
-      method: 'POST',
-      headers: { apikey: this.env.SUPABASE_ANON_KEY!, 'content-type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
+  private async signIn(
+    email: string,
+    password: string,
+  ): Promise<{ access_token: string; refresh_token: string; expires_in?: number }> {
+    const config = this.requireConfigured();
+    const response = await fetch(
+      `${config.supabaseUrl.replace(/\/$/, '')}/auth/v1/token?grant_type=password`,
+      {
+        method: 'POST',
+        headers: { apikey: config.anonKey, 'content-type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      },
+    );
     if (!response.ok) throw new Error('微信会话创建失败，请稍后重试。');
-    return (await response.json()) as { access_token: string; refresh_token: string; expires_in?: number };
+    return (await response.json()) as {
+      access_token: string;
+      refresh_token: string;
+      expires_in?: number;
+    };
   }
 
   private async fetchJson<T>(url: string): Promise<T> {
@@ -146,8 +179,28 @@ export class WechatAuthService {
     return (await response.json()) as T;
   }
 
-  private requireConfigured() {
-    if (!this.isConfigured()) throw new ServiceUnavailableException('微信授权登录尚未配置 AppID、AppSecret 或服务端密钥。');
+  /**
+   * 校验并返回收窄后的配置。返回值让调用方直接使用已确认存在的密钥，
+   * 避免非空断言绕过校验（AGENTS.md §4：禁止无理由的类型逃逸）。
+   */
+  private requireConfigured(): {
+    appId: string;
+    appSecret: string;
+    supabaseUrl: string;
+    serviceRoleKey: string;
+    anonKey: string;
+  } {
+    const {
+      WECHAT_APP_ID: appId,
+      WECHAT_APP_SECRET: appSecret,
+      SUPABASE_URL: supabaseUrl,
+      SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
+      SUPABASE_ANON_KEY: anonKey,
+    } = this.env;
+    if (!appId || !appSecret || !supabaseUrl || !serviceRoleKey || !anonKey) {
+      throw new ServiceUnavailableException('微信授权登录尚未配置 AppID、AppSecret 或服务端密钥。');
+    }
+    return { appId, appSecret, supabaseUrl, serviceRoleKey, anonKey };
   }
 
   private pruneStates() {

@@ -17,8 +17,16 @@ export class WechatAuthController {
   }
 
   @Get('callback')
-  async callback(@Query('code') code: string | undefined, @Query('state') state: string | undefined, @Res() response: Response) {
-    if (!code || !state) return response.redirect(302, 'https://busybeeenglish.site/login?wechat_error=missing_params');
+  async callback(
+    @Query('code') code: string | undefined,
+    @Query('state') state: string | undefined,
+    @Res() response: Response,
+  ) {
+    if (!code || !state)
+      return response.redirect(
+        302,
+        'https://busybeeenglish.site/login?wechat_error=missing_params',
+      );
     try {
       response.redirect(302, await this.auth.complete(code, state));
     } catch (error) {

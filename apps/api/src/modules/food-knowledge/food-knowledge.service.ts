@@ -17,12 +17,21 @@ export const CreateHouseholdFoodSchema = z.object({
 export const CreateFoodAliasSchema = z.object({ alias: z.string().trim().min(1).max(100) });
 
 type FoodRow = {
-  id: string; canonical_name: string; category: string; category_code: string;
-  default_unit_code: string; preferred_unit_codes: string[]; default_shelf_life_days: number | null;
+  id: string;
+  canonical_name: string;
+  category: string;
+  category_code: string;
+  default_unit_code: string;
+  preferred_unit_codes: string[];
+  default_shelf_life_days: number | null;
 };
 
 export function normalizeFoodAliases(canonicalName: string, aliases: string[]): string[] {
-  return [...new Set(aliases.map((alias) => alias.trim()).filter((alias) => alias && alias !== canonicalName))];
+  return [
+    ...new Set(
+      aliases.map((alias) => alias.trim()).filter((alias) => alias && alias !== canonicalName),
+    ),
+  ];
 }
 
 @Injectable()
@@ -84,7 +93,11 @@ export class FoodKnowledgeService {
     return result.rows;
   }
 
-  async createHouseholdFood(householdId: string, userId: string, input: z.infer<typeof CreateHouseholdFoodSchema>) {
+  async createHouseholdFood(
+    householdId: string,
+    userId: string,
+    input: z.infer<typeof CreateHouseholdFoodSchema>,
+  ) {
     await this.memberships.assertMembership(householdId, userId);
     const aliases = normalizeFoodAliases(input.canonical_name, input.aliases);
     const client = await this.pool.connect();
@@ -96,21 +109,39 @@ export class FoodKnowledgeService {
         `select id from food_catalog where canonical_name = $1 and (household_id is null or household_id = $2) limit 1`,
         [input.canonical_name, householdId],
       );
-      if (duplicate.rowCount) throw new DomainError('VALIDATION', 'FOOD_NAME_CONFLICT', '该食材已在目录中，请直接使用或换一个名称。');
+      if (duplicate.rowCount)
+        throw new DomainError(
+          'VALIDATION',
+          'FOOD_NAME_CONFLICT',
+          '该食材已在目录中，请直接使用或换一个名称。',
+        );
       const created = await client.query<FoodRow>(
         `insert into food_catalog (household_id, canonical_name, category, category_code, default_unit_code, preferred_unit_codes, default_shelf_life_days, data_source, review_status)
          values ($1, $2, 'OTHER', $3, $4, $5, $6, 'HOUSEHOLD', 'HOUSEHOLD') returning id, canonical_name, category, category_code, default_unit_code, preferred_unit_codes, default_shelf_life_days`,
-        [householdId, input.canonical_name, input.category_code, input.default_unit_code, [...new Set(input.preferred_unit_codes)], input.default_shelf_life_days ?? null],
+        [
+          householdId,
+          input.canonical_name,
+          input.category_code,
+          input.default_unit_code,
+          [...new Set(input.preferred_unit_codes)],
+          input.default_shelf_life_days ?? null,
+        ],
       );
       const food = created.rows[0];
       if (!food) throw new Error('Food creation did not return a row.');
-      for (const alias of aliases) await client.query(`insert into food_aliases (food_id, alias) values ($1, $2)`, [food.id, alias]);
+      for (const alias of aliases)
+        await client.query(`insert into food_aliases (food_id, alias) values ($1, $2)`, [
+          food.id,
+          alias,
+        ]);
       await client.query('commit');
       return { ...food, aliases, is_custom: true };
     } catch (error) {
       await client.query('rollback');
       throw error;
-    } finally { client.release(); }
+    } finally {
+      client.release();
+    }
   }
 
   async addAlias(householdId: string, userId: string, foodId: string, alias: string) {
@@ -118,11 +149,20 @@ export class FoodKnowledgeService {
     const result = await this.pool.query(
       `insert into food_aliases (food_id, alias)
        select id, $3 from food_catalog where id = $1 and household_id = $2
-       on conflict (food_id, alias) do nothing returning alias`, [foodId, householdId, alias.trim()],
+       on conflict (food_id, alias) do nothing returning alias`,
+      [foodId, householdId, alias.trim()],
     );
     if (!result.rowCount) {
-      const exists = await this.pool.query(`select 1 from food_catalog where id = $1 and household_id = $2`, [foodId, householdId]);
-      if (!exists.rowCount) throw new DomainError('NOT_FOUND', 'CUSTOM_FOOD_NOT_FOUND', '未找到可编辑的家庭自定义食材。');
+      const exists = await this.pool.query(
+        `select 1 from food_catalog where id = $1 and household_id = $2`,
+        [foodId, householdId],
+      );
+      if (!exists.rowCount)
+        throw new DomainError(
+          'NOT_FOUND',
+          'CUSTOM_FOOD_NOT_FOUND',
+          '未找到可编辑的家庭自定义食材。',
+        );
     }
     return { alias: alias.trim() };
   }
@@ -130,14 +170,20 @@ export class FoodKnowledgeService {
   private async assertLeafCategory(client: PoolClient, categoryCode: string) {
     const result = await client.query<{ is_leaf: boolean }>(
       `select not exists (select 1 from food_categories child where child.parent_code = c.code) as is_leaf
-       from food_categories c where c.code = $1`, [categoryCode],
+       from food_categories c where c.code = $1`,
+      [categoryCode],
     );
-    if (!result.rows[0]?.is_leaf) throw new DomainError('VALIDATION', 'FOOD_CATEGORY_MUST_BE_LEAF', '请选择最具体的食材分类。');
+    if (!result.rows[0]?.is_leaf)
+      throw new DomainError('VALIDATION', 'FOOD_CATEGORY_MUST_BE_LEAF', '请选择最具体的食材分类。');
   }
 
   private async assertUnits(client: PoolClient, codes: string[]) {
     const uniqueCodes = [...new Set(codes)];
-    const result = await client.query<{ code: string }>(`select code from units where code = any($1::text[])`, [uniqueCodes]);
-    if (result.rows.length !== uniqueCodes.length) throw new DomainError('VALIDATION', 'UNKNOWN_UNIT', '存在不支持的计量单位。');
+    const result = await client.query<{ code: string }>(
+      `select code from units where code = any($1::text[])`,
+      [uniqueCodes],
+    );
+    if (result.rows.length !== uniqueCodes.length)
+      throw new DomainError('VALIDATION', 'UNKNOWN_UNIT', '存在不支持的计量单位。');
   }
 }

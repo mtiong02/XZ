@@ -1,4 +1,4 @@
 interface:
-  display_name: "XZ 食材知识构建"
-  short_description: "用于维护食材分类、标准目录、家庭别名、单位和语音识别回归流程"
-  default_prompt: "为 XZ 新增或维护食材分类、食材目录和语音别名。"
+  display_name: 'XZ 食材知识构建'
+  short_description: '用于维护食材分类、标准目录、家庭别名、单位和语音识别回归流程'
+  default_prompt: '为 XZ 新增或维护食材分类、食材目录和语音别名。'

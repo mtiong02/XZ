@@ -8,6 +8,7 @@ import {
   selectInventoryZones,
   VoiceService,
 } from './voice.service';
+import { CANCELLED_PROMPT } from './dialogue/prompts';
 
 describe('isMealDecisionRequest', () => {
   it('routes only decision-heavy meal requests to the model agent', () => {
@@ -121,7 +122,7 @@ describe('VoiceService clarification cancellation', () => {
       if (sql.includes('from food_catalog fc')) return { rows: [] };
       if (sql.includes('update voice_jobs')) {
         job.status = 'CANCELLED';
-        job.spoken_prompt = '好的，已取消。';
+        job.spoken_prompt = CANCELLED_PROMPT;
         job.completed_at = new Date('2026-07-22T00:01:00.000Z');
         return { rows: [] };
       }
@@ -141,10 +142,10 @@ describe('VoiceService clarification cancellation', () => {
     const result = await service.reply('job-1', 'user-1', { text: '不对' });
 
     expect(result.status).toBe('CANCELLED');
-    expect(result.spoken_prompt).toBe('好的，已取消。');
+    expect(result.spoken_prompt).toBe(CANCELLED_PROMPT);
     expect(query).toHaveBeenCalledWith(expect.stringContaining("status = 'CANCELLED'"), [
       'job-1',
-      '好的，已取消。',
+      CANCELLED_PROMPT,
       expect.any(String),
     ]);
   });

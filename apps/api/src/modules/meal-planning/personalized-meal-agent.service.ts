@@ -172,50 +172,57 @@ export class PersonalizedMealAgentService {
       });
       const elapsedMs = Date.now() - startedAt;
       if (!response.ok) {
-        console.warn(
-          JSON.stringify({
-            msg: 'meal_agent.failed',
-            status: response.status,
-            elapsed_ms: elapsedMs,
-          }),
-        );
+        agentLog('warn', {
+          msg: 'meal_agent.failed',
+          status: response.status,
+          elapsed_ms: elapsedMs,
+        });
         return context.fallbackAnswer;
       }
       const body = (await response.json()) as MiniMaxChatResponse;
       const content = body.choices?.[0]?.message?.content?.trim() ?? '';
       const parsed = parseAgentJson(content);
       if (!parsed) {
-        console.warn(JSON.stringify({ msg: 'meal_agent.invalid_output', elapsed_ms: elapsedMs }));
+        agentLog('warn', { msg: 'meal_agent.invalid_output', elapsed_ms: elapsedMs });
         return context.fallbackAnswer;
       }
       if (parsed.uses_inventory.some((name) => !availableNames.has(name))) {
-        console.warn(
-          JSON.stringify({ msg: 'meal_agent.inventory_guard_failed', elapsed_ms: elapsedMs }),
-        );
+        agentLog('warn', { msg: 'meal_agent.inventory_guard_failed', elapsed_ms: elapsedMs });
         return context.fallbackAnswer;
       }
-      console.info(
-        JSON.stringify({
-          msg: 'meal_agent.completed',
-          elapsed_ms: elapsedMs,
-          selected_dish_count: parsed.selected_dishes.length,
-          used_inventory_count: parsed.uses_inventory.length,
-          missing_count: parsed.missing.length,
-        }),
-      );
+      agentLog('info', {
+        msg: 'meal_agent.completed',
+        elapsed_ms: elapsedMs,
+        selected_dish_count: parsed.selected_dishes.length,
+        used_inventory_count: parsed.uses_inventory.length,
+        missing_count: parsed.missing.length,
+      });
       return /不会自动扣减|不会扣减库存/.test(parsed.answer)
         ? parsed.answer
         : `${parsed.answer} 这是建议，不会自动扣减库存。`;
     } catch (error) {
-      console.warn(
-        JSON.stringify({
-          msg: 'meal_agent.unavailable',
-          elapsed_ms: Date.now() - startedAt,
-          reason: error instanceof Error ? error.name : 'unknown',
-        }),
-      );
+      agentLog('warn', {
+        msg: 'meal_agent.unavailable',
+        elapsed_ms: Date.now() - startedAt,
+        reason: error instanceof Error ? error.name : 'unknown',
+      });
       return context.fallbackAnswer;
     }
+  }
+}
+
+/**
+ * 结构化观测日志（AGENTS.md §4）：只记录 ID、阶段、耗时与错误码，
+ * 不写入用户原话、库存明细或密钥。
+ */
+function agentLog(level: 'info' | 'warn', fields: Record<string, unknown>): void {
+  const line = JSON.stringify(fields);
+  if (level === 'warn') {
+    // eslint-disable-next-line no-console
+    console.warn(line);
+  } else {
+    // eslint-disable-next-line no-console
+    console.info(line);
   }
 }
 

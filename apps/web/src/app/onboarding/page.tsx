@@ -41,10 +41,18 @@ export default function OnboardingPage() {
             : '向家庭拥有者索取邀请码，加入后就能共同查看和更新库存'}
         </p>
         <div className="auth-mode-tabs" role="tablist" aria-label="家庭入口">
-          <button type="button" className={mode === 'create' ? 'active' : ''} onClick={() => setMode('create')}>
+          <button
+            type="button"
+            className={mode === 'create' ? 'active' : ''}
+            onClick={() => setMode('create')}
+          >
             创建家庭
           </button>
-          <button type="button" className={mode === 'join' ? 'active' : ''} onClick={() => setMode('join')}>
+          <button
+            type="button"
+            className={mode === 'join' ? 'active' : ''}
+            onClick={() => setMode('join')}
+          >
             加入已有家庭
           </button>
         </div>

@@ -64,7 +64,9 @@ export class AgentRuntimeController {
     // into a visible 500 or interfere with the active voice turn.
     const parsed = AgentEventSchema.safeParse(body);
     if (!parsed.success) {
-      this.logger.warn(`Agent event skipped: invalid payload (${parsed.error.issues.length} issues)`);
+      this.logger.warn(
+        `Agent event skipped: invalid payload (${parsed.error.issues.length} issues)`,
+      );
       return { ok: false, skipped: true };
     }
 

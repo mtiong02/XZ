@@ -73,7 +73,11 @@ try {
     sherpa = localRequire('/app/node_modules/sherpa-onnx-node') as SherpaModule;
   }
 } catch (loadError) {
-  console.warn('[speech] sherpa-onnx-node native binary unavailable, operating in online mode:', loadError);
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[speech] sherpa-onnx-node native binary unavailable, operating in online mode:',
+    loadError,
+  );
 }
 
 const PORT = Number(process.env.SPEECH_PORT ?? 6010);
@@ -85,10 +89,7 @@ const runtimeMetrics = createSpeechRuntimeMetrics();
 const MODEL_ROOT = process.env.SPEECH_MODEL_ROOT
   ? path.resolve(process.env.SPEECH_MODEL_ROOT)
   : path.resolve(__dirname, '../../../local-models');
-const ASR_DIR = path.join(
-  MODEL_ROOT,
-  'sherpa-onnx-streaming-paraformer-bilingual-zh-en',
-);
+const ASR_DIR = path.join(MODEL_ROOT, 'sherpa-onnx-streaming-paraformer-bilingual-zh-en');
 const KWS_DIR = path.join(MODEL_ROOT, 'sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01');
 const TTS_DIR = path.join(MODEL_ROOT, 'kokoro-int8-multi-lang-v1_1');
 const ALLOWED_ORIGINS = new Set([
@@ -100,7 +101,9 @@ const ALLOWED_ORIGINS = new Set([
 function requiredFile(...segments: string[]): string {
   const filename = path.join(...segments);
   if (!existsSync(filename)) {
-    throw new Error(`Missing local speech model file: ${filename}. Run pnpm --filter @xz/speech setup:model`);
+    throw new Error(
+      `Missing local speech model file: ${filename}. Run pnpm --filter @xz/speech setup:model`,
+    );
   }
   return filename;
 }
@@ -148,6 +151,7 @@ if (sherpa && existsSync(ASR_DIR) && existsSync(KWS_DIR)) {
       numTrailingBlanks: 1,
     });
   } catch (err) {
+    // eslint-disable-next-line no-console
     console.warn('[speech] Local speech models skipped:', err);
   }
 }
@@ -167,7 +171,10 @@ async function loadTts(): Promise<void> {
         tokens: requiredFile(TTS_DIR, 'tokens.txt'),
         dataDir: requiredFile(TTS_DIR, 'espeak-ng-data'),
         dictDir: requiredFile(TTS_DIR, 'dict'),
-        lexicon: [path.join(TTS_DIR, 'lexicon-us-en.txt'), path.join(TTS_DIR, 'lexicon-zh.txt')].join(','),
+        lexicon: [
+          path.join(TTS_DIR, 'lexicon-us-en.txt'),
+          path.join(TTS_DIR, 'lexicon-zh.txt'),
+        ].join(','),
         lang: 'zh',
       },
       numThreads: 2,
@@ -249,7 +256,10 @@ function handleAsrConnection(socket: WebSocket): void {
       emitPartial();
       if (recognizer.isEndpoint(stream)) finishUtterance();
     } catch (error) {
-      sendJson(socket, { type: 'error', message: error instanceof Error ? error.message : 'ASR failed' });
+      sendJson(socket, {
+        type: 'error',
+        message: error instanceof Error ? error.message : 'ASR failed',
+      });
     }
   });
 
@@ -258,7 +268,10 @@ function handleAsrConnection(socket: WebSocket): void {
   });
 }
 
-function createRealtimeTranscriber(socket: WebSocket, onTranscript?: (text: string) => void): RealtimeTranscriber {
+function createRealtimeTranscriber(
+  socket: WebSocket,
+  onTranscript?: (text: string) => void,
+): RealtimeTranscriber {
   if (!recognizer || !keywordSpotter) {
     return {
       setSampleRate() {},
@@ -462,7 +475,9 @@ const server = createServer(async (request, response) => {
     } catch (error) {
       response.statusCode = tts ? 400 : 503;
       response.setHeader('Content-Type', 'application/json');
-      response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'TTS failed' }));
+      response.end(
+        JSON.stringify({ error: error instanceof Error ? error.message : 'TTS failed' }),
+      );
     }
     return;
   }
@@ -489,7 +504,8 @@ realtimeSockets.on('connection', (socket) => {
   });
 });
 server.on('upgrade', (request, socket, head) => {
-  const pathname = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`).pathname;
+  const pathname = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
+    .pathname;
   if (!originAllowed(request.headers.origin)) {
     socket.destroy();
     return;

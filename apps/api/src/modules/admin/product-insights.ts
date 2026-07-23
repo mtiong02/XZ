@@ -35,9 +35,7 @@ function percentage(part: number, total: number): string {
 function topPhrases(jobs: VoiceJobForInsight[], max = 3): Array<{ text: string; count: number }> {
   return Array.from(
     countBy(
-      jobs
-        .map((job) => job.transcript_raw?.trim())
-        .filter((text): text is string => Boolean(text)),
+      jobs.map((job) => job.transcript_raw?.trim()).filter((text): text is string => Boolean(text)),
     ).entries(),
   )
     .sort((left, right) => right[1] - left[1])
@@ -98,7 +96,7 @@ export function buildProductInsights(jobs: VoiceJobForInsight[]): {
       title: '减少多轮澄清与重复回复',
       finding: `平均每项任务 ${averageTurns.toFixed(1)} 轮；${longTurns.length} 条任务达到 4 轮或以上。`,
       evidence: [
-        `平均轮次：${averageTurns.toFixed(1)}`, 
+        `平均轮次：${averageTurns.toFixed(1)}`,
         `长对话（≥4 轮）：${longTurns.length} / ${total || 0} 条`,
       ],
       recommendation:
@@ -169,9 +167,21 @@ export function buildProductInsights(jobs: VoiceJobForInsight[]): {
     },
     metrics: [
       { label: '分析任务', value: String(total), description: '当前筛选范围内的语音任务数' },
-      { label: '未识别', value: percentage(ambiguous.length, total), description: 'error_code 为 AMBIGUOUS_COMMAND 的占比' },
-      { label: '执行失败', value: percentage(failed.length, total), description: '状态为 FAILED 的占比' },
-      { label: '平均轮次', value: averageTurns.toFixed(1), description: '每项语音任务记录的对话轮次' },
+      {
+        label: '未识别',
+        value: percentage(ambiguous.length, total),
+        description: 'error_code 为 AMBIGUOUS_COMMAND 的占比',
+      },
+      {
+        label: '执行失败',
+        value: percentage(failed.length, total),
+        description: '状态为 FAILED 的占比',
+      },
+      {
+        label: '平均轮次',
+        value: averageTurns.toFixed(1),
+        description: '每项语音任务记录的对话轮次',
+      },
     ],
     insights,
     limitations: [

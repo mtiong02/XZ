@@ -1,4 +1,5 @@
-export type MealOccasion = 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'AFTERNOON_TEA' | 'LATE_NIGHT' | 'GENERAL';
+export type MealOccasion =
+  'BREAKFAST' | 'LUNCH' | 'DINNER' | 'AFTERNOON_TEA' | 'LATE_NIGHT' | 'GENERAL';
 export type DiningMode = 'SOLO' | 'FAMILY' | 'GATHERING' | 'UNSPECIFIED';
 export type MealDateReference = 'TODAY' | 'TOMORROW' | 'DAY_AFTER_TOMORROW' | 'UNSPECIFIED';
 
@@ -19,7 +20,19 @@ export interface MealRecipeCandidate {
   missing: Array<{ food_name: string; quantity: string | null; unit_code: string | null }>;
 }
 
-const DINER_CN_NUMBERS: Record<string, number> = { 一: 1, 两: 2, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+const DINER_CN_NUMBERS: Record<string, number> = {
+  一: 1,
+  两: 2,
+  二: 2,
+  三: 3,
+  四: 4,
+  五: 5,
+  六: 6,
+  七: 7,
+  八: 8,
+  九: 9,
+  十: 10,
+};
 
 /**
  * 把对"几个人吃"追问的裸数字口语回答补全成 parseMealContext 能识别的"N个人"。
@@ -28,9 +41,10 @@ const DINER_CN_NUMBERS: Record<string, number> = { 一: 1, 两: 2, 二: 2, 三: 
  */
 export function normalizeBareDinerReply(reply: string): string {
   const compact = reply.replace(/[\s，。！？、,.!?：:；;]/g, '');
-  const match = /^(?:就|大概|约|差不多)?([一二两三四五六七八九十\d]{1,2}|俩)(?:个|位|口)?(?:人)?(?:吃|用餐|一起吃)?$/.exec(
-    compact,
-  );
+  const match =
+    /^(?:就|大概|约|差不多)?([一二两三四五六七八九十\d]{1,2}|俩)(?:个|位|口)?(?:人)?(?:吃|用餐|一起吃)?$/.exec(
+      compact,
+    );
   if (!match?.[1]) return reply;
   const raw = match[1] === '俩' ? '两' : match[1];
   const count = /^\d+$/.test(raw) ? Number(raw) : (DINER_CN_NUMBERS[raw] ?? null);
@@ -49,9 +63,9 @@ export function parseMealContext(text: string): MealContext {
         ? 'DINNER'
         : /下午茶|加餐|小点心|点心|零食/.test(compact)
           ? 'AFTERNOON_TEA'
-            : /夜宵|宵夜/.test(compact)
-              ? 'LATE_NIGHT'
-              : 'GENERAL';
+          : /夜宵|宵夜/.test(compact)
+            ? 'LATE_NIGHT'
+            : 'GENERAL';
   const dateReference: MealDateReference = /后天/.test(compact)
     ? 'DAY_AFTER_TOMORROW'
     : /明天|明早|明早上/.test(compact)
@@ -61,14 +75,21 @@ export function parseMealContext(text: string): MealContext {
         : 'UNSPECIFIED';
   const numeric = /(\d{1,2})\s*(?:人份?|位|口)/.exec(compact)?.[1];
   const chinese = /([一二两三四五六七八九十])(?:个)?(?:人|位|口)/.exec(compact)?.[1];
-  const dinerCount = numeric ? Number(numeric) : chinese ? (DINER_CN_NUMBERS[chinese] ?? null) : /一个人|自己吃|独自/.test(compact) ? 1 : null;
-  const diningMode: DiningMode = dinerCount === 1
-    ? 'SOLO'
-    : /聚会|朋友来|客人|宴请|一起吃|一起用餐|跟.*吃/.test(compact)
-      ? 'GATHERING'
-      : /全家|家庭|一家人|家里人/.test(compact)
-        ? 'FAMILY'
-        : 'UNSPECIFIED';
+  const dinerCount = numeric
+    ? Number(numeric)
+    : chinese
+      ? (DINER_CN_NUMBERS[chinese] ?? null)
+      : /一个人|自己吃|独自/.test(compact)
+        ? 1
+        : null;
+  const diningMode: DiningMode =
+    dinerCount === 1
+      ? 'SOLO'
+      : /聚会|朋友来|客人|宴请|一起吃|一起用餐|跟.*吃/.test(compact)
+        ? 'GATHERING'
+        : /全家|家庭|一家人|家里人/.test(compact)
+          ? 'FAMILY'
+          : 'UNSPECIFIED';
   return {
     occasion,
     dateReference,
@@ -118,10 +139,22 @@ export function buildMealContextRecommendation(
   const ready = recipes.find((recipe) => recipe.can_make);
   const best = ready ?? recipes[0];
   const occasionLabel: Record<MealOccasion, string> = {
-    BREAKFAST: '早餐', LUNCH: '午餐', DINNER: '晚餐', AFTERNOON_TEA: '下午茶', LATE_NIGHT: '夜宵', GENERAL: '这一餐',
+    BREAKFAST: '早餐',
+    LUNCH: '午餐',
+    DINNER: '晚餐',
+    AFTERNOON_TEA: '下午茶',
+    LATE_NIGHT: '夜宵',
+    GENERAL: '这一餐',
   };
-  const requestedPeople = context.dinerCount ?? (context.diningMode === 'FAMILY' ? householdMemberCount : null);
-  const peopleLabel = requestedPeople ? `${requestedPeople}人` : context.diningMode === 'GATHERING' ? '多人聚会' : context.diningMode === 'SOLO' ? '1人' : '';
+  const requestedPeople =
+    context.dinerCount ?? (context.diningMode === 'FAMILY' ? householdMemberCount : null);
+  const peopleLabel = requestedPeople
+    ? `${requestedPeople}人`
+    : context.diningMode === 'GATHERING'
+      ? '多人聚会'
+      : context.diningMode === 'SOLO'
+        ? '1人'
+        : '';
   const goalNote = context.weightConscious ? '可优先采用蒸、煮、炖等少油做法。' : '';
   const quickNote = context.wantsQuick ? '我优先选了准备步骤较少的候选。' : '';
 
@@ -129,9 +162,7 @@ export function buildMealContextRecommendation(
     return `${occasionLabel[context.occasion]}目前没有足够的库存菜谱候选。可以补充蔬菜和一种主食后，我再按${peopleLabel || '用餐人数'}给你搭配。`;
   }
   if (context.diningMode === 'GATHERING' || (requestedPeople ?? 0) >= 4) {
-    const menu = recipes
-      .filter((recipe) => recipe.can_make)
-      .slice(0, 3);
+    const menu = recipes.filter((recipe) => recipe.can_make).slice(0, 3);
     if (menu.length >= 2) {
       const dishList = menu.map((recipe) => recipe.name).join('、');
       const servingNote = requestedPeople
@@ -146,8 +177,9 @@ export function buildMealContextRecommendation(
       .join('、');
     return `${occasionLabel[context.occasion]}可以考虑${best.name}，但当前还缺${missing || '部分食材'}。${quickNote}${goalNote}如果你明确说“加入购物清单”，我再帮你创建待购项。`;
   }
-  const servingNote = requestedPeople && requestedPeople !== best.servings
-    ? `菜谱基准是${best.servings}人份；${peopleLabel}用餐建议按约${(requestedPeople / best.servings).toFixed(1)}倍备料，并在下锅前再核对库存。`
-    : `${peopleLabel || `${best.servings}人` }份可做。`;
+  const servingNote =
+    requestedPeople && requestedPeople !== best.servings
+      ? `菜谱基准是${best.servings}人份；${peopleLabel}用餐建议按约${(requestedPeople / best.servings).toFixed(1)}倍备料，并在下锅前再核对库存。`
+      : `${peopleLabel || `${best.servings}人`}份可做。`;
   return `${occasionLabel[context.occasion]}推荐${best.name}。${servingNote}${quickNote}${goalNote}这是建议，不会自动扣减库存。`;
 }

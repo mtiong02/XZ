@@ -65,20 +65,35 @@ const GROUP_ORDER: NutritionGroupCode[] = [
 export function nutritionGroupForCategory(categoryCode: string): NutritionGroupCode {
   const code = categoryCode.toUpperCase();
   if (
-    ['PORK', 'BEEF', 'LAMB', 'MEAT', 'POULTRY', 'OTHER_POULTRY', 'GAME_MEAT', 'EGG', 'PROCESSED_MEAT', 'EGG_DAIRY'].includes(
-      code,
-    )
+    [
+      'PORK',
+      'BEEF',
+      'LAMB',
+      'MEAT',
+      'POULTRY',
+      'OTHER_POULTRY',
+      'GAME_MEAT',
+      'EGG',
+      'PROCESSED_MEAT',
+      'EGG_DAIRY',
+    ].includes(code)
   )
     return 'PROTEIN';
   if (
-    ['FISH', 'CRAB', 'SHRIMP', 'CEPHALOPOD', 'BIVALVE', 'AQUATIC', 'SEAFOOD', 'CRUSTACEAN', 'MOLLUSK'].includes(
-      code,
-    )
+    [
+      'FISH',
+      'CRAB',
+      'SHRIMP',
+      'CEPHALOPOD',
+      'BIVALVE',
+      'AQUATIC',
+      'SEAFOOD',
+      'CRUSTACEAN',
+      'MOLLUSK',
+    ].includes(code)
   )
     return 'SEAFOOD';
-  if (
-    ['DAIRY', 'LIQUID_DAIRY', 'FERMENTED_DAIRY', 'CHEESE', 'MILK_PRODUCT'].includes(code)
-  )
+  if (['DAIRY', 'LIQUID_DAIRY', 'FERMENTED_DAIRY', 'CHEESE', 'MILK_PRODUCT'].includes(code))
     return 'DAIRY';
   if (
     code === 'LEGUME' ||
@@ -90,7 +105,13 @@ export function nutritionGroupForCategory(categoryCode: string): NutritionGroupC
     code.includes('BEAN')
   )
     return 'LEGUME';
-  if (code === 'NUT_SEED' || code === 'TREE_NUT' || code === 'PEANUT' || code === 'OIL_FAT' || code === 'HEALTHY_FAT')
+  if (
+    code === 'NUT_SEED' ||
+    code === 'TREE_NUT' ||
+    code === 'PEANUT' ||
+    code === 'OIL_FAT' ||
+    code === 'HEALTHY_FAT'
+  )
     return 'HEALTHY_FAT';
   if (
     code === 'FRUIT' ||
@@ -105,9 +126,16 @@ export function nutritionGroupForCategory(categoryCode: string): NutritionGroupC
   )
     return 'VEGETABLE';
   if (
-    ['GRAIN_STAPLE', 'STAPLE', 'GRAIN', 'CORN_GRAIN', 'COARSE_GRAIN', 'TUBER_STAPLE', 'ROOT_TUBER', 'RICE'].includes(
-      code,
-    )
+    [
+      'GRAIN_STAPLE',
+      'STAPLE',
+      'GRAIN',
+      'CORN_GRAIN',
+      'COARSE_GRAIN',
+      'TUBER_STAPLE',
+      'ROOT_TUBER',
+      'RICE',
+    ].includes(code)
   )
     return 'STAPLE';
   if (code === 'SEASONING' || code === 'SAUCE' || code === 'SALT_SUGAR') return 'SEASONING';

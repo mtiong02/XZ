@@ -368,7 +368,8 @@ export class AdminController {
       if (!val) return new Date().toISOString();
       if (val instanceof Date) return val.toISOString();
       if (typeof val === 'string') return val;
-      return new Date(val as any).toISOString();
+      if (typeof val === 'number') return new Date(val).toISOString();
+      return new Date(String(val)).toISOString();
     };
 
     // 1. 获取全量内测家庭与成员信息（包含 Auth 邮箱/手机）
@@ -732,8 +733,7 @@ export class AdminController {
 
     if (currentSession) {
       const rawMs =
-        new Date(currentSession.ended_at).getTime() -
-        new Date(currentSession.started_at).getTime();
+        new Date(currentSession.ended_at).getTime() - new Date(currentSession.started_at).getTime();
       const durationMs = Math.max(60000, rawMs);
       currentSession.duration_minutes = Math.round(durationMs / 60000);
       totalDurationMs += durationMs;
@@ -780,4 +780,3 @@ export class AdminController {
     };
   }
 }
-

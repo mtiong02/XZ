@@ -66,12 +66,7 @@ export function FeedbackModal({ householdId, onClose }: Props) {
       }}
     >
       <div className="feedback-modal-card">
-        <button
-          type="button"
-          className="feedback-modal-close"
-          onClick={onClose}
-          aria-label="关闭"
-        >
+        <button type="button" className="feedback-modal-close" onClick={onClose} aria-label="关闭">
           ✕
         </button>
 
@@ -128,9 +123,7 @@ export function FeedbackModal({ householdId, onClose }: Props) {
               <div className="feedback-label-row">
                 <label className="feedback-label">整体评分（选填）</label>
                 {activeRating ? (
-                  <span className="feedback-rating-hint">
-                    {RATING_LABELS[activeRating - 1]}
-                  </span>
+                  <span className="feedback-rating-hint">{RATING_LABELS[activeRating - 1]}</span>
                 ) : null}
               </div>
               <div className="feedback-stars">
@@ -150,7 +143,9 @@ export function FeedbackModal({ householdId, onClose }: Props) {
             </div>
 
             <div className="feedback-field">
-              <label className="feedback-label">详细描述 <span>*</span></label>
+              <label className="feedback-label">
+                详细描述 <span>*</span>
+              </label>
               <textarea
                 className="feedback-textarea"
                 rows={4}

@@ -121,7 +121,11 @@ export function isReasonableUnitForFood(entry: FoodCatalogEntry, unit: string): 
   // 零拦截策略：只要是合法的包装/通用量词（盒/袋/包/瓶/罐/个/斤/两），全量信任并放行，绝不说“请按克记录”。
   const suggested = suggestedUnitsForFood(entry);
   if (suggested.includes(unit)) return true;
-  if (['box', 'bag', 'pack', 'bottle', 'can', 'piece', 'jin', 'liang', 'bunch', 'g', 'kg'].includes(unit)) {
+  if (
+    ['box', 'bag', 'pack', 'bottle', 'can', 'piece', 'jin', 'liang', 'bunch', 'g', 'kg'].includes(
+      unit,
+    )
+  ) {
     return true;
   }
   return false;
@@ -154,7 +158,9 @@ const INVENTORY_DECLARATION =
   /^(?:嗯|呃|那个|好的)?(?:我)?(?:家里|冰箱)(?:里|里面)?有(?:\d|[一二两俩三四五六七八九十百千半])/;
 
 /** 将自然语言存放位置转为稳定区域代码；实际 zone id 由 Interaction 模块按家庭查询。 */
-export function requestedStorageZoneCode(normalized: string): 'FRIDGE' | 'FREEZER' | 'PANTRY' | null {
+export function requestedStorageZoneCode(
+  normalized: string,
+): 'FRIDGE' | 'FREEZER' | 'PANTRY' | null {
   if (/冷冻|冷库|冷柜|冰柜/.test(normalized)) return 'FREEZER';
   if (/冷藏|保鲜/.test(normalized)) return 'FRIDGE';
   if (/常温|室温|橱柜|储物柜/.test(normalized)) return 'PANTRY';
@@ -188,13 +194,13 @@ export function extractCorrectionQuantity(
   normalized: string,
 ): { quantity: string; unit: string } | null {
   const all = extractQuantities(normalized);
-  if (all.length > 0 && all[all.length - 1]) {
-    return all[all.length - 1]!;
-  }
+  const last = all[all.length - 1];
+  if (last) return last;
   // 口语尾音截断与补字容错："只用掉一"、"只要一"、"吃了一" -> 取数值 1
-  const m = /(?:只(?:有|用掉|吃了|要|换成|变成|改|改成)?|用掉|只|改)\s*([一二两三四五六七八九十\d]+)$/.exec(
-    normalized.trim(),
-  );
+  const m =
+    /(?:只(?:有|用掉|吃了|要|换成|变成|改|改成)?|用掉|只|改)\s*([一二两三四五六七八九十\d]+)$/.exec(
+      normalized.trim(),
+    );
   if (m && m[1]) {
     const numMap: Record<string, string> = {
       一: '1',
@@ -240,11 +246,17 @@ export function detectIntent(normalized: string): { intent: ParsedIntent; confid
   ) {
     return { intent: 'MARK_SHOPPING_PURCHASED', confidence: 0.98 };
   }
-  if (/(?:加入|加到|添加到).{0,20}(?:购物清单|待购清单)|(?:购物清单|待购清单).{0,10}(?:加|添加)/.test(normalized)) {
+  if (
+    /(?:加入|加到|添加到).{0,20}(?:购物清单|待购清单)|(?:购物清单|待购清单).{0,10}(?:加|添加)/.test(
+      normalized,
+    )
+  ) {
     return { intent: 'ADD_SHOPPING_ITEM', confidence: 0.98 };
   }
   if (
-    /(?:看看|查看|查询|读一下)?(?:购物清单|待购清单).*(?:有什么|有哪些|是什么|内容)|(?:购物清单|待购清单)$/.test(normalized)
+    /(?:看看|查看|查询|读一下)?(?:购物清单|待购清单).*(?:有什么|有哪些|是什么|内容)|(?:购物清单|待购清单)$/.test(
+      normalized,
+    )
   ) {
     return { intent: 'QUERY_SHOPPING_LIST', confidence: 0.98 };
   }
@@ -461,7 +473,9 @@ export function parseTranscript(normalized: string, catalog: FoodCatalogEntry[])
           rawName.length >= 1 &&
           !/^(?:的|了|一下|看看|吧|啊|呢|吗|对|不对|取消|算了)$/.test(rawName) &&
           // 修正话术残片（"不是2盒是3盒" 里的 "是3盒"→剥掉"是"后是纯数量），不是食材名
-          !/^\d/.test(rawName)
+          !/^\d/.test(rawName) &&
+          // 量词性名词（"两个人"的"人"、"三位"的"位"）不是食材
+          !/^(?:人|人份|位|口|天|次|小时|分钟)/.test(rawName)
         ) {
           const catalogHit = catalog.find(
             (c) => c.canonicalName.includes(rawName) || rawName.includes(c.canonicalName),
@@ -472,7 +486,9 @@ export function parseTranscript(normalized: string, catalog: FoodCatalogEntry[])
             quantity: q.quantity,
             unit: q.unit ?? (catalogHit ? catalogHit.defaultUnitCode : 'piece'),
             quantity_explicit: true,
-            unit_reasonable: catalogHit ? isReasonableUnitForFood(catalogHit, q.unit ?? 'piece') : true,
+            unit_reasonable: catalogHit
+              ? isReasonableUnitForFood(catalogHit, q.unit ?? 'piece')
+              : true,
             suggested_units: catalogHit ? suggestedUnitsForFood(catalogHit) : [q.unit ?? 'piece'],
           });
           q.used = true;
@@ -490,8 +506,8 @@ export function parseTranscript(normalized: string, catalog: FoodCatalogEntry[])
     if (existingIndex === -1) {
       deduplicated.push(item);
     } else {
-      const existing = deduplicated[existingIndex]!;
-      if (item.quantity_explicit || !existing.quantity_explicit) {
+      const existing = deduplicated[existingIndex];
+      if (existing && (item.quantity_explicit || !existing.quantity_explicit)) {
         deduplicated[existingIndex] = item;
       }
     }

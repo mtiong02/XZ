@@ -34,7 +34,8 @@ export function confirmPrompt(commandType: string, items: SpokenItem[]): string 
 export function clarifyQuantityPrompt(
   commandType: string,
   foodName: string,
-  suggestedUnits: string[] = [],
+  // 零拦截策略下不再向用户罗列"建议单位"（会诱导口头换算），保留参数以兼容调用方
+  _suggestedUnits: string[] = [],
 ): string {
   const verb = ACTION_VERB[commandType] ?? '记录';
   return `请问${verb}多少${foodName}？`;
@@ -44,13 +45,9 @@ export function clarifyUnitPrompt(
   foodName: string,
   quantity: string,
   unit: string,
-  suggestedUnits: string[],
+  _suggestedUnits: string[],
 ): string {
   return `${foodName}是${quantity}${unitSpokenLabel(unit)}吗？或直接说正确数量。`;
-}
-
-function unitChoices(units: string[]): string {
-  return units.slice(0, 3).map(unitSpokenLabel).join('、');
 }
 
 /** 修正被采纳后重新确认 */
@@ -65,5 +62,4 @@ export function executedPrompt(commandType: string): string {
 
 export const CANCELLED_PROMPT = '已取消。';
 export const UNCLEAR_PROMPT = '没听清，请说“对”或直接说数量。';
-export const UNRECOGNIZED_PROMPT =
-  '没完全听懂。你可以说“查库存”、“推荐晚餐”或“添加猪肉”。';
+export const UNRECOGNIZED_PROMPT = '没完全听懂。你可以说“查库存”、“推荐晚餐”或“添加猪肉”。';

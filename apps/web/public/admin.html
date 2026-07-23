@@ -1,773 +1,1229 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>鲜知 Admin · 对话日志</title>
-  <link rel="icon" type="image/png" href="/mascot/xiaozhi.png" />
-  <link rel="apple-touch-icon" href="/mascot/xiaozhi.png" />
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>鲜知 Admin · 对话日志</title>
+    <link rel="icon" type="image/png" href="/mascot/xiaozhi.png" />
+    <link rel="apple-touch-icon" href="/mascot/xiaozhi.png" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
 
-    :root {
-      --bg: #0f0f13;
-      --surface: #18181f;
-      --surface2: #22222c;
-      --border: #2e2e3a;
-      --accent: #7c6cfa;
-      --accent2: #4ec9a7;
-      --danger: #f06a6a;
-      --warn: #e8a45a;
-      --text: #e8e8f0;
-      --muted: #888898;
-    }
+      :root {
+        --bg: #0f0f13;
+        --surface: #18181f;
+        --surface2: #22222c;
+        --border: #2e2e3a;
+        --accent: #7c6cfa;
+        --accent2: #4ec9a7;
+        --danger: #f06a6a;
+        --warn: #e8a45a;
+        --text: #e8e8f0;
+        --muted: #888898;
+      }
 
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI', sans-serif;
-      min-height: 100vh;
-    }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI', sans-serif;
+        min-height: 100vh;
+      }
 
-    /* ─── Login Screen ─── */
-    #login-screen {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      background: radial-gradient(ellipse at 50% 30%, #1a1540 0%, var(--bg) 70%);
-    }
+      /* ─── Login Screen ─── */
+      #login-screen {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        background: radial-gradient(ellipse at 50% 30%, #1a1540 0%, var(--bg) 70%);
+      }
 
-    .login-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 48px 40px;
-      width: 380px;
-      text-align: center;
-      box-shadow: 0 32px 80px rgba(0,0,0,0.5);
-    }
+      .login-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 48px 40px;
+        width: 380px;
+        text-align: center;
+        box-shadow: 0 32px 80px rgba(0, 0, 0, 0.5);
+      }
 
-    .login-icon { font-size: 48px; margin-bottom: 16px; }
-    .login-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
-    .login-sub { color: var(--muted); font-size: 14px; margin-bottom: 32px; }
+      .login-icon {
+        font-size: 48px;
+        margin-bottom: 16px;
+      }
+      .login-title {
+        font-size: 22px;
+        font-weight: 700;
+        margin-bottom: 6px;
+      }
+      .login-sub {
+        color: var(--muted);
+        font-size: 14px;
+        margin-bottom: 32px;
+      }
 
-    .login-card input {
-      width: 100%;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px 16px;
-      color: var(--text);
-      font-size: 14px;
-      margin-bottom: 12px;
-      outline: none;
-    }
-    .login-card input:focus { border-color: var(--accent); }
-    .login-card button {
-      width: 100%;
-      background: var(--accent);
-      border: none;
-      border-radius: 10px;
-      padding: 13px;
-      color: #fff;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.2s;
-    }
-    .login-card button:hover { opacity: 0.85; }
-    .login-error { color: var(--danger); font-size: 13px; margin-top: 10px; display: none; }
+      .login-card input {
+        width: 100%;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px 16px;
+        color: var(--text);
+        font-size: 14px;
+        margin-bottom: 12px;
+        outline: none;
+      }
+      .login-card input:focus {
+        border-color: var(--accent);
+      }
+      .login-card button {
+        width: 100%;
+        background: var(--accent);
+        border: none;
+        border-radius: 10px;
+        padding: 13px;
+        color: #fff;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.2s;
+      }
+      .login-card button:hover {
+        opacity: 0.85;
+      }
+      .login-error {
+        color: var(--danger);
+        font-size: 13px;
+        margin-top: 10px;
+        display: none;
+      }
 
-    /* ─── Main App ─── */
-    #app { display: none; flex-direction: column; min-height: 100vh; }
+      /* ─── Main App ─── */
+      #app {
+        display: none;
+        flex-direction: column;
+        min-height: 100vh;
+      }
 
-    header {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      padding: 16px 28px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      position: sticky; top: 0; z-index: 100;
-    }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 16px 28px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        z-index: 100;
+      }
 
-    header .logo { font-size: 20px; font-weight: 700; }
-    header .logo span { color: var(--accent); }
-    header .badge {
-      background: var(--accent);
-      color: #fff;
-      font-size: 11px;
-      font-weight: 700;
-      padding: 3px 8px;
-      border-radius: 20px;
-      letter-spacing: 0.5px;
-    }
-    header .spacer { flex: 1; }
-    header .logout-btn {
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--muted);
-      padding: 7px 16px;
-      border-radius: 8px;
-      font-size: 13px;
-      cursor: pointer;
-    }
+      header .logo {
+        font-size: 20px;
+        font-weight: 700;
+      }
+      header .logo span {
+        color: var(--accent);
+      }
+      header .badge {
+        background: var(--accent);
+        color: #fff;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 3px 8px;
+        border-radius: 20px;
+        letter-spacing: 0.5px;
+      }
+      header .spacer {
+        flex: 1;
+      }
+      header .logout-btn {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        padding: 7px 16px;
+        border-radius: 8px;
+        font-size: 13px;
+        cursor: pointer;
+      }
 
-    /* ─── Tabs ─── */
-    .tabs {
-      display: flex;
-      gap: 4px;
-      padding: 0 28px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-    }
-    .tab {
-      padding: 12px 20px;
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--muted);
-      cursor: pointer;
-      border-bottom: 2px solid transparent;
-      transition: all 0.2s;
-    }
-    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+      /* ─── Tabs ─── */
+      .tabs {
+        display: flex;
+        gap: 4px;
+        padding: 0 28px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+      }
+      .tab {
+        padding: 12px 20px;
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--muted);
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        transition: all 0.2s;
+      }
+      .tab.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+      }
 
-    /* ─── Content ─── */
-    .content { padding: 24px 28px; flex: 1; max-width: 1400px; margin: 0 auto; width: 100%; }
+      /* ─── Content ─── */
+      .content {
+        padding: 24px 28px;
+        flex: 1;
+        max-width: 1400px;
+        margin: 0 auto;
+        width: 100%;
+      }
 
-    /* ─── Stats Panel ─── */
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 16px;
-      margin-bottom: 28px;
-    }
-    .stat-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 20px 22px;
-    }
-    .stat-card .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
-    .stat-card .value { font-size: 32px; font-weight: 700; }
-    .stat-card.accent .value { color: var(--accent); }
-    .stat-card.green .value { color: var(--accent2); }
-    .stat-card.warn .value { color: var(--warn); }
-    .stat-card.danger .value { color: var(--danger); }
+      /* ─── Stats Panel ─── */
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 16px;
+        margin-bottom: 28px;
+      }
+      .stat-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 20px 22px;
+      }
+      .stat-card .label {
+        font-size: 12px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 8px;
+      }
+      .stat-card .value {
+        font-size: 32px;
+        font-weight: 700;
+      }
+      .stat-card.accent .value {
+        color: var(--accent);
+      }
+      .stat-card.green .value {
+        color: var(--accent2);
+      }
+      .stat-card.warn .value {
+        color: var(--warn);
+      }
+      .stat-card.danger .value {
+        color: var(--danger);
+      }
 
-    /* ─── Filter Bar ─── */
-    .filter-bar {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 20px;
-      flex-wrap: wrap;
-    }
-    .filter-bar select, .filter-bar input {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 9px;
-      color: var(--text);
-      padding: 8px 14px;
-      font-size: 13px;
-      outline: none;
-    }
-    .filter-bar select:focus, .filter-bar input:focus { border-color: var(--accent); }
-    .filter-bar button {
-      background: var(--accent);
-      border: none;
-      border-radius: 9px;
-      color: #fff;
-      padding: 8px 20px;
-      font-size: 13px;
-      cursor: pointer;
-      font-weight: 600;
-    }
+      /* ─── Filter Bar ─── */
+      .filter-bar {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+      }
+      .filter-bar select,
+      .filter-bar input {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        color: var(--text);
+        padding: 8px 14px;
+        font-size: 13px;
+        outline: none;
+      }
+      .filter-bar select:focus,
+      .filter-bar input:focus {
+        border-color: var(--accent);
+      }
+      .filter-bar button {
+        background: var(--accent);
+        border: none;
+        border-radius: 9px;
+        color: #fff;
+        padding: 8px 20px;
+        font-size: 13px;
+        cursor: pointer;
+        font-weight: 600;
+      }
 
-    /* ─── Session Cards ─── */
-    .sessions-list { display: flex; flex-direction: column; gap: 16px; }
+      /* ─── Session Cards ─── */
+      .sessions-list {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
 
-    .session-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      overflow: hidden;
-    }
-    .session-header {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 16px 20px;
-      background: var(--surface2);
-      cursor: pointer;
-      user-select: none;
-      transition: background 0.15s;
-    }
-    .session-header:hover { background: #2a2a38; }
-    .session-meta { flex: 1; }
-    .session-title { font-size: 14px; font-weight: 600; margin-bottom: 3px; }
-    .session-sub { font-size: 12px; color: var(--muted); }
-    .session-badges { display: flex; gap: 6px; align-items: center; }
-    .session-toggle { color: var(--muted); font-size: 16px; transition: transform 0.2s; }
-    .session-toggle.open { transform: rotate(180deg); }
+      .session-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        overflow: hidden;
+      }
+      .session-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 16px 20px;
+        background: var(--surface2);
+        cursor: pointer;
+        user-select: none;
+        transition: background 0.15s;
+      }
+      .session-header:hover {
+        background: #2a2a38;
+      }
+      .session-meta {
+        flex: 1;
+      }
+      .session-title {
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 3px;
+      }
+      .session-sub {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .session-badges {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .session-toggle {
+        color: var(--muted);
+        font-size: 16px;
+        transition: transform 0.2s;
+      }
+      .session-toggle.open {
+        transform: rotate(180deg);
+      }
 
-    .session-body { padding: 20px; display: none; }
-    .session-body.open { display: block; }
+      .session-body {
+        padding: 20px;
+        display: none;
+      }
+      .session-body.open {
+        display: block;
+      }
 
-    .dialogue-thread { display: flex; flex-direction: column; gap: 12px; }
-    .turn { display: flex; gap: 10px; align-items: flex-start; }
-    .turn.user { flex-direction: row-reverse; }
-    .bubble {
-      max-width: 72%;
-      padding: 10px 14px;
-      border-radius: 14px;
-      font-size: 14px;
-      line-height: 1.5;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-    .turn.user .bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
-    .turn.system .bubble { background: var(--surface2); color: var(--text); border-bottom-left-radius: 4px; border: 1px solid var(--border); }
-    .turn-time { font-size: 11px; color: var(--muted); margin-top: 4px; white-space: nowrap; }
+      .dialogue-thread {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .turn {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .turn.user {
+        flex-direction: row-reverse;
+      }
+      .bubble {
+        max-width: 72%;
+        padding: 10px 14px;
+        border-radius: 14px;
+        font-size: 14px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .turn.user .bubble {
+        background: var(--accent);
+        color: #fff;
+        border-bottom-right-radius: 4px;
+      }
+      .turn.system .bubble {
+        background: var(--surface2);
+        color: var(--text);
+        border-bottom-left-radius: 4px;
+        border: 1px solid var(--border);
+      }
+      .turn-time {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 4px;
+        white-space: nowrap;
+      }
 
-    .badge-ok { background: rgba(78,201,167,0.15); color: var(--accent2); }
-    .badge-warn { background: rgba(240,106,106,0.15); color: var(--danger); }
+      .badge-ok {
+        background: rgba(78, 201, 167, 0.15);
+        color: var(--accent2);
+      }
+      .badge-warn {
+        background: rgba(240, 106, 106, 0.15);
+        color: var(--danger);
+      }
 
-    /* ─── Table (reused in stats) ─── */
-    .table-wrap {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      overflow: hidden;
-    }
-    table { width: 100%; border-collapse: collapse; }
-    thead th {
-      background: var(--surface2);
-      padding: 12px 16px;
-      text-align: left;
-      font-size: 12px; font-weight: 600;
-      text-transform: uppercase; letter-spacing: 0.5px;
-      color: var(--muted);
-      border-bottom: 1px solid var(--border);
-    }
-    tbody tr { border-bottom: 1px solid var(--border); }
-    tbody tr:last-child { border-bottom: none; }
-    tbody td { padding: 12px 16px; font-size: 13px; vertical-align: top; }
+      /* ─── Table (reused in stats) ─── */
+      .table-wrap {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        overflow: hidden;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      thead th {
+        background: var(--surface2);
+        padding: 12px 16px;
+        text-align: left;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--muted);
+        border-bottom: 1px solid var(--border);
+      }
+      tbody tr {
+        border-bottom: 1px solid var(--border);
+      }
+      tbody tr:last-child {
+        border-bottom: none;
+      }
+      tbody td {
+        padding: 12px 16px;
+        font-size: 13px;
+        vertical-align: top;
+      }
 
-    .status-badge {
-      display: inline-block; padding: 3px 9px; border-radius: 20px;
-      font-size: 11px; font-weight: 600; letter-spacing: 0.3px;
-    }
+      .status-badge {
+        display: inline-block;
+        padding: 3px 9px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+      }
 
-    /* ─── Pagination ─── */
-    .pagination {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 16px;
-      justify-content: center;
-      color: var(--muted);
-      font-size: 13px;
-    }
-    .pagination button {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 6px 14px;
-      border-radius: 7px;
-      cursor: pointer;
-      font-size: 13px;
-    }
-    .pagination button:disabled { opacity: 0.4; cursor: default; }
+      /* ─── Pagination ─── */
+      .pagination {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 16px;
+        justify-content: center;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .pagination button {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        color: var(--text);
+        padding: 6px 14px;
+        border-radius: 7px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .pagination button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
 
-    /* ─── Detail Modal ─── */
-    .modal-overlay {
-      display: none;
-      position: fixed; inset: 0;
-      background: rgba(0,0,0,0.7);
-      z-index: 200;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-    }
-    .modal-overlay.open { display: flex; }
+      /* ─── Detail Modal ─── */
+      .modal-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.7);
+        z-index: 200;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+      .modal-overlay.open {
+        display: flex;
+      }
 
-    .modal {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      width: 100%;
-      max-width: 680px;
-      max-height: 90vh;
-      overflow-y: auto;
-      padding: 28px;
-    }
-    .modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-    }
-    .modal-title { font-size: 17px; font-weight: 700; }
-    .modal-close {
-      background: var(--surface2);
-      border: none;
-      color: var(--muted);
-      width: 30px; height: 30px;
-      border-radius: 50%;
-      cursor: pointer;
-      font-size: 16px;
-    }
+      .modal {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        width: 100%;
+        max-width: 680px;
+        max-height: 90vh;
+        overflow-y: auto;
+        padding: 28px;
+      }
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+      .modal-title {
+        font-size: 17px;
+        font-weight: 700;
+      }
+      .modal-close {
+        background: var(--surface2);
+        border: none;
+        color: var(--muted);
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        cursor: pointer;
+        font-size: 16px;
+      }
 
-    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 22px; }
-    .meta-item .key { font-size: 11px; color: var(--muted); margin-bottom: 3px; text-transform: uppercase; }
-    .meta-item .val { font-size: 14px; word-break: break-all; }
+      .meta-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 22px;
+      }
+      .meta-item .key {
+        font-size: 11px;
+        color: var(--muted);
+        margin-bottom: 3px;
+        text-transform: uppercase;
+      }
+      .meta-item .val {
+        font-size: 14px;
+        word-break: break-all;
+      }
 
-    .dialogue-log { display: flex; flex-direction: column; gap: 10px; }
-    .turn {
-      display: flex;
-      gap: 10px;
-      align-items: flex-start;
-    }
-    .turn.user { flex-direction: row-reverse; }
-    .turn .bubble {
-      max-width: 75%;
-      padding: 10px 14px;
-      border-radius: 14px;
-      font-size: 14px;
-      line-height: 1.5;
-    }
-    .turn.user .bubble {
-      background: var(--accent);
-      color: #fff;
-      border-bottom-right-radius: 4px;
-    }
-    .turn.system .bubble {
-      background: var(--surface2);
-      color: var(--text);
-      border-bottom-left-radius: 4px;
-    }
-    .turn .turn-time { font-size: 11px; color: var(--muted); margin-top: 4px; white-space: nowrap; }
+      .dialogue-log {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .turn {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .turn.user {
+        flex-direction: row-reverse;
+      }
+      .turn .bubble {
+        max-width: 75%;
+        padding: 10px 14px;
+        border-radius: 14px;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .turn.user .bubble {
+        background: var(--accent);
+        color: #fff;
+        border-bottom-right-radius: 4px;
+      }
+      .turn.system .bubble {
+        background: var(--surface2);
+        color: var(--text);
+        border-bottom-left-radius: 4px;
+      }
+      .turn .turn-time {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 4px;
+        white-space: nowrap;
+      }
 
-    /* ─── Ambiguous Section ─── */
-    .ambiguous-list { display: flex; flex-direction: column; gap: 8px; }
-    .ambiguous-item {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px 16px;
-    }
-    .ambiguous-item .phrase { flex: 1; font-size: 14px; }
-    .ambiguous-item .count {
-      background: rgba(240,106,106,0.15);
-      color: var(--danger);
-      padding: 3px 10px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 700;
-    }
+      /* ─── Ambiguous Section ─── */
+      .ambiguous-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .ambiguous-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px 16px;
+      }
+      .ambiguous-item .phrase {
+        flex: 1;
+        font-size: 14px;
+      }
+      .ambiguous-item .count {
+        background: rgba(240, 106, 106, 0.15);
+        color: var(--danger);
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 700;
+      }
 
-    /* ─── Product insights ─── */
-    #insights-tab { display: none; }
-    .insight-intro {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 20px;
-      margin-bottom: 22px;
-      padding: 22px;
-      border: 1px solid rgba(124,108,250,0.35);
-      border-radius: 16px;
-      background: linear-gradient(120deg, rgba(124,108,250,0.14), rgba(78,201,167,0.08));
-    }
-    .eyebrow { color: var(--accent2); font-size: 12px; font-weight: 700; letter-spacing: .08em; }
-    .insight-intro h2 { margin: 6px 0; font-size: 22px; }
-    .insight-intro p { max-width: 720px; color: var(--muted); font-size: 13px; line-height: 1.6; }
-    .insight-scope { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; white-space: nowrap; }
-    .insight-scope select { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 7px 10px; }
-    .insight-scope button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 12px; cursor: pointer; font-weight: 600; }
-    .insight-summary { margin-bottom: 18px; padding: 18px 20px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
-    .insight-summary h3 { margin-bottom: 6px; font-size: 17px; }
-    .insight-summary p { color: var(--muted); font-size: 13px; line-height: 1.6; }
-    .insights-list { display: grid; gap: 14px; }
-    .insight-card { padding: 20px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
-    .insight-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
-    .insight-area { color: var(--accent2); font-size: 12px; font-weight: 700; }
-    .insight-card h3 { margin-top: 5px; font-size: 17px; }
-    .insight-chip { padding: 4px 9px; border-radius: 99px; font-size: 11px; font-weight: 700; white-space: nowrap; }
-    .insight-chip.high { color: #ffaaa5; background: rgba(240,106,106,.16); }
-    .insight-chip.medium { color: #f4c37f; background: rgba(232,164,90,.16); }
-    .insight-chip.low { color: #a9d9ca; background: rgba(78,201,167,.14); }
-    .insight-finding { margin-bottom: 14px; color: var(--text); font-size: 14px; line-height: 1.65; }
-    .insight-detail-grid { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 14px; }
-    .insight-panel { padding: 14px; border-radius: 11px; background: var(--surface2); }
-    .insight-panel h4 { margin-bottom: 8px; color: var(--muted); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
-    .insight-panel p, .insight-panel li { color: #c5c5d0; font-size: 13px; line-height: 1.55; }
-    .insight-panel ul { margin-left: 17px; }
-    .insight-limitations { margin-top: 20px; padding: 16px 18px; border-left: 3px solid var(--accent2); background: rgba(78,201,167,.07); color: var(--muted); font-size: 12px; line-height: 1.65; }
-    .insight-limitations strong { display: block; color: var(--text); margin-bottom: 4px; }
+      /* ─── Product insights ─── */
+      #insights-tab {
+        display: none;
+      }
+      .insight-intro {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 20px;
+        margin-bottom: 22px;
+        padding: 22px;
+        border: 1px solid rgba(124, 108, 250, 0.35);
+        border-radius: 16px;
+        background: linear-gradient(120deg, rgba(124, 108, 250, 0.14), rgba(78, 201, 167, 0.08));
+      }
+      .eyebrow {
+        color: var(--accent2);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+      .insight-intro h2 {
+        margin: 6px 0;
+        font-size: 22px;
+      }
+      .insight-intro p {
+        max-width: 720px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+      .insight-scope {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .insight-scope select {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--text);
+        padding: 7px 10px;
+      }
+      .insight-scope button {
+        background: var(--accent);
+        color: #fff;
+        border: 0;
+        border-radius: 8px;
+        padding: 8px 12px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .insight-summary {
+        margin-bottom: 18px;
+        padding: 18px 20px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--surface);
+      }
+      .insight-summary h3 {
+        margin-bottom: 6px;
+        font-size: 17px;
+      }
+      .insight-summary p {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+      .insights-list {
+        display: grid;
+        gap: 14px;
+      }
+      .insight-card {
+        padding: 20px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--surface);
+      }
+      .insight-card-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 12px;
+      }
+      .insight-area {
+        color: var(--accent2);
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .insight-card h3 {
+        margin-top: 5px;
+        font-size: 17px;
+      }
+      .insight-chip {
+        padding: 4px 9px;
+        border-radius: 99px;
+        font-size: 11px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      .insight-chip.high {
+        color: #ffaaa5;
+        background: rgba(240, 106, 106, 0.16);
+      }
+      .insight-chip.medium {
+        color: #f4c37f;
+        background: rgba(232, 164, 90, 0.16);
+      }
+      .insight-chip.low {
+        color: #a9d9ca;
+        background: rgba(78, 201, 167, 0.14);
+      }
+      .insight-finding {
+        margin-bottom: 14px;
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.65;
+      }
+      .insight-detail-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+        gap: 14px;
+      }
+      .insight-panel {
+        padding: 14px;
+        border-radius: 11px;
+        background: var(--surface2);
+      }
+      .insight-panel h4 {
+        margin-bottom: 8px;
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .insight-panel p,
+      .insight-panel li {
+        color: #c5c5d0;
+        font-size: 13px;
+        line-height: 1.55;
+      }
+      .insight-panel ul {
+        margin-left: 17px;
+      }
+      .insight-limitations {
+        margin-top: 20px;
+        padding: 16px 18px;
+        border-left: 3px solid var(--accent2);
+        background: rgba(78, 201, 167, 0.07);
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.65;
+      }
+      .insight-limitations strong {
+        display: block;
+        color: var(--text);
+        margin-bottom: 4px;
+      }
 
-    .loading { text-align: center; padding: 48px; color: var(--muted); }
-    .error-msg { color: var(--danger); text-align: center; padding: 24px; }
+      .loading {
+        text-align: center;
+        padding: 48px;
+        color: var(--muted);
+      }
+      .error-msg {
+        color: var(--danger);
+        text-align: center;
+        padding: 24px;
+      }
 
-    #stats-tab { display: none; }
-    #conversations-tab { display: block; }
-    @media (max-width: 680px) {
-      header { padding: 14px 16px; }
-      .tabs { overflow-x: auto; padding: 0 12px; }
-      .tab { padding: 12px 14px; white-space: nowrap; }
-      .content { padding: 18px 14px; }
-      .insight-intro, .insight-card-head { flex-direction: column; }
-      .insight-scope { width: 100%; white-space: normal; }
-      .insight-detail-grid { grid-template-columns: 1fr; }
-    }
-  </style>
-</head>
-<body>
-
-<!-- ─── Login ─── -->
-<div id="login-screen">
-  <div class="login-card">
-    <div class="login-icon"><img src="/mascot/xiaozhi.png" alt="小知" style="width: 80px; height: 80px; object-fit: contain; margin-bottom: 8px; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));" /></div>
-    <div class="login-title">鲜知管理后台</div>
-    <div class="login-sub">请输入管理员访问令牌</div>
-    <input type="password" id="token-input" placeholder="Admin Token" onkeydown="if(event.key==='Enter') login()" />
-    <button onclick="login()">进入后台</button>
-    <div class="login-error" id="login-error">Token 无效，请确认后重试</div>
-  </div>
-</div>
-
-<!-- ─── Main App ─── -->
-<div id="app" style="display:none;flex-direction:column;min-height:100vh;">
-  <header>
-    <div class="logo" style="display:flex;align-items:center;gap:10px;"><img src="/mascot/xiaozhi.png" alt="小知" style="width: 36px; height: 36px; object-fit: contain; filter: drop-shadow(0 2px 6px rgba(124,108,250,0.3));" /><div>鲜<span>知</span> Admin</div></div>
-    <div class="badge">INTERNAL</div>
-    <div class="spacer"></div>
-    <button class="logout-btn" onclick="logout()">退出</button>
-  </header>
-
-  <div class="tabs">
-    <div class="tab active" data-tab="conversations" onclick="switchTab('conversations')">对话日志</div>
-    <div class="tab" data-tab="stats" onclick="switchTab('stats')">统计分析</div>
-    <div class="tab" data-tab="user-analytics" onclick="switchTab('user-analytics')">用户分析与时长</div>
-    <div class="tab" data-tab="feedbacks" onclick="switchTab('feedbacks')">内测反馈</div>
-    <div class="tab" data-tab="runtime" onclick="switchTab('runtime')">实时性能</div>
-    <div class="tab" data-tab="insights" onclick="switchTab('insights')">优化洞察</div>
-  </div>
-
-  <!-- Conversations Tab -->
-  <div id="conversations-tab" class="content">
-    <div class="filter-bar">
-      <input type="date" id="filter-date-from" onchange="loadConversations()" />
-      <input type="date" id="filter-date-to" onchange="loadConversations()" />
-      <button onclick="loadConversations()">🔄 刷新</button>
-    </div>
-    <div id="sessions-list" class="sessions-list">
-      <div class="loading">加载中…</div>
-    </div>
-    <div class="pagination" id="pagination"></div>
-  </div>
-
-  <!-- Stats Tab -->
-  <div id="stats-tab" class="content">
-    <div class="stats-grid" id="stats-grid">
-      <div class="loading">加载中…</div>
-    </div>
-
-    <h3 style="margin-bottom:14px;font-size:15px;">📉 最近 7 天 未识别短语（优化方向）</h3>
-    <div class="ambiguous-list" id="ambiguous-list" style="margin-bottom:32px;">
-      <div class="loading">加载中…</div>
-    </div>
-
-    <h3 style="margin-bottom:14px;font-size:15px;">🏠 活跃用户（最近 7 天）</h3>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>用户名</th><th>对话次数</th><th>最近活跃</th></tr>
-        </thead>
-        <tbody id="households-body"></tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- User Analytics Tab -->
-  <div id="user-analytics-tab" class="content" style="display:none">
-    <div class="insight-intro">
-      <div>
-        <div class="eyebrow">USER ANALYTICS · BETA DASHBOARD</div>
-        <h2>内测用户分析与使用时长追踪</h2>
-        <p>追踪内测用户的具体账号信息、登录成员、累计使用时长、单次会话时长分布及活跃天数，帮助深入分析用户黏性与留存。</p>
+      #stats-tab {
+        display: none;
+      }
+      #conversations-tab {
+        display: block;
+      }
+      @media (max-width: 680px) {
+        header {
+          padding: 14px 16px;
+        }
+        .tabs {
+          overflow-x: auto;
+          padding: 0 12px;
+        }
+        .tab {
+          padding: 12px 14px;
+          white-space: nowrap;
+        }
+        .content {
+          padding: 18px 14px;
+        }
+        .insight-intro,
+        .insight-card-head {
+          flex-direction: column;
+        }
+        .insight-scope {
+          width: 100%;
+          white-space: normal;
+        }
+        .insight-detail-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ─── Login ─── -->
+    <div id="login-screen">
+      <div class="login-card">
+        <div class="login-icon">
+          <img
+            src="/mascot/xiaozhi.png"
+            alt="小知"
+            style="
+              width: 80px;
+              height: 80px;
+              object-fit: contain;
+              margin-bottom: 8px;
+              filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.4));
+            "
+          />
+        </div>
+        <div class="login-title">鲜知管理后台</div>
+        <div class="login-sub">请输入管理员访问令牌</div>
+        <input
+          type="password"
+          id="token-input"
+          placeholder="Admin Token"
+          onkeydown="if (event.key === 'Enter') login();"
+        />
+        <button onclick="login()">进入后台</button>
+        <div class="login-error" id="login-error">Token 无效，请确认后重试</div>
       </div>
-      <div class="insight-scope">
-        <label for="analytics-days">范围</label>
-        <select id="analytics-days" onchange="loadUserAnalytics()">
-          <option value="7">近 7 天</option>
-          <option value="30" selected>近 30 天</option>
-          <option value="90">近 90 天</option>
-        </select>
-        <button onclick="loadUserAnalytics()">🔄 刷新数据</button>
+    </div>
+
+    <!-- ─── Main App ─── -->
+    <div id="app" style="display: none; flex-direction: column; min-height: 100vh">
+      <header>
+        <div class="logo" style="display: flex; align-items: center; gap: 10px">
+          <img
+            src="/mascot/xiaozhi.png"
+            alt="小知"
+            style="
+              width: 36px;
+              height: 36px;
+              object-fit: contain;
+              filter: drop-shadow(0 2px 6px rgba(124, 108, 250, 0.3));
+            "
+          />
+          <div>鲜<span>知</span> Admin</div>
+        </div>
+        <div class="badge">INTERNAL</div>
+        <div class="spacer"></div>
+        <button class="logout-btn" onclick="logout()">退出</button>
+      </header>
+
+      <div class="tabs">
+        <div class="tab active" data-tab="conversations" onclick="switchTab('conversations')">
+          对话日志
+        </div>
+        <div class="tab" data-tab="stats" onclick="switchTab('stats')">统计分析</div>
+        <div class="tab" data-tab="user-analytics" onclick="switchTab('user-analytics')">
+          用户分析与时长
+        </div>
+        <div class="tab" data-tab="feedbacks" onclick="switchTab('feedbacks')">内测反馈</div>
+        <div class="tab" data-tab="runtime" onclick="switchTab('runtime')">实时性能</div>
+        <div class="tab" data-tab="insights" onclick="switchTab('insights')">优化洞察</div>
+      </div>
+
+      <!-- Conversations Tab -->
+      <div id="conversations-tab" class="content">
+        <div class="filter-bar">
+          <input type="date" id="filter-date-from" onchange="loadConversations()" />
+          <input type="date" id="filter-date-to" onchange="loadConversations()" />
+          <button onclick="loadConversations()">🔄 刷新</button>
+        </div>
+        <div id="sessions-list" class="sessions-list">
+          <div class="loading">加载中…</div>
+        </div>
+        <div class="pagination" id="pagination"></div>
+      </div>
+
+      <!-- Stats Tab -->
+      <div id="stats-tab" class="content">
+        <div class="stats-grid" id="stats-grid">
+          <div class="loading">加载中…</div>
+        </div>
+
+        <h3 style="margin-bottom: 14px; font-size: 15px">📉 最近 7 天 未识别短语（优化方向）</h3>
+        <div class="ambiguous-list" id="ambiguous-list" style="margin-bottom: 32px">
+          <div class="loading">加载中…</div>
+        </div>
+
+        <h3 style="margin-bottom: 14px; font-size: 15px">🏠 活跃用户（最近 7 天）</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>用户名</th>
+                <th>对话次数</th>
+                <th>最近活跃</th>
+              </tr>
+            </thead>
+            <tbody id="households-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- User Analytics Tab -->
+      <div id="user-analytics-tab" class="content" style="display: none">
+        <div class="insight-intro">
+          <div>
+            <div class="eyebrow">USER ANALYTICS · BETA DASHBOARD</div>
+            <h2>内测用户分析与使用时长追踪</h2>
+            <p>
+              追踪内测用户的具体账号信息、登录成员、累计使用时长、单次会话时长分布及活跃天数，帮助深入分析用户黏性与留存。
+            </p>
+          </div>
+          <div class="insight-scope">
+            <label for="analytics-days">范围</label>
+            <select id="analytics-days" onchange="loadUserAnalytics()">
+              <option value="7">近 7 天</option>
+              <option value="30" selected>近 30 天</option>
+              <option value="90">近 90 天</option>
+            </select>
+            <button onclick="loadUserAnalytics()">🔄 刷新数据</button>
+          </div>
+        </div>
+
+        <div class="stats-grid" id="analytics-stats-grid">
+          <div class="loading">正在加载统计数据…</div>
+        </div>
+
+        <h3 style="margin-bottom: 14px; font-size: 15px">⏱️ 单次会话连贯时长分布</h3>
+        <div
+          id="duration-distribution-bar"
+          style="
+            margin-bottom: 28px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 18px 22px;
+          "
+        >
+          <div class="loading">加载中…</div>
+        </div>
+
+        <h3 style="margin-bottom: 14px; font-size: 15px">👥 内测用户与家庭明细</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>家庭/用户名</th>
+                <th>账号/成员信息</th>
+                <th style="width: 120px">注册时间</th>
+                <th style="width: 120px">累计使用时长</th>
+                <th style="width: 90px">会话数</th>
+                <th style="width: 90px">活跃天数</th>
+                <th style="width: 130px">最近活跃</th>
+                <th style="width: 100px">操作</th>
+              </tr>
+            </thead>
+            <tbody id="user-analytics-body">
+              <tr>
+                <td colspan="8" class="loading">加载中…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Beta Feedbacks Tab -->
+      <div id="feedbacks-tab" class="content" style="display: none">
+        <div class="insight-intro">
+          <div>
+            <div class="eyebrow">BETA FEEDBACK · USER VOICE</div>
+            <h2>用户内测反馈与建议汇总</h2>
+            <p>
+              查看用户从首页“💬内测反馈”入口提交的功能建议、缺陷问题及使用感受，支持状态标记与类型筛选。
+            </p>
+          </div>
+          <div class="insight-scope">
+            <button onclick="loadFeedbacks()">🔄 刷新数据</button>
+          </div>
+        </div>
+
+        <div class="stats-grid" id="feedback-stats-grid">
+          <div class="loading">正在加载统计…</div>
+        </div>
+
+        <div class="filter-bar">
+          <select id="filter-feedback-category" onchange="loadFeedbacks()">
+            <option value="">全部类型</option>
+            <option value="SUGGESTION">💡 功能建议</option>
+            <option value="BUG">🐛 问题反馈</option>
+            <option value="EXPERIENCE">✨ 体验感受</option>
+            <option value="OTHER">💬 其他</option>
+          </select>
+          <select id="filter-feedback-status" onchange="loadFeedbacks()">
+            <option value="">全部状态</option>
+            <option value="OPEN">⏳ 待处理</option>
+            <option value="RESOLVED">✅ 已解决</option>
+          </select>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 100px">类型</th>
+                <th style="width: 110px">评分</th>
+                <th>反馈内容</th>
+                <th style="width: 140px">联系方式</th>
+                <th style="width: 140px">提交时间</th>
+                <th style="width: 100px">状态</th>
+                <th style="width: 100px">操作</th>
+              </tr>
+            </thead>
+            <tbody id="feedbacks-body">
+              <tr>
+                <td colspan="7" class="loading">加载中…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Runtime performance Tab -->
+      <div id="runtime-tab" class="content" style="display: none">
+        <div class="insight-intro">
+          <div>
+            <div class="eyebrow">RUNTIME · NO USER CONTENT</div>
+            <h2>实时语音性能</h2>
+            <p>
+              只展示当前语音服务进程的连接数、错误数与耗时聚合，不保存音频、文本或身份信息。部署重启后统计会重新开始。
+            </p>
+          </div>
+          <div class="insight-scope"><button onclick="loadRuntimeMetrics()">刷新数据</button></div>
+        </div>
+        <div class="stats-grid" id="runtime-metrics">
+          <div class="loading">正在加载性能数据…</div>
+        </div>
+        <div id="runtime-detail" class="insight-summary"></div>
+      </div>
+
+      <!-- Product insight Tab -->
+      <div id="insights-tab" class="content">
+        <div class="insight-intro">
+          <div>
+            <div class="eyebrow">PRODUCT REVIEW · READ ONLY</div>
+            <h2>从真实对话中找到下一步</h2>
+            <p>
+              将任务状态、转写与对话轮次整理为可验证的产品问题。每项建议都保留证据和验收标准，便于进入需求评审，而不会直接更改任何用户数据。
+            </p>
+          </div>
+          <div class="insight-scope">
+            <label for="insight-days">样本范围</label>
+            <select id="insight-days" onchange="loadInsights()">
+              <option value="7">近 7 天</option>
+              <option value="30" selected>近 30 天</option>
+              <option value="90">近 90 天</option>
+            </select>
+            <button onclick="loadInsights()">生成复盘</button>
+          </div>
+        </div>
+        <div class="stats-grid" id="insight-metrics">
+          <div class="loading">正在整理对话证据…</div>
+        </div>
+        <div id="insight-summary" class="insight-summary"><div class="loading">正在加载…</div></div>
+        <div id="insights-list" class="insights-list"></div>
+        <div id="insight-limitations"></div>
       </div>
     </div>
 
-    <div class="stats-grid" id="analytics-stats-grid">
-      <div class="loading">正在加载统计数据…</div>
-    </div>
-
-    <h3 style="margin-bottom:14px;font-size:15px;">⏱️ 单次会话连贯时长分布</h3>
-    <div id="duration-distribution-bar" style="margin-bottom:28px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 22px;">
-      <div class="loading">加载中…</div>
-    </div>
-
-    <h3 style="margin-bottom:14px;font-size:15px;">👥 内测用户与家庭明细</h3>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>家庭/用户名</th>
-            <th>账号/成员信息</th>
-            <th style="width:120px;">注册时间</th>
-            <th style="width:120px;">累计使用时长</th>
-            <th style="width:90px;">会话数</th>
-            <th style="width:90px;">活跃天数</th>
-            <th style="width:130px;">最近活跃</th>
-            <th style="width:100px;">操作</th>
-          </tr>
-        </thead>
-        <tbody id="user-analytics-body">
-          <tr><td colspan="8" class="loading">加载中…</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Beta Feedbacks Tab -->
-  <div id="feedbacks-tab" class="content" style="display:none">
-    <div class="insight-intro">
-      <div>
-        <div class="eyebrow">BETA FEEDBACK · USER VOICE</div>
-        <h2>用户内测反馈与建议汇总</h2>
-        <p>查看用户从首页“💬内测反馈”入口提交的功能建议、缺陷问题及使用感受，支持状态标记与类型筛选。</p>
-      </div>
-      <div class="insight-scope">
-        <button onclick="loadFeedbacks()">🔄 刷新数据</button>
+    <!-- User Detail Modal Overlay -->
+    <div id="user-detail-modal-overlay" class="modal-overlay">
+      <div class="modal" style="max-width: 780px">
+        <div class="modal-header">
+          <div class="modal-title" id="user-modal-title">用户详细画像与历史履历</div>
+          <button class="modal-close" onclick="closeUserDetailModal()">✕</button>
+        </div>
+        <div id="user-modal-content">
+          <div class="loading">加载用户详情…</div>
+        </div>
       </div>
     </div>
 
-    <div class="stats-grid" id="feedback-stats-grid">
-      <div class="loading">正在加载统计…</div>
-    </div>
+    <script>
+      // 管理端只通过当前线上域名访问 API，避免浏览器误连本机 :3001。
+      // admin.html 是实现文件；正式入口始终为 https://busybeeenglish.site/admin。
+      const API_BASE = `${window.location.origin}/api/v1`;
+      let adminToken = '';
+      let currentOffset = 0;
+      const PAGE_SIZE = 30;
+      let totalCount = 0;
 
-    <div class="filter-bar">
-      <select id="filter-feedback-category" onchange="loadFeedbacks()">
-        <option value="">全部类型</option>
-        <option value="SUGGESTION">💡 功能建议</option>
-        <option value="BUG">🐛 问题反馈</option>
-        <option value="EXPERIENCE">✨ 体验感受</option>
-        <option value="OTHER">💬 其他</option>
-      </select>
-      <select id="filter-feedback-status" onchange="loadFeedbacks()">
-        <option value="">全部状态</option>
-        <option value="OPEN">⏳ 待处理</option>
-        <option value="RESOLVED">✅ 已解决</option>
-      </select>
-    </div>
+      function login() {
+        const t = document.getElementById('token-input').value.trim();
+        if (!t) return;
+        adminToken = t;
+        fetch(`${API_BASE}/admin/stats`, { headers: { 'x-admin-token': t } })
+          .then((r) => {
+            if (r.status === 403) throw new Error('forbidden');
+            return r.json();
+          })
+          .then(() => {
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('app').style.display = 'flex';
+            loadConversations();
+          })
+          .catch(() => {
+            document.getElementById('login-error').style.display = 'block';
+          });
+      }
 
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th style="width:100px;">类型</th>
-            <th style="width:110px;">评分</th>
-            <th>反馈内容</th>
-            <th style="width:140px;">联系方式</th>
-            <th style="width:140px;">提交时间</th>
-            <th style="width:100px;">状态</th>
-            <th style="width:100px;">操作</th>
-          </tr>
-        </thead>
-        <tbody id="feedbacks-body">
-          <tr><td colspan="7" class="loading">加载中…</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
+      function logout() {
+        adminToken = '';
+        document.getElementById('login-screen').style.display = 'flex';
+        document.getElementById('app').style.display = 'none';
+        document.getElementById('token-input').value = '';
+        document.getElementById('login-error').style.display = 'none';
+      }
 
-  <!-- Runtime performance Tab -->
-  <div id="runtime-tab" class="content" style="display:none">
-    <div class="insight-intro">
-      <div>
-        <div class="eyebrow">RUNTIME · NO USER CONTENT</div>
-        <h2>实时语音性能</h2>
-        <p>只展示当前语音服务进程的连接数、错误数与耗时聚合，不保存音频、文本或身份信息。部署重启后统计会重新开始。</p>
-      </div>
-      <div class="insight-scope"><button onclick="loadRuntimeMetrics()">刷新数据</button></div>
-    </div>
-    <div class="stats-grid" id="runtime-metrics"><div class="loading">正在加载性能数据…</div></div>
-    <div id="runtime-detail" class="insight-summary"></div>
-  </div>
+      function switchTab(name) {
+        document
+          .querySelectorAll('.tab')
+          .forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
+        document.getElementById('conversations-tab').style.display =
+          name === 'conversations' ? 'block' : 'none';
+        document.getElementById('stats-tab').style.display = name === 'stats' ? 'block' : 'none';
+        document.getElementById('user-analytics-tab').style.display =
+          name === 'user-analytics' ? 'block' : 'none';
+        document.getElementById('feedbacks-tab').style.display =
+          name === 'feedbacks' ? 'block' : 'none';
+        document.getElementById('runtime-tab').style.display =
+          name === 'runtime' ? 'block' : 'none';
+        document.getElementById('insights-tab').style.display =
+          name === 'insights' ? 'block' : 'none';
+        if (name === 'stats') loadStats();
+        if (name === 'user-analytics') loadUserAnalytics();
+        if (name === 'feedbacks') loadFeedbacks();
+        if (name === 'runtime') loadRuntimeMetrics();
+        if (name === 'insights') loadInsights();
+      }
 
-  <!-- Product insight Tab -->
-  <div id="insights-tab" class="content">
-    <div class="insight-intro">
-      <div>
-        <div class="eyebrow">PRODUCT REVIEW · READ ONLY</div>
-        <h2>从真实对话中找到下一步</h2>
-        <p>将任务状态、转写与对话轮次整理为可验证的产品问题。每项建议都保留证据和验收标准，便于进入需求评审，而不会直接更改任何用户数据。</p>
-      </div>
-      <div class="insight-scope">
-        <label for="insight-days">样本范围</label>
-        <select id="insight-days" onchange="loadInsights()"><option value="7">近 7 天</option><option value="30" selected>近 30 天</option><option value="90">近 90 天</option></select>
-        <button onclick="loadInsights()">生成复盘</button>
-      </div>
-    </div>
-    <div class="stats-grid" id="insight-metrics"><div class="loading">正在整理对话证据…</div></div>
-    <div id="insight-summary" class="insight-summary"><div class="loading">正在加载…</div></div>
-    <div id="insights-list" class="insights-list"></div>
-    <div id="insight-limitations"></div>
-  </div>
-</div>
+      function formatMs(value) {
+        return Number.isFinite(value) ? `${Math.round(value)} ms` : '暂无样本';
+      }
 
-<!-- User Detail Modal Overlay -->
-<div id="user-detail-modal-overlay" class="modal-overlay">
-  <div class="modal" style="max-width:780px;">
-    <div class="modal-header">
-      <div class="modal-title" id="user-modal-title">用户详细画像与历史履历</div>
-      <button class="modal-close" onclick="closeUserDetailModal()">✕</button>
-    </div>
-    <div id="user-modal-content">
-      <div class="loading">加载用户详情…</div>
-    </div>
-  </div>
-</div>
+      function loadRuntimeMetrics() {
+        const box = document.getElementById('runtime-metrics');
+        box.innerHTML = '<div class="loading">正在加载性能数据…</div>';
+        fetch(`${window.location.origin}/speech/metrics`, {
+          headers: { 'x-admin-token': adminToken },
+          cache: 'no-store',
+        })
+          .then((r) => {
+            if (!r.ok) throw new Error('failed');
+            return r.json();
+          })
+          .then((data) => {
+            const latency = data.latency_ms || {};
+            const firstAudio = latency.turn_to_first_audio_ms || {};
+            const transcript = latency.turn_to_transcript_ms || {};
+            const upstream = latency.upstream_ready_ms || {};
+            const cards = [
+              [
+                '当前语音连接',
+                String(data.connections?.active ?? 0),
+                `累计打开 ${data.connections?.opened_total ?? 0} 次`,
+              ],
+              ['已提交语音轮次', String(data.turns_committed_total ?? 0), '自本次服务启动以来'],
+              [
+                '说完到首段语音 P50',
+                formatMs(firstAudio.p50_ms),
+                `P95 ${formatMs(firstAudio.p95_ms)} · ${firstAudio.count ?? 0} 个样本`,
+              ],
+              [
+                '说完到转写 P50',
+                formatMs(transcript.p50_ms),
+                `P95 ${formatMs(transcript.p95_ms)} · ${transcript.count ?? 0} 个样本`,
+              ],
+              [
+                'MiniMax 连接就绪 P50',
+                formatMs(upstream.p50_ms),
+                `P95 ${formatMs(upstream.p95_ms)} · ${upstream.count ?? 0} 个样本`,
+              ],
+              [
+                '上游连接异常',
+                String(data.upstream?.failed_total ?? 0),
+                `成功建立 ${data.upstream?.ready_total ?? 0} 次`,
+              ],
+            ];
+            box.innerHTML = cards
+              .map(
+                ([label, value, description], index) =>
+                  `<div class="stat-card ${index === 2 ? 'accent' : index === 5 && Number(data.upstream?.failed_total) ? 'danger' : ''}"><div class="label">${label}</div><div class="value">${value}</div><div style="margin-top:7px;color:var(--muted);font-size:12px;line-height:1.45">${description}</div></div>`,
+              )
+              .join('');
+            document.getElementById('runtime-detail').innerHTML =
+              `<h3>统计口径</h3><p>${escHtml(data.retention || '')}<br>服务已运行 ${Math.floor(Number(data.uptime_seconds || 0) / 60)} 分钟；生成时间：${fmtTime(data.generated_at)}。</p>`;
+          })
+          .catch(() => {
+            box.innerHTML =
+              '<div class="error-msg">性能数据加载失败。请确认管理员令牌与语音服务状态。</div>';
+            document.getElementById('runtime-detail').innerHTML = '';
+          });
+      }
 
+      function fmtTime(iso) {
+        const d = new Date(iso);
+        return d.toLocaleString('zh-CN', {
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        });
+      }
 
+      function fmtDuration(startIso, endIso) {
+        const ms = new Date(endIso) - new Date(startIso);
+        if (ms < 60000) return `${Math.round(ms / 1000)} 秒`;
+        return `${Math.round(ms / 60000)} 分钟`;
+      }
 
-<script>
-// 管理端只通过当前线上域名访问 API，避免浏览器误连本机 :3001。
-// admin.html 是实现文件；正式入口始终为 https://busybeeenglish.site/admin。
-const API_BASE = `${window.location.origin}/api/v1`;
-let adminToken = '';
-let currentOffset = 0;
-const PAGE_SIZE = 30;
-let totalCount = 0;
+      function loadConversations(offset = 0) {
+        currentOffset = offset;
+        const dateFrom = document.getElementById('filter-date-from').value;
+        const dateTo = document.getElementById('filter-date-to').value;
 
-function login() {
-  const t = document.getElementById('token-input').value.trim();
-  if (!t) return;
-  adminToken = t;
-  fetch(`${API_BASE}/admin/stats`, { headers: { 'x-admin-token': t } })
-    .then(r => { if (r.status === 403) throw new Error('forbidden'); return r.json(); })
-    .then(() => {
-      document.getElementById('login-screen').style.display = 'none';
-      document.getElementById('app').style.display = 'flex';
-      loadConversations();
-    })
-    .catch(() => { document.getElementById('login-error').style.display = 'block'; });
-}
+        let url = `${API_BASE}/admin/conversations?limit=${PAGE_SIZE}&offset=${offset}`;
+        if (dateFrom) url += `&date_from=${dateFrom}T00:00:00Z`;
+        if (dateTo) url += `&date_to=${dateTo}T23:59:59Z`;
 
-function logout() {
-  adminToken = '';
-  document.getElementById('login-screen').style.display = 'flex';
-  document.getElementById('app').style.display = 'none';
-  document.getElementById('token-input').value = '';
-  document.getElementById('login-error').style.display = 'none';
-}
+        document.getElementById('sessions-list').innerHTML = '<div class="loading">加载中…</div>';
+        document.getElementById('pagination').innerHTML = '';
 
-function switchTab(name) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-  document.getElementById('conversations-tab').style.display = name === 'conversations' ? 'block' : 'none';
-  document.getElementById('stats-tab').style.display = name === 'stats' ? 'block' : 'none';
-  document.getElementById('user-analytics-tab').style.display = name === 'user-analytics' ? 'block' : 'none';
-  document.getElementById('feedbacks-tab').style.display = name === 'feedbacks' ? 'block' : 'none';
-  document.getElementById('runtime-tab').style.display = name === 'runtime' ? 'block' : 'none';
-  document.getElementById('insights-tab').style.display = name === 'insights' ? 'block' : 'none';
-  if (name === 'stats') loadStats();
-  if (name === 'user-analytics') loadUserAnalytics();
-  if (name === 'feedbacks') loadFeedbacks();
-  if (name === 'runtime') loadRuntimeMetrics();
-  if (name === 'insights') loadInsights();
-}
+        fetch(url, { headers: { 'x-admin-token': adminToken } })
+          .then((r) => r.json())
+          .then((data) => {
+            totalCount = data.total;
+            renderSessions(data.sessions);
+            renderPagination();
+          })
+          .catch(() => {
+            document.getElementById('sessions-list').innerHTML =
+              '<div class="error-msg">加载失败，请刷新重试</div>';
+          });
+      }
 
-function formatMs(value) {
-  return Number.isFinite(value) ? `${Math.round(value)} ms` : '暂无样本';
-}
-
-function loadRuntimeMetrics() {
-  const box = document.getElementById('runtime-metrics');
-  box.innerHTML = '<div class="loading">正在加载性能数据…</div>';
-  fetch(`${window.location.origin}/speech/metrics`, { headers: { 'x-admin-token': adminToken }, cache: 'no-store' })
-    .then(r => { if (!r.ok) throw new Error('failed'); return r.json(); })
-    .then(data => {
-      const latency = data.latency_ms || {};
-      const firstAudio = latency.turn_to_first_audio_ms || {};
-      const transcript = latency.turn_to_transcript_ms || {};
-      const upstream = latency.upstream_ready_ms || {};
-      const cards = [
-        ['当前语音连接', String(data.connections?.active ?? 0), `累计打开 ${data.connections?.opened_total ?? 0} 次`],
-        ['已提交语音轮次', String(data.turns_committed_total ?? 0), '自本次服务启动以来'],
-        ['说完到首段语音 P50', formatMs(firstAudio.p50_ms), `P95 ${formatMs(firstAudio.p95_ms)} · ${firstAudio.count ?? 0} 个样本`],
-        ['说完到转写 P50', formatMs(transcript.p50_ms), `P95 ${formatMs(transcript.p95_ms)} · ${transcript.count ?? 0} 个样本`],
-        ['MiniMax 连接就绪 P50', formatMs(upstream.p50_ms), `P95 ${formatMs(upstream.p95_ms)} · ${upstream.count ?? 0} 个样本`],
-        ['上游连接异常', String(data.upstream?.failed_total ?? 0), `成功建立 ${data.upstream?.ready_total ?? 0} 次`],
-      ];
-      box.innerHTML = cards.map(([label, value, description], index) => `<div class="stat-card ${index === 2 ? 'accent' : index === 5 && Number(data.upstream?.failed_total) ? 'danger' : ''}"><div class="label">${label}</div><div class="value">${value}</div><div style="margin-top:7px;color:var(--muted);font-size:12px;line-height:1.45">${description}</div></div>`).join('');
-      document.getElementById('runtime-detail').innerHTML = `<h3>统计口径</h3><p>${escHtml(data.retention || '')}<br>服务已运行 ${Math.floor(Number(data.uptime_seconds || 0) / 60)} 分钟；生成时间：${fmtTime(data.generated_at)}。</p>`;
-    })
-    .catch(() => {
-      box.innerHTML = '<div class="error-msg">性能数据加载失败。请确认管理员令牌与语音服务状态。</div>';
-      document.getElementById('runtime-detail').innerHTML = '';
-    });
-}
-
-function fmtTime(iso) {
-  const d = new Date(iso);
-  return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
-
-function fmtDuration(startIso, endIso) {
-  const ms = new Date(endIso) - new Date(startIso);
-  if (ms < 60000) return `${Math.round(ms/1000)} 秒`;
-  return `${Math.round(ms/60000)} 分钟`;
-}
-
-function loadConversations(offset = 0) {
-  currentOffset = offset;
-  const dateFrom = document.getElementById('filter-date-from').value;
-  const dateTo = document.getElementById('filter-date-to').value;
-
-  let url = `${API_BASE}/admin/conversations?limit=${PAGE_SIZE}&offset=${offset}`;
-  if (dateFrom) url += `&date_from=${dateFrom}T00:00:00Z`;
-  if (dateTo) url += `&date_to=${dateTo}T23:59:59Z`;
-
-  document.getElementById('sessions-list').innerHTML = '<div class="loading">加载中…</div>';
-  document.getElementById('pagination').innerHTML = '';
-
-  fetch(url, { headers: { 'x-admin-token': adminToken } })
-    .then(r => r.json())
-    .then(data => {
-      totalCount = data.total;
-      renderSessions(data.sessions);
-      renderPagination();
-    })
-    .catch(() => {
-      document.getElementById('sessions-list').innerHTML = '<div class="error-msg">加载失败，请刷新重试</div>';
-    });
-}
-
-function renderSessions(sessions) {
-  const container = document.getElementById('sessions-list');
-  if (!sessions || !sessions.length) {
-    container.innerHTML = '<div class="loading" style="color:var(--muted)">暂无对话记录</div>';
-    return;
-  }
-  container.innerHTML = sessions.map((s, idx) => {
-    const statusIcon = s.has_ambiguous ? '🔴' : s.has_failure ? '🟡' : '✅';
-    const durationStr = s.started_at !== s.ended_at ? ` · ${fmtDuration(s.started_at, s.ended_at)}` : '';
-    const turns = s.turns || [];
-    return `
+      function renderSessions(sessions) {
+        const container = document.getElementById('sessions-list');
+        if (!sessions || !sessions.length) {
+          container.innerHTML =
+            '<div class="loading" style="color:var(--muted)">暂无对话记录</div>';
+          return;
+        }
+        container.innerHTML = sessions
+          .map((s, idx) => {
+            const statusIcon = s.has_ambiguous ? '🔴' : s.has_failure ? '🟡' : '✅';
+            const durationStr =
+              s.started_at !== s.ended_at ? ` · ${fmtDuration(s.started_at, s.ended_at)}` : '';
+            const turns = s.turns || [];
+            return `
     <div class="session-card">
       <div class="session-header" onclick="toggleSession(this)">
         <div class="session-meta">
@@ -781,49 +1237,63 @@ function renderSessions(sessions) {
       </div>
       <div class="session-body">
         <div class="dialogue-thread">
-          ${turns.length ? turns.map(t => `
+          ${
+            turns.length
+              ? turns
+                  .map(
+                    (t) => `
             <div class="turn ${t.role}">
               <div>
                 <div class="bubble">${escHtml(t.text)}</div>
                 <div class="turn-time">${fmtTime(t.at)}</div>
               </div>
             </div>
-          `).join('') : '<div style="color:var(--muted);font-size:14px;padding:8px 0">此会话无对话记录</div>'}
+          `,
+                  )
+                  .join('')
+              : '<div style="color:var(--muted);font-size:14px;padding:8px 0">此会话无对话记录</div>'
+          }
         </div>
       </div>
     </div>`;
-  }).join('');
-}
+          })
+          .join('');
+      }
 
-function escHtml(str) {
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
+      function escHtml(str) {
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
 
-function toggleSession(header) {
-  const body = header.nextElementSibling;
-  const toggle = header.querySelector('.session-toggle');
-  body.classList.toggle('open');
-  toggle.classList.toggle('open');
-}
+      function toggleSession(header) {
+        const body = header.nextElementSibling;
+        const toggle = header.querySelector('.session-toggle');
+        body.classList.toggle('open');
+        toggle.classList.toggle('open');
+      }
 
-function renderPagination() {
-  const pg = document.getElementById('pagination');
-  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
-  const currentPage = Math.floor(currentOffset / PAGE_SIZE) + 1;
-  pg.innerHTML = `
+      function renderPagination() {
+        const pg = document.getElementById('pagination');
+        const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+        const currentPage = Math.floor(currentOffset / PAGE_SIZE) + 1;
+        pg.innerHTML = `
     <button onclick="loadConversations(${currentOffset - PAGE_SIZE})" ${currentOffset === 0 ? 'disabled' : ''}>← 上一页</button>
     <span>第 ${currentPage} / ${totalPages || 1} 页（共 ${totalCount} 段会话）</span>
     <button onclick="loadConversations(${currentOffset + PAGE_SIZE})" ${currentOffset + PAGE_SIZE >= totalCount ? 'disabled' : ''}>下一页 →</button>
   `;
-}
+      }
 
-function loadStats() {
-  fetch(`${API_BASE}/admin/stats`, { headers: { 'x-admin-token': adminToken } })
-    .then(r => r.json())
-    .then(data => {
-      const s = data.summary || {};
-      const successRate = s.total_jobs > 0 ? ((s.completed / s.total_jobs) * 100).toFixed(1) : '0.0';
-      document.getElementById('stats-grid').innerHTML = `
+      function loadStats() {
+        fetch(`${API_BASE}/admin/stats`, { headers: { 'x-admin-token': adminToken } })
+          .then((r) => r.json())
+          .then((data) => {
+            const s = data.summary || {};
+            const successRate =
+              s.total_jobs > 0 ? ((s.completed / s.total_jobs) * 100).toFixed(1) : '0.0';
+            document.getElementById('stats-grid').innerHTML = `
         <div class="stat-card green"><div class="label">已注册家庭数</div><div class="value">${s.total_registered_households || 0}</div></div>
         <div class="stat-card green"><div class="label">已注册成员账号</div><div class="value">${s.total_registered_users || s.total_registered_members || 0}</div></div>
         <div class="stat-card accent"><div class="label">总对话次数 (30天)</div><div class="value">${s.total_jobs || 0}</div></div>
@@ -832,76 +1302,104 @@ function loadStats() {
         <div class="stat-card warn"><div class="label">平均对话轮次</div><div class="value">${s.avg_turns || 0}</div></div>
       `;
 
-      document.getElementById('ambiguous-list').innerHTML = data.top_ambiguous_phrases && data.top_ambiguous_phrases.length
-        ? data.top_ambiguous_phrases.map(p => `
+            document.getElementById('ambiguous-list').innerHTML =
+              data.top_ambiguous_phrases && data.top_ambiguous_phrases.length
+                ? data.top_ambiguous_phrases
+                    .map(
+                      (p) => `
           <div class="ambiguous-item">
             <div class="phrase">"${p.transcript_raw}"</div>
             <div class="count">${p.cnt} 次</div>
           </div>
-        `).join('')
-        : '<div style="color:var(--muted);padding:16px;">暂无未识别短语，表现良好 🎉</div>';
+        `,
+                    )
+                    .join('')
+                : '<div style="color:var(--muted);padding:16px;">暂无未识别短语，表现良好 🎉</div>';
 
-      document.getElementById('households-body').innerHTML = data.active_households && data.active_households.length
-        ? data.active_households.map(h => `
+            document.getElementById('households-body').innerHTML =
+              data.active_households && data.active_households.length
+                ? data.active_households
+                    .map(
+                      (h) => `
           <tr>
             <td>${escHtml(h.display_name || h.household_name || '未命名')}</td>
             <td>${h.job_count} 次</td>
             <td style="color:var(--muted)">${fmtTime(h.last_active)}</td>
           </tr>
-        `).join('')
-        : '<tr><td colspan="3" style="text-align:center;padding:16px;color:var(--muted)">暂无注册用户记录</td></tr>';
-    });
-}
+        `,
+                    )
+                    .join('')
+                : '<tr><td colspan="3" style="text-align:center;padding:16px;color:var(--muted)">暂无注册用户记录</td></tr>';
+          });
+      }
 
-function renderInsightMetric(metric, tone) {
-  return `<div class="stat-card ${tone || ''}"><div class="label">${escHtml(metric.label)}</div><div class="value">${escHtml(metric.value)}</div><div style="margin-top:7px;color:var(--muted);font-size:12px;line-height:1.45">${escHtml(metric.description)}</div></div>`;
-}
+      function renderInsightMetric(metric, tone) {
+        return `<div class="stat-card ${tone || ''}"><div class="label">${escHtml(metric.label)}</div><div class="value">${escHtml(metric.value)}</div><div style="margin-top:7px;color:var(--muted);font-size:12px;line-height:1.45">${escHtml(metric.description)}</div></div>`;
+      }
 
-function loadInsights() {
-  const days = document.getElementById('insight-days').value;
-  document.getElementById('insight-metrics').innerHTML = '<div class="loading">正在整理对话证据…</div>';
-  document.getElementById('insight-summary').innerHTML = '<div class="loading">正在加载…</div>';
-  document.getElementById('insights-list').innerHTML = '';
-  fetch(`${API_BASE}/admin/product-insights?days=${encodeURIComponent(days)}`, { headers: { 'x-admin-token': adminToken } })
-    .then(r => { if (!r.ok) throw new Error('failed'); return r.json(); })
-    .then(data => {
-      const tones = ['accent', 'danger', 'warn', 'green'];
-      document.getElementById('insight-metrics').innerHTML = data.metrics.map((metric, index) => renderInsightMetric(metric, tones[index])).join('');
-      document.getElementById('insight-summary').innerHTML = `<h3>${escHtml(data.summary.headline)}</h3><p>${escHtml(data.summary.detail)}</p><p style="margin-top:7px;font-size:12px">${escHtml(data.method.name)} · ${escHtml(data.method.description)} · 生成于 ${fmtTime(data.generated_at)}</p>`;
-      document.getElementById('insights-list').innerHTML = data.insights.length ? data.insights.map(insight => `
+      function loadInsights() {
+        const days = document.getElementById('insight-days').value;
+        document.getElementById('insight-metrics').innerHTML =
+          '<div class="loading">正在整理对话证据…</div>';
+        document.getElementById('insight-summary').innerHTML =
+          '<div class="loading">正在加载…</div>';
+        document.getElementById('insights-list').innerHTML = '';
+        fetch(`${API_BASE}/admin/product-insights?days=${encodeURIComponent(days)}`, {
+          headers: { 'x-admin-token': adminToken },
+        })
+          .then((r) => {
+            if (!r.ok) throw new Error('failed');
+            return r.json();
+          })
+          .then((data) => {
+            const tones = ['accent', 'danger', 'warn', 'green'];
+            document.getElementById('insight-metrics').innerHTML = data.metrics
+              .map((metric, index) => renderInsightMetric(metric, tones[index]))
+              .join('');
+            document.getElementById('insight-summary').innerHTML =
+              `<h3>${escHtml(data.summary.headline)}</h3><p>${escHtml(data.summary.detail)}</p><p style="margin-top:7px;font-size:12px">${escHtml(data.method.name)} · ${escHtml(data.method.description)} · 生成于 ${fmtTime(data.generated_at)}</p>`;
+            document.getElementById('insights-list').innerHTML = data.insights.length
+              ? data.insights
+                  .map(
+                    (insight) => `
         <article class="insight-card">
           <div class="insight-card-head"><div><div class="insight-area">${escHtml(insight.area)} · 置信度 ${escHtml(insight.confidence === 'HIGH' ? '高' : '中')}</div><h3>${escHtml(insight.title)}</h3></div><span class="insight-chip ${String(insight.severity).toLowerCase()}">${insight.severity === 'HIGH' ? '优先处理' : insight.severity === 'MEDIUM' ? '建议跟进' : '持续观察'}</span></div>
           <p class="insight-finding">${escHtml(insight.finding)}</p>
           <div class="insight-detail-grid">
-            <div class="insight-panel"><h4>对话证据</h4><ul>${insight.evidence.map(item => `<li>${escHtml(item)}</li>`).join('')}</ul></div>
+            <div class="insight-panel"><h4>对话证据</h4><ul>${insight.evidence.map((item) => `<li>${escHtml(item)}</li>`).join('')}</ul></div>
             <div class="insight-panel"><h4>优化建议</h4><p>${escHtml(insight.recommendation)}</p></div>
           </div>
-          <div class="insight-panel" style="margin-top:14px"><h4>进入开发前的验收标准</h4><ul>${insight.acceptance_criteria.map(item => `<li>${escHtml(item)}</li>`).join('')}</ul></div>
-        </article>`).join('') : '<div class="loading" style="padding:28px">当前范围内没有足够的异常信号。请继续积累真实对话后再复盘。</div>';
-      document.getElementById('insight-limitations').innerHTML = `<div class="insight-limitations"><strong>使用边界</strong>${data.limitations.map(item => `· ${escHtml(item)}`).join('<br>')}</div>`;
-    })
-    .catch(() => {
-      document.getElementById('insight-metrics').innerHTML = '<div class="error-msg">优化洞察加载失败，请确认管理员令牌后重试</div>';
-      document.getElementById('insight-summary').innerHTML = '';
-    });
-}
+          <div class="insight-panel" style="margin-top:14px"><h4>进入开发前的验收标准</h4><ul>${insight.acceptance_criteria.map((item) => `<li>${escHtml(item)}</li>`).join('')}</ul></div>
+        </article>`,
+                  )
+                  .join('')
+              : '<div class="loading" style="padding:28px">当前范围内没有足够的异常信号。请继续积累真实对话后再复盘。</div>';
+            document.getElementById('insight-limitations').innerHTML =
+              `<div class="insight-limitations"><strong>使用边界</strong>${data.limitations.map((item) => `· ${escHtml(item)}`).join('<br>')}</div>`;
+          })
+          .catch(() => {
+            document.getElementById('insight-metrics').innerHTML =
+              '<div class="error-msg">优化洞察加载失败，请确认管理员令牌后重试</div>';
+            document.getElementById('insight-summary').innerHTML = '';
+          });
+      }
 
-function loadFeedbacks() {
-  const category = document.getElementById('filter-feedback-category').value;
-  const status = document.getElementById('filter-feedback-status').value;
-  let url = `${API_BASE}/admin/feedbacks?limit=100`;
-  if (category) url += `&category=${encodeURIComponent(category)}`;
-  if (status) url += `&status=${encodeURIComponent(status)}`;
+      function loadFeedbacks() {
+        const category = document.getElementById('filter-feedback-category').value;
+        const status = document.getElementById('filter-feedback-status').value;
+        let url = `${API_BASE}/admin/feedbacks?limit=100`;
+        if (category) url += `&category=${encodeURIComponent(category)}`;
+        if (status) url += `&status=${encodeURIComponent(status)}`;
 
-  const grid = document.getElementById('feedback-stats-grid');
-  const tbody = document.getElementById('feedbacks-body');
-  tbody.innerHTML = '<tr><td colspan="7" class="loading">加载中…</td></tr>';
+        const grid = document.getElementById('feedback-stats-grid');
+        const tbody = document.getElementById('feedbacks-body');
+        tbody.innerHTML = '<tr><td colspan="7" class="loading">加载中…</td></tr>';
 
-  fetch(url, { headers: { 'x-admin-token': adminToken } })
-    .then(r => r.json())
-    .then(data => {
-      const s = data.stats || {};
-      grid.innerHTML = `
+        fetch(url, { headers: { 'x-admin-token': adminToken } })
+          .then((r) => r.json())
+          .then((data) => {
+            const s = data.stats || {};
+            grid.innerHTML = `
         <div class="stat-card accent"><div class="label">反馈总数</div><div class="value">${s.total || 0}</div></div>
         <div class="stat-card green"><div class="label">功能建议</div><div class="value">${s.suggestions || 0}</div></div>
         <div class="stat-card danger"><div class="label">Bug 问题</div><div class="value">${s.bugs || 0}</div></div>
@@ -909,19 +1407,22 @@ function loadFeedbacks() {
         <div class="stat-card green"><div class="label">平均评分</div><div class="value">${s.avg_rating ? s.avg_rating + ' ⭐' : '暂无'}</div></div>
       `;
 
-      const catMap = {
-        SUGGESTION: '💡 建议',
-        BUG: '🐛 Bug',
-        EXPERIENCE: '✨ 体验',
-        OTHER: '💬 其他'
-      };
+            const catMap = {
+              SUGGESTION: '💡 建议',
+              BUG: '🐛 Bug',
+              EXPERIENCE: '✨ 体验',
+              OTHER: '💬 其他',
+            };
 
-      if (!data.items || !data.items.length) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">暂无符合条件的反馈记录</td></tr>';
-        return;
-      }
+            if (!data.items || !data.items.length) {
+              tbody.innerHTML =
+                '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">暂无符合条件的反馈记录</td></tr>';
+              return;
+            }
 
-      tbody.innerHTML = data.items.map(item => `
+            tbody.innerHTML = data.items
+              .map(
+                (item) => `
         <tr>
           <td><span class="status-badge ${item.category === 'BUG' ? 'badge-warn' : 'badge-ok'}">${catMap[item.category] || item.category}</span></td>
           <td style="color:${item.rating ? '#fbbf24' : 'var(--muted)'}">${item.rating ? '★'.repeat(item.rating) : '未评分'}</td>
@@ -935,44 +1436,47 @@ function loadFeedbacks() {
             </button>
           </td>
         </tr>
-      `).join('');
-    })
-    .catch(() => {
-      grid.innerHTML = '<div class="error-msg">加载统计失败</div>';
-      tbody.innerHTML = '<tr><td colspan="7" class="error-msg">加载失败，请检查网络与管理员 Token</td></tr>';
-    });
-}
+      `,
+              )
+              .join('');
+          })
+          .catch(() => {
+            grid.innerHTML = '<div class="error-msg">加载统计失败</div>';
+            tbody.innerHTML =
+              '<tr><td colspan="7" class="error-msg">加载失败，请检查网络与管理员 Token</td></tr>';
+          });
+      }
 
-function toggleFeedbackStatus(id, newStatus) {
-  fetch(`${API_BASE}/admin/feedbacks/${id}/status`, {
-    method: 'PATCH',
-    headers: {
-      'x-admin-token': adminToken,
-      'content-type': 'application/json'
-    },
-    body: JSON.stringify({ status: newStatus })
-  })
-    .then(r => r.json())
-    .then(() => loadFeedbacks())
-    .catch(() => alert('状态更新失败'));
-}
+      function toggleFeedbackStatus(id, newStatus) {
+        fetch(`${API_BASE}/admin/feedbacks/${id}/status`, {
+          method: 'PATCH',
+          headers: {
+            'x-admin-token': adminToken,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ status: newStatus }),
+        })
+          .then((r) => r.json())
+          .then(() => loadFeedbacks())
+          .catch(() => alert('状态更新失败'));
+      }
 
-function loadUserAnalytics() {
-  const days = document.getElementById('analytics-days').value;
-  const grid = document.getElementById('analytics-stats-grid');
-  const distBox = document.getElementById('duration-distribution-bar');
-  const tbody = document.getElementById('user-analytics-body');
+      function loadUserAnalytics() {
+        const days = document.getElementById('analytics-days').value;
+        const grid = document.getElementById('analytics-stats-grid');
+        const distBox = document.getElementById('duration-distribution-bar');
+        const tbody = document.getElementById('user-analytics-body');
 
-  grid.innerHTML = '<div class="loading">正在加载统计数据…</div>';
-  tbody.innerHTML = '<tr><td colspan="8" class="loading">加载中…</td></tr>';
+        grid.innerHTML = '<div class="loading">正在加载统计数据…</div>';
+        tbody.innerHTML = '<tr><td colspan="8" class="loading">加载中…</td></tr>';
 
-  fetch(`${API_BASE}/admin/user-analytics?days=${encodeURIComponent(days)}`, {
-    headers: { 'x-admin-token': adminToken }
-  })
-    .then(r => r.json())
-    .then(data => {
-      const s = data.summary || {};
-      grid.innerHTML = `
+        fetch(`${API_BASE}/admin/user-analytics?days=${encodeURIComponent(days)}`, {
+          headers: { 'x-admin-token': adminToken },
+        })
+          .then((r) => r.json())
+          .then((data) => {
+            const s = data.summary || {};
+            grid.innerHTML = `
         <div class="stat-card accent"><div class="label">内测家庭数</div><div class="value">${s.total_households || 0}</div></div>
         <div class="stat-card green"><div class="label">注册成员数</div><div class="value">${s.total_members || 0}</div></div>
         <div class="stat-card accent"><div class="label">累计使用总时长</div><div class="value">${s.total_duration_formatted || '0 分钟'}</div></div>
@@ -980,9 +1484,14 @@ function loadUserAnalytics() {
         <div class="stat-card warn"><div class="label">累计交互会话数</div><div class="value">${s.total_sessions || 0}</div></div>
       `;
 
-      const dist = data.duration_distribution || {};
-      const distTotal = (dist.under_1m || 0) + (dist.m1_5 || 0) + (dist.m5_15 || 0) + (dist.m15_30 || 0) + (dist.over_30m || 0) || 1;
-      distBox.innerHTML = `
+            const dist = data.duration_distribution || {};
+            const distTotal =
+              (dist.under_1m || 0) +
+                (dist.m1_5 || 0) +
+                (dist.m5_15 || 0) +
+                (dist.m15_30 || 0) +
+                (dist.over_30m || 0) || 1;
+            distBox.innerHTML = `
         <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:12px;text-align:center;">
           <div style="background:var(--surface2);padding:10px;border-radius:10px;">
             <div style="font-size:11px;color:var(--muted)">＜ 1 分钟</div>
@@ -1012,17 +1521,25 @@ function loadUserAnalytics() {
         </div>
       `;
 
-      if (!data.users || !data.users.length) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">暂无内测用户数据</td></tr>';
-        return;
-      }
+            if (!data.users || !data.users.length) {
+              tbody.innerHTML =
+                '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">暂无内测用户数据</td></tr>';
+              return;
+            }
 
-      tbody.innerHTML = data.users.map(u => {
-        const membersHtml = u.members && u.members.length
-          ? u.members.map(m => `<div style="font-size:12px;">👤 ${escHtml(m.display_name)}${m.email ? ` <span style="color:var(--muted);font-size:11px;">(${escHtml(m.email)})</span>` : ''}</div>`).join('')
-          : '<div style="color:var(--muted);font-size:12px;">暂无成员详情</div>';
+            tbody.innerHTML = data.users
+              .map((u) => {
+                const membersHtml =
+                  u.members && u.members.length
+                    ? u.members
+                        .map(
+                          (m) =>
+                            `<div style="font-size:12px;">👤 ${escHtml(m.display_name)}${m.email ? ` <span style="color:var(--muted);font-size:11px;">(${escHtml(m.email)})</span>` : ''}</div>`,
+                        )
+                        .join('')
+                    : '<div style="color:var(--muted);font-size:12px;">暂无成员详情</div>';
 
-        return `
+                return `
           <tr>
             <td style="font-weight:600;">${escHtml(u.household_name)}</td>
             <td>${membersHtml}</td>
@@ -1038,76 +1555,103 @@ function loadUserAnalytics() {
             </td>
           </tr>
         `;
-      }).join('');
-    })
-    .catch(() => {
-      grid.innerHTML = '<div class="error-msg">用户分析数据加载失败</div>';
-      tbody.innerHTML = '<tr><td colspan="8" class="error-msg">加载失败，请重试</td></tr>';
-    });
-}
-
-function openUserDetailModal(householdId) {
-  const overlay = document.getElementById('user-detail-modal-overlay');
-  const content = document.getElementById('user-modal-content');
-  overlay.classList.add('open');
-  content.innerHTML = '<div class="loading">正在获取用户画像数据…</div>';
-
-  fetch(`${API_BASE}/admin/households/${householdId}/detail`, {
-    headers: { 'x-admin-token': adminToken }
-  })
-    .then(r => r.json())
-    .then(data => {
-      if (!data.household) {
-        content.innerHTML = '<div class="error-msg">找不到对应用户数据</div>';
-        return;
+              })
+              .join('');
+          })
+          .catch(() => {
+            grid.innerHTML = '<div class="error-msg">用户分析数据加载失败</div>';
+            tbody.innerHTML = '<tr><td colspan="8" class="error-msg">加载失败，请重试</td></tr>';
+          });
       }
 
-      const hh = data.household;
-      const s = data.summary || {};
-      document.getElementById('user-modal-title').innerText = `用户画像 · ${hh.name || '未命名用户'}`;
+      function openUserDetailModal(householdId) {
+        const overlay = document.getElementById('user-detail-modal-overlay');
+        const content = document.getElementById('user-modal-content');
+        overlay.classList.add('open');
+        content.innerHTML = '<div class="loading">正在获取用户画像数据…</div>';
 
-      const membersHtml = hh.members && hh.members.length
-        ? hh.members.map(m => `
+        fetch(`${API_BASE}/admin/households/${householdId}/detail`, {
+          headers: { 'x-admin-token': adminToken },
+        })
+          .then((r) => r.json())
+          .then((data) => {
+            if (!data.household) {
+              content.innerHTML = '<div class="error-msg">找不到对应用户数据</div>';
+              return;
+            }
+
+            const hh = data.household;
+            const s = data.summary || {};
+            document.getElementById('user-modal-title').innerText =
+              `用户画像 · ${hh.name || '未命名用户'}`;
+
+            const membersHtml =
+              hh.members && hh.members.length
+                ? hh.members
+                    .map(
+                      (m) => `
             <div style="background:var(--surface2);border:1px solid var(--border);padding:10px 14px;border-radius:10px;">
               <div style="font-weight:600;font-size:13px;">👤 ${escHtml(m.display_name)} <span style="font-size:11px;color:var(--accent);">${escHtml(m.role || 'MEMBER')}</span></div>
               <div style="color:var(--muted);font-size:12px;margin-top:2px;">${m.email ? `✉️ ${escHtml(m.email)}` : '未绑定邮箱'}</div>
             </div>
-          `).join('')
-        : '<div style="color:var(--muted)">无成员信息</div>';
+          `,
+                    )
+                    .join('')
+                : '<div style="color:var(--muted)">无成员信息</div>';
 
-      const eventsHtml = data.feature_usage && data.feature_usage.length
-        ? data.feature_usage.map(e => `<span style="background:rgba(124,108,250,0.15);color:var(--accent);padding:3px 8px;border-radius:6px;font-size:11px;margin-right:6px;margin-bottom:6px;display:inline-block;">${escHtml(e.event_type)} (${e.count})</span>`).join('')
-        : '<span style="color:var(--muted);font-size:12px;">暂无扩展功能数据</span>';
+            const eventsHtml =
+              data.feature_usage && data.feature_usage.length
+                ? data.feature_usage
+                    .map(
+                      (e) =>
+                        `<span style="background:rgba(124,108,250,0.15);color:var(--accent);padding:3px 8px;border-radius:6px;font-size:11px;margin-right:6px;margin-bottom:6px;display:inline-block;">${escHtml(e.event_type)} (${e.count})</span>`,
+                    )
+                    .join('')
+                : '<span style="color:var(--muted);font-size:12px;">暂无扩展功能数据</span>';
 
-      const feedbackHtml = data.feedbacks && data.feedbacks.length
-        ? data.feedbacks.map(f => `
+            const feedbackHtml =
+              data.feedbacks && data.feedbacks.length
+                ? data.feedbacks
+                    .map(
+                      (f) => `
             <div style="background:var(--surface2);border-left:3px solid var(--accent2);padding:10px 12px;border-radius:6px;margin-bottom:8px;">
               <div style="font-size:12px;font-weight:600;margin-bottom:4px;">${f.category} · ${f.rating ? '★'.repeat(f.rating) : '未评分'}</div>
               <div style="font-size:13px;white-space:pre-wrap;">${escHtml(f.content)}</div>
               <div style="font-size:11px;color:var(--muted);margin-top:4px;">${fmtTime(f.created_at)} · 联系: ${escHtml(f.contact || '无')}</div>
             </div>
-          `).join('')
-        : '<div style="color:var(--muted);font-size:12px;">该用户暂未提交内测反馈</div>';
+          `,
+                    )
+                    .join('')
+                : '<div style="color:var(--muted);font-size:12px;">该用户暂未提交内测反馈</div>';
 
-      const sessionsHtml = data.sessions && data.sessions.length
-        ? data.sessions.map(sess => `
+            const sessionsHtml =
+              data.sessions && data.sessions.length
+                ? data.sessions
+                    .map(
+                      (sess) => `
             <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px;">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
                 <div style="font-size:13px;font-weight:600;">🕒 ${fmtTime(sess.started_at)} 会话 (${sess.job_count} 条指令 / ${sess.total_turns} 轮)</div>
                 <div style="font-size:12px;color:var(--accent2);font-weight:700;">时长 ${sess.duration_minutes} 分钟</div>
               </div>
               <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">
-                ${sess.turns.map(t => `
-                  <div style="font-size:12px;line-height:1.4;color:${t.role==='user'?'var(--accent)':'var(--text)'}">
+                ${sess.turns
+                  .map(
+                    (t) => `
+                  <div style="font-size:12px;line-height:1.4;color:${t.role === 'user' ? 'var(--accent)' : 'var(--text)'}">
                     <strong>${t.role === 'user' ? '用户' : '小知'}:</strong> ${escHtml(t.text)}
                   </div>
-                `).join('')}
+                `,
+                  )
+                  .join('')}
               </div>
             </div>
-          `).join('')
-        : '<div style="color:var(--muted);font-size:12px;">暂无历史会话</div>';
+          `,
+                    )
+                    .join('')
+                : '<div style="color:var(--muted);font-size:12px;">暂无历史会话</div>';
 
-      content.innerHTML = `
+            content.innerHTML = `
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">
           <div class="stat-card accent" style="padding:14px;"><div class="label">累计使用时长</div><div class="value" style="font-size:22px;">${escHtml(s.total_duration_formatted)}</div></div>
           <div class="stat-card green" style="padding:14px;"><div class="label">总会话数</div><div class="value" style="font-size:22px;">${s.total_sessions || 0}</div></div>
@@ -1129,15 +1673,15 @@ function openUserDetailModal(householdId) {
         <h4 style="font-size:14px;margin-bottom:8px;">最近会话交互履历</h4>
         <div>${sessionsHtml}</div>
       `;
-    })
-    .catch(() => {
-      content.innerHTML = '<div class="error-msg">获取用户详情失败</div>';
-    });
-}
+          })
+          .catch(() => {
+            content.innerHTML = '<div class="error-msg">获取用户详情失败</div>';
+          });
+      }
 
-function closeUserDetailModal() {
-  document.getElementById('user-detail-modal-overlay').classList.remove('open');
-}
-</script>
-</body>
+      function closeUserDetailModal() {
+        document.getElementById('user-detail-modal-overlay').classList.remove('open');
+      }
+    </script>
+  </body>
 </html>

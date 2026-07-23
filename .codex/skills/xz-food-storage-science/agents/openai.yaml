@@ -1,4 +1,4 @@
 interface:
-  display_name: "鲜知食材储存科学"
-  short_description: "建立可追溯的食材储存区域、条件、安全与品质校验规则"
-  default_prompt: "Use $xz-food-storage-science to add or review scientifically sourced food storage rules."
+  display_name: '鲜知食材储存科学'
+  short_description: '建立可追溯的食材储存区域、条件、安全与品质校验规则'
+  default_prompt: 'Use $xz-food-storage-science to add or review scientifically sourced food storage rules.'

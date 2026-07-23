@@ -4,9 +4,27 @@ import { buildProductInsights } from './product-insights';
 describe('buildProductInsights', () => {
   it('creates auditable recommendations from failed and ambiguous dialogue evidence', () => {
     const result = buildProductInsights([
-      { status: 'FAILED', error_code: 'AMBIGUOUS_COMMAND', transcript_raw: '明天中午吃猪肉', turn_count: 5, dialogue_turns: [] },
-      { status: 'FAILED', error_code: 'AMBIGUOUS_COMMAND', transcript_raw: '明天中午吃猪肉', turn_count: 4, dialogue_turns: [] },
-      { status: 'COMPLETED', error_code: null, transcript_raw: '查看库存', turn_count: 1, dialogue_turns: [] },
+      {
+        status: 'FAILED',
+        error_code: 'AMBIGUOUS_COMMAND',
+        transcript_raw: '明天中午吃猪肉',
+        turn_count: 5,
+        dialogue_turns: [],
+      },
+      {
+        status: 'FAILED',
+        error_code: 'AMBIGUOUS_COMMAND',
+        transcript_raw: '明天中午吃猪肉',
+        turn_count: 4,
+        dialogue_turns: [],
+      },
+      {
+        status: 'COMPLETED',
+        error_code: null,
+        transcript_raw: '查看库存',
+        turn_count: 1,
+        dialogue_turns: [],
+      },
     ]);
 
     expect(result.summary.headline).toContain('可执行');

@@ -82,7 +82,11 @@ export function isEndConversation(text: string): boolean {
   if (isPhoneticExitText(compact)) return true;
   const courtesy = '(?:谢谢(?:你|啦)?|多谢|辛苦了|麻烦你了|拜拜|再见|晚安|了|吧)*';
 
-  if (/^(?:(?:好(?:的)?)?(?:结束|退出|关闭|停止|取消|拜拜|再见|退下)(?:这段|本次|当前)?(?:对话|对换|兑换|绘话|会话|聊天|谈话|通话|对|聊|会|吧|了|谢谢)*)+$/i.test(compact)) {
+  if (
+    /^(?:(?:好(?:的)?)?(?:结束|退出|关闭|停止|取消|拜拜|再见|退下)(?:这段|本次|当前)?(?:对话|对换|兑换|绘话|会话|聊天|谈话|通话|对|聊|会|吧|了|谢谢)*)+$/i.test(
+      compact,
+    )
+  ) {
     return true;
   }
 
@@ -99,8 +103,13 @@ export function isEndConversation(text: string): boolean {
       `^(?:好(?:的)?|那|嗯|啊)?(?:(?:先)?(?:别|不要|不用)(?:再|继续)?(?:听|收音|说|说话|聊天|聊|回答|播报)|(?:不用|不需要)再(?:听|收音|说|说话|聊天|聊|回答|播报))${courtesy}$`,
       'i',
     ).test(compact) ||
-    new RegExp(`^${courtesyPrefix}(?:谢谢(?:你|啦)?|多谢)?(?:结束|退出)${courtesy}$`, 'i').test(compact) ||
-    new RegExp(`^(?:结束|退出|取消|算了|不用了|不加了)(?:对话|会话|对换|聊天|谈话|通话|谢谢|吧|了)?${courtesy}$`, 'i').test(compact)
+    new RegExp(`^${courtesyPrefix}(?:谢谢(?:你|啦)?|多谢)?(?:结束|退出)${courtesy}$`, 'i').test(
+      compact,
+    ) ||
+    new RegExp(
+      `^(?:结束|退出|取消|算了|不用了|不加了)(?:对话|会话|对换|聊天|谈话|通话|谢谢|吧|了)?${courtesy}$`,
+      'i',
+    ).test(compact)
   );
 }
 
@@ -538,7 +547,11 @@ export function handleMiniMaxRealtime(client: WebSocket, options: MiniMaxRealtim
         // 对话后，前端才用 text + respond 请求 MiniMax，避免模型与工具同时抢答。
       } else if (message.type === 'activity') {
         scheduleSessionTimeout();
-      } else if (message.type === 'metric' && message.metric && Number.isFinite(message.elapsedMs)) {
+      } else if (
+        message.type === 'metric' &&
+        message.metric &&
+        Number.isFinite(message.elapsedMs)
+      ) {
         options.metrics?.recordLatency(message.metric, Number(message.elapsedMs));
       } else if (message.type === 'playback-done' && awaitingPlaybackDone) {
         awaitingPlaybackDone = false;

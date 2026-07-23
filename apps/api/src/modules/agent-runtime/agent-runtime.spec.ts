@@ -14,11 +14,12 @@ describe('agent runtime foundations', () => {
       'shopping.draft',
       'shopping.confirm',
     ]);
-    expect(confirmationForTool(registry.get('inventory.read')!)).toBe('NONE');
-    expect(confirmationForTool(registry.get('shopping.confirm')!)).toBe('SOFT');
-    expect(
-      confirmationForTool(registry.get('shopping.confirm')!, { explicitUserConfirmation: true }),
-    ).toBe('NONE');
+    const inventoryRead = registry.get('inventory.read');
+    const shoppingConfirm = registry.get('shopping.confirm');
+    if (!inventoryRead || !shoppingConfirm) throw new Error('expected tools to be registered');
+    expect(confirmationForTool(inventoryRead)).toBe('NONE');
+    expect(confirmationForTool(shoppingConfirm)).toBe('SOFT');
+    expect(confirmationForTool(shoppingConfirm, { explicitUserConfirmation: true })).toBe('NONE');
   });
 
   it('builds a stable meal context from natural language and household facts', () => {

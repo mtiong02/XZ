@@ -1,9 +1,23 @@
-import { Body, Controller, Get, Inject, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Inject,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../../infra/db/database.module';
 import { AuthGuard, type AuthenticatedUser } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { CreateFoodAliasSchema, CreateHouseholdFoodSchema, FoodKnowledgeService } from './food-knowledge.service';
+import {
+  CreateFoodAliasSchema,
+  CreateHouseholdFoodSchema,
+  FoodKnowledgeService,
+} from './food-knowledge.service';
 
 /**
  * Food Knowledge 只读 API（docs/03 §8：其他模块通过 Read API 访问）。
@@ -18,18 +32,40 @@ export class FoodController {
   ) {}
 
   @Get('households/:householdId/foods')
-  async listHouseholdFoods(@CurrentUser() user: AuthenticatedUser, @Param('householdId', ParseUUIDPipe) householdId: string, @Query('q') query?: string) {
+  async listHouseholdFoods(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('householdId', ParseUUIDPipe) householdId: string,
+    @Query('q') query?: string,
+  ) {
     return this.foods.listHouseholdFoods(householdId, user.userId, query);
   }
 
   @Post('households/:householdId/foods')
-  async createHouseholdFood(@CurrentUser() user: AuthenticatedUser, @Param('householdId', ParseUUIDPipe) householdId: string, @Body() body: unknown) {
-    return this.foods.createHouseholdFood(householdId, user.userId, CreateHouseholdFoodSchema.parse(body));
+  async createHouseholdFood(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('householdId', ParseUUIDPipe) householdId: string,
+    @Body() body: unknown,
+  ) {
+    return this.foods.createHouseholdFood(
+      householdId,
+      user.userId,
+      CreateHouseholdFoodSchema.parse(body),
+    );
   }
 
   @Post('households/:householdId/foods/:foodId/aliases')
-  async addAlias(@CurrentUser() user: AuthenticatedUser, @Param('householdId', ParseUUIDPipe) householdId: string, @Param('foodId', ParseUUIDPipe) foodId: string, @Body() body: unknown) {
-    return this.foods.addAlias(householdId, user.userId, foodId, CreateFoodAliasSchema.parse(body).alias);
+  async addAlias(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('householdId', ParseUUIDPipe) householdId: string,
+    @Param('foodId', ParseUUIDPipe) foodId: string,
+    @Body() body: unknown,
+  ) {
+    return this.foods.addAlias(
+      householdId,
+      user.userId,
+      foodId,
+      CreateFoodAliasSchema.parse(body).alias,
+    );
   }
 
   @Get('foods')

@@ -167,7 +167,9 @@ export function ActionModal({
     };
     return categories.filter((category) => !parents.has(category.code) && isInGroup(category.code));
   }, [categories, categoryByCode, selectedGroup]);
-  const customCategory = customCategoryOptions.find((category) => category.code === customCategoryCode);
+  const customCategory = customCategoryOptions.find(
+    (category) => category.code === customCategoryCode,
+  );
   const customUnitName = units.find((item) => item.code === customUnit)?.name_zh;
 
   const orderedUnits = useMemo(() => {
@@ -185,7 +187,8 @@ export function ActionModal({
 
   useEffect(() => {
     if (!customFormOpen) return;
-    if (!customCategoryCode && customCategoryOptions[0]) setCustomCategoryCode(customCategoryOptions[0].code);
+    if (!customCategoryCode && customCategoryOptions[0])
+      setCustomCategoryCode(customCategoryOptions[0].code);
     if (!customUnit && units.length) setCustomUnit(recommendedCustomUnit(selectedGroup, units));
   }, [customCategoryCode, customCategoryOptions, customFormOpen, customUnit, selectedGroup, units]);
 
@@ -235,7 +238,8 @@ export function ActionModal({
         category_code: customCategoryCode,
         default_unit_code: customUnit,
         preferred_unit_codes: [customUnit],
-        default_shelf_life_days: shelfLife && Number.isInteger(shelfLife) && shelfLife > 0 ? shelfLife : null,
+        default_shelf_life_days:
+          shelfLife && Number.isInteger(shelfLife) && shelfLife > 0 ? shelfLife : null,
         aliases: [],
       });
       setFoods((current) => [...current.filter((item) => item.id !== food.id), food]);
@@ -342,7 +346,9 @@ export function ActionModal({
                         className={selectedGroup === group.label ? 'selected' : ''}
                         key={group.label}
                         onClick={() => {
-                          setSelectedGroup((current) => current === group.label ? '' : group.label);
+                          setSelectedGroup((current) =>
+                            current === group.label ? '' : group.label,
+                          );
                           setCustomFormOpen(false);
                         }}
                       >
@@ -361,7 +367,9 @@ export function ActionModal({
                         <strong>{food.canonical_name}</strong>
                       </button>
                     ))}
-                    {selectedGroup && visibleFoods.length === 0 ? <p>这个分类暂时还没有可选食材。</p> : null}
+                    {selectedGroup && visibleFoods.length === 0 ? (
+                      <p>这个分类暂时还没有可选食材。</p>
+                    ) : null}
                     {!selectedGroup ? <p>先点一种分类，再选择具体食材。</p> : null}
                   </div>
                   {kind === 'ADD' && selectedGroup ? (
@@ -389,7 +397,9 @@ export function ActionModal({
                         />
                       </div>
                       <div className="custom-food-defaults">
-                        <span>将归入：{customCategory?.name_path?.join(' / ') || selectedGroup}</span>
+                        <span>
+                          将归入：{customCategory?.name_path?.join(' / ') || selectedGroup}
+                        </span>
                         <span>默认单位：{customUnitName || '按分类推荐'}</span>
                       </div>
                       <div className="field">
@@ -406,11 +416,15 @@ export function ActionModal({
                         />
                       </div>
                       <div className="custom-food-form-actions">
-                        <button type="button" onClick={() => setCustomFormOpen(false)}>返回食材列表</button>
+                        <button type="button" onClick={() => setCustomFormOpen(false)}>
+                          返回食材列表
+                        </button>
                         <button
                           type="button"
                           className="primary"
-                          disabled={customBusy || !customName.trim() || !customCategoryCode || !customUnit}
+                          disabled={
+                            customBusy || !customName.trim() || !customCategoryCode || !customUnit
+                          }
                           onClick={saveCustomFood}
                         >
                           {customBusy ? '保存中…' : '保存并选择'}
@@ -426,7 +440,9 @@ export function ActionModal({
               <div className="selected-food-summary">
                 <span>已选食材</span>
                 <strong>{selectedFood.canonical_name}</strong>
-                {selectedFood.default_shelf_life_days ? <small>百科建议约 {selectedFood.default_shelf_life_days} 天内留意保鲜</small> : null}
+                {selectedFood.default_shelf_life_days ? (
+                  <small>百科建议约 {selectedFood.default_shelf_life_days} 天内留意保鲜</small>
+                ) : null}
               </div>
             ) : null}
 
@@ -444,7 +460,12 @@ export function ActionModal({
               {selectedFood ? (
                 <div className="quick-choice-row" aria-label="常用数量">
                   {quickQuantities.map((value) => (
-                    <button type="button" className={quantity === value ? 'selected' : ''} key={value} onClick={() => setQuantity(value)}>
+                    <button
+                      type="button"
+                      className={quantity === value ? 'selected' : ''}
+                      key={value}
+                      onClick={() => setQuantity(value)}
+                    >
                       {value} {unitLabel(unit)}
                     </button>
                   ))}
@@ -473,18 +494,47 @@ export function ActionModal({
                 <div className="field">
                   <label>存放区域</label>
                   <div className="quick-choice-row zone-choice-row">
-                    <button type="button" className={zoneId === '' ? 'selected' : ''} onClick={() => setZoneId('')}>智能推荐</button>
+                    <button
+                      type="button"
+                      className={zoneId === '' ? 'selected' : ''}
+                      onClick={() => setZoneId('')}
+                    >
+                      智能推荐
+                    </button>
                     {inventory.zones.map((zone) => (
-                      <button type="button" className={zoneId === zone.zone_id ? 'selected' : ''} key={zone.zone_id} onClick={() => setZoneId(zone.zone_id)}>{zone.name}</button>
+                      <button
+                        type="button"
+                        className={zoneId === zone.zone_id ? 'selected' : ''}
+                        key={zone.zone_id}
+                        onClick={() => setZoneId(zone.zone_id)}
+                      >
+                        {zone.name}
+                      </button>
                     ))}
                   </div>
                 </div>
                 <div className="field">
                   <label>大概多久后到期？</label>
                   <div className="quick-choice-row" aria-label="快捷到期日">
-                    <button type="button" className={expiresAt === '' ? 'selected' : ''} onClick={() => { setExpiresAt(''); setCustomExpiryDays(''); }}>按百科建议</button>
+                    <button
+                      type="button"
+                      className={expiresAt === '' ? 'selected' : ''}
+                      onClick={() => {
+                        setExpiresAt('');
+                        setCustomExpiryDays('');
+                      }}
+                    >
+                      按百科建议
+                    </button>
                     {QUICK_EXPIRY_DAYS.map((days) => (
-                      <button type="button" className={expiresAt === dateAfterDays(days) ? 'selected' : ''} key={days} onClick={() => chooseExpiryDays(days)}>{days} 天后</button>
+                      <button
+                        type="button"
+                        className={expiresAt === dateAfterDays(days) ? 'selected' : ''}
+                        key={days}
+                        onClick={() => chooseExpiryDays(days)}
+                      >
+                        {days} 天后
+                      </button>
                     ))}
                   </div>
                   <div className="expiry-custom-input">
@@ -500,12 +550,18 @@ export function ActionModal({
                         const value = event.target.value;
                         setCustomExpiryDays(value);
                         const days = Number(value);
-                        setExpiresAt(Number.isInteger(days) && days >= 0 ? dateAfterDays(days) : '');
+                        setExpiresAt(
+                          Number.isInteger(days) && days >= 0 ? dateAfterDays(days) : '',
+                        );
                       }}
                     />
                     <span>天后</span>
                   </div>
-                  {expiresAt ? <small className="expiry-preview">预计到期：{expiresAt.replaceAll('-', ' / ')}</small> : null}
+                  {expiresAt ? (
+                    <small className="expiry-preview">
+                      预计到期：{expiresAt.replaceAll('-', ' / ')}
+                    </small>
+                  ) : null}
                 </div>
               </>
             ) : null}

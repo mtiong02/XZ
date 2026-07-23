@@ -41,24 +41,53 @@ export default function SecurityPage() {
       <main className="container workspace-page settings-page">
         <section className="zone workspace-section security-card">
           <div className="workspace-section-heading">
-            <div><span>登录凭据</span><h2>修改密码</h2></div>
+            <div>
+              <span>登录凭据</span>
+              <h2>修改密码</h2>
+            </div>
           </div>
-          <p>注册时的密码不会以明文写入家庭业务数据。你可以随时设置新密码；如果使用微信授权登录，也不需要记住邮箱密码。</p>
+          <p>
+            注册时的密码不会以明文写入家庭业务数据。你可以随时设置新密码；如果使用微信授权登录，也不需要记住邮箱密码。
+          </p>
           <form onSubmit={save} className="security-form">
             <div className="field">
               <label htmlFor="new-password">新密码</label>
               <div className="password-input-wrap">
-                <input id="new-password" type={show ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required autoComplete="new-password" />
-                <button type="button" className="password-toggle" onClick={() => setShow((value) => !value)}>{show ? '隐藏' : '显示'}</button>
+                <input
+                  id="new-password"
+                  type={show ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  minLength={8}
+                  required
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShow((value) => !value)}
+                >
+                  {show ? '隐藏' : '显示'}
+                </button>
               </div>
             </div>
             <div className="field">
               <label htmlFor="confirm-new-password">确认新密码</label>
-              <input id="confirm-new-password" type={show ? 'text' : 'password'} value={confirm} onChange={(e) => setConfirm(e.target.value)} minLength={8} required autoComplete="new-password" />
+              <input
+                id="confirm-new-password"
+                type={show ? 'text' : 'password'}
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                minLength={8}
+                required
+                autoComplete="new-password"
+              />
             </div>
             {error ? <div className="error-box">{error}</div> : null}
             {message ? <div className="success-box">{message}</div> : null}
-            <button className="primary" type="submit" disabled={busy}>{busy ? '保存中…' : '保存新密码'}</button>
+            <button className="primary" type="submit" disabled={busy}>
+              {busy ? '保存中…' : '保存新密码'}
+            </button>
           </form>
         </section>
       </main>

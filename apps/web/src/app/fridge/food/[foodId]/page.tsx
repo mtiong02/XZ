@@ -115,8 +115,7 @@ export default function FoodDetailPage() {
             <div>
               <div>
                 {formatInventoryQuantity(lot.remaining_quantity, lot.unit_code)} /{' '}
-                {formatInventoryQuantity(lot.initial_quantity, lot.unit_code)} ·{' '}
-                {lot.zone_name}
+                {formatInventoryQuantity(lot.initial_quantity, lot.unit_code)} · {lot.zone_name}
               </div>
               <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>
                 {formatDate(lot.purchased_at)}加入

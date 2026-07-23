@@ -23,10 +23,7 @@ describe('PersonalizedMealAgentService', () => {
 
   it('rejects a recommendation that claims unavailable inventory', async () => {
     vi.stubEnv('MINIMAX_API_KEY', 'test-key');
-    const query = vi
-      .fn()
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] });
+    const query = vi.fn().mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({

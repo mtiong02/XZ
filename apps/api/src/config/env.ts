@@ -23,7 +23,10 @@ export const EnvSchema = z
     SUPABASE_SERVICE_ROLE_KEY: optionalNonEmptyString,
     WECHAT_APP_ID: optionalNonEmptyString,
     WECHAT_APP_SECRET: optionalNonEmptyString,
-    WECHAT_AUTH_CALLBACK_URL: z.string().url().default('https://busybeeenglish.site/api/v1/auth/wechat/callback'),
+    WECHAT_AUTH_CALLBACK_URL: z
+      .string()
+      .url()
+      .default('https://busybeeenglish.site/api/v1/auth/wechat/callback'),
     WECHAT_SITE_URL: z.string().url().default('https://busybeeenglish.site/login'),
     REVERSAL_WINDOW_HOURS: z.coerce.number().int().positive().default(24),
   })

@@ -122,7 +122,12 @@ select {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: radial-gradient(circle at 50% 43%, rgb(235 255 246 / 96%), rgb(214 244 229 / 78%) 70%, transparent 71%);
+  background: radial-gradient(
+    circle at 50% 43%,
+    rgb(235 255 246 / 96%),
+    rgb(214 244 229 / 78%) 70%,
+    transparent 71%
+  );
   filter: drop-shadow(0 7px 10px rgb(31 88 64 / 17%));
 }
 .brand-mark img {
@@ -1589,8 +1594,13 @@ select {
   min-width: 0;
   gap: 3px;
 }
-.family-member-copy strong { font-size: 13px; }
-.family-member-copy span { color: var(--gray-500); font-size: 10px; }
+.family-member-copy strong {
+  font-size: 13px;
+}
+.family-member-copy span {
+  color: var(--gray-500);
+  font-size: 10px;
+}
 .family-status {
   margin-left: auto;
   flex: 0 0 auto;
@@ -1605,7 +1615,10 @@ select {
   background: var(--green-soft);
   color: var(--green-dark);
 }
-.family-invite-card > p { color: var(--gray-600); font-size: 12px; }
+.family-invite-card > p {
+  color: var(--gray-600);
+  font-size: 12px;
+}
 .family-invite-code {
   display: grid;
   gap: 4px;
@@ -1618,20 +1631,41 @@ select {
 .family-invite-code strong {
   color: var(--green-dark);
   font-size: 22px;
-  letter-spacing: .08em;
+  letter-spacing: 0.08em;
 }
-.family-invite-code span { color: var(--gray-600); font-size: 11px; }
-.family-invite-code button { justify-self: start; padding-inline: 0; }
+.family-invite-code span {
+  color: var(--gray-600);
+  font-size: 11px;
+}
+.family-invite-code button {
+  justify-self: start;
+  padding-inline: 0;
+}
 .family-add-row {
   display: flex;
   gap: 8px;
   margin-top: 16px;
 }
-.family-add-row input { min-width: 0; }
-.family-add-row button { flex: 0 0 auto; }
-.security-card { max-width: 640px; margin-inline: auto; }
-.security-card > p { margin-bottom: 18px; color: var(--gray-600); font-size: 12px; line-height: 1.7; }
-.security-form { display: grid; gap: 4px; }
+.family-add-row input {
+  min-width: 0;
+}
+.family-add-row button {
+  flex: 0 0 auto;
+}
+.security-card {
+  max-width: 640px;
+  margin-inline: auto;
+}
+.security-card > p {
+  margin-bottom: 18px;
+  color: var(--gray-600);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.security-form {
+  display: grid;
+  gap: 4px;
+}
 .settings-data-card > p {
   margin-bottom: 14px;
   color: var(--gray-600);
@@ -2002,7 +2036,9 @@ button.item-card {
   padding: 18px 20px;
   gap: 12px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 .storage-advice-card:hover {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.07);
@@ -2348,8 +2384,13 @@ label {
   gap: 3px;
   margin-bottom: 12px;
 }
-.custom-food-form-heading strong { color: var(--green-dark); }
-.custom-food-form-heading small { color: var(--gray-600); font-size: 12px; }
+.custom-food-form-heading strong {
+  color: var(--green-dark);
+}
+.custom-food-form-heading small {
+  color: var(--gray-600);
+  font-size: 12px;
+}
 .custom-food-defaults {
   display: flex;
   flex-wrap: wrap;
@@ -2386,8 +2427,13 @@ label {
   background: var(--green-soft);
 }
 .selected-food-summary span,
-.selected-food-summary small { color: var(--gray-600); font-size: 12px; }
-.selected-food-summary strong { color: var(--green-dark); }
+.selected-food-summary small {
+  color: var(--gray-600);
+  font-size: 12px;
+}
+.selected-food-summary strong {
+  color: var(--green-dark);
+}
 .expiry-custom-input {
   display: flex;
   align-items: center;
@@ -2486,7 +2532,9 @@ label {
   display: flex;
   align-items: center;
 }
-.password-input-wrap input { padding-right: 58px; }
+.password-input-wrap input {
+  padding-right: 58px;
+}
 .password-toggle {
   position: absolute;
   right: 7px;
@@ -2498,7 +2546,9 @@ label {
   box-shadow: none;
   font-size: 11px;
 }
-.password-toggle:hover { background: var(--green-soft); }
+.password-toggle:hover {
+  background: var(--green-soft);
+}
 .field-hint {
   display: block;
   margin-top: 6px;
@@ -2526,8 +2576,14 @@ label {
   background: #f0fbf4;
   color: #16834b;
 }
-.wechat-login-button:hover { border-color: #68bd91; background: #e4f7eb; }
-.wechat-login-button span { margin-right: 7px; font-size: 15px; }
+.wechat-login-button:hover {
+  border-color: #68bd91;
+  background: #e4f7eb;
+}
+.wechat-login-button span {
+  margin-right: 7px;
+  font-size: 15px;
+}
 .auth-provider-note {
   margin-top: 9px;
   color: var(--gray-500);
@@ -2923,9 +2979,15 @@ label {
   body {
     font-size: 14px;
   }
-  .family-add-row { flex-direction: column; }
-  .family-add-row button { width: 100%; }
-  .family-status { font-size: 9px; }
+  .family-add-row {
+    flex-direction: column;
+  }
+  .family-add-row button {
+    width: 100%;
+  }
+  .family-status {
+    font-size: 9px;
+  }
   .container {
     width: min(100% - 24px, var(--content));
     padding-top: 18px;
@@ -3487,8 +3549,15 @@ label {
   animation: feedback-pulse 2s infinite ease-in-out;
 }
 @keyframes feedback-pulse {
-  0%, 100% { transform: scale(0.9); opacity: 0.7; }
-  50% { transform: scale(1.3); opacity: 1; }
+  0%,
+  100% {
+    transform: scale(0.9);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 1;
+  }
 }
 
 .feedback-modal-overlay {
@@ -3503,8 +3572,12 @@ label {
   animation: feedback-fade-in 0.2s ease-out;
 }
 @keyframes feedback-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 .feedback-modal-card {
   position: relative;
@@ -3517,8 +3590,14 @@ label {
   animation: feedback-slide-up 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 @keyframes feedback-slide-up {
-  from { opacity: 0; transform: translateY(16px) scale(0.97); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 .feedback-modal-close {
   position: absolute;
@@ -3635,7 +3714,9 @@ label {
   color: #d1d5db;
   cursor: pointer;
   padding: 0 2px;
-  transition: color 0.15s, transform 0.15s;
+  transition:
+    color 0.15s,
+    transform 0.15s;
 }
 .feedback-star:hover,
 .feedback-star.filled {
@@ -3742,8 +3823,14 @@ label {
   animation: feedback-pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 @keyframes feedback-pop {
-  from { transform: scale(0.5); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
+  from {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 .feedback-success-state h3 {
   font-size: 20px;

@@ -185,7 +185,9 @@ export default function MealsPage() {
                   全部 <small>{scopedRecipes.length}</small>
                 </button>
                 {servingOptions.map((servings) => {
-                  const count = scopedRecipes.filter((recipe) => recipe.servings === servings).length;
+                  const count = scopedRecipes.filter(
+                    (recipe) => recipe.servings === servings,
+                  ).length;
                   return (
                     <button
                       type="button"

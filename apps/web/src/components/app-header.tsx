@@ -43,7 +43,9 @@ export function AppHeader({
             <span className="brand-mark" aria-hidden="true">
               <Image src="/mascot/xiaozhi.png" alt="" width={52} height={52} priority />
             </span>
-            <span className="brand-name">鲜知 <small>小知</small></span>
+            <span className="brand-name">
+              鲜知 <small>小知</small>
+            </span>
           </Link>
           {showNavigation ? (
             <nav className="desktop-nav" aria-label="主导航">

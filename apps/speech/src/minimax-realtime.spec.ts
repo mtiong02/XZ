@@ -69,7 +69,7 @@ describe('isEndConversation', () => {
     expect(isEndConversation(text)).toBe(true);
   });
 
-  it.each(['结束后提醒我', '结束后提醒我买牛奶', '继续聊聊', '没有牛奶了', '请继续说']) (
+  it.each(['结束后提醒我', '结束后提醒我买牛奶', '继续聊聊', '没有牛奶了', '请继续说'])(
     'keeps ordinary speech active: %s',
     (text) => {
       expect(isEndConversation(text)).toBe(false);

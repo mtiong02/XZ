@@ -6,23 +6,76 @@
 // 常用汉字 -> 无声调拼音映射表
 const PINYIN_MAP: Record<string, string> = {
   // 意图/控制类
-  结: 'jie', 解: 'jie', 截: 'jie',
-  束: 'shu', 速: 'shu', 宿: 'shu', 树: 'shu', 数: 'shu',
-  对: 'dui', 兑: 'dui', 队: 'dui',
-  话: 'hua', 换: 'huan', 画: 'hua', 华: 'hua', 划: 'hua', 掉: 'diao',
-  退: 'tui', 出: 'chu', 关: 'guan', 闭: 'bi', 停: 'ting', 止: 'zhi',
-  拜: 'bai', 再: 'zai', 见: 'jian', 算: 'suan', 了: 'le',
-  是: 'shi', 的: 'de', 确: 'que', 认: 'ren', 错: 'cuo', 没: 'mei',
-  
+  结: 'jie',
+  解: 'jie',
+  截: 'jie',
+  束: 'shu',
+  速: 'shu',
+  宿: 'shu',
+  树: 'shu',
+  数: 'shu',
+  对: 'dui',
+  兑: 'dui',
+  队: 'dui',
+  话: 'hua',
+  换: 'huan',
+  画: 'hua',
+  华: 'hua',
+  划: 'hua',
+  掉: 'diao',
+  退: 'tui',
+  出: 'chu',
+  关: 'guan',
+  闭: 'bi',
+  停: 'ting',
+  止: 'zhi',
+  拜: 'bai',
+  再: 'zai',
+  见: 'jian',
+  算: 'suan',
+  了: 'le',
+  是: 'shi',
+  的: 'de',
+  确: 'que',
+  认: 'ren',
+  错: 'cuo',
+  没: 'mei',
+
   // 食材/动作类
-  鸡: 'ji', 机: 'ji', 胸: 'xiong', 肉: 'rou', 猪: 'zhu', 牛: 'niu',
-  羊: 'yang', 鱼: 'yu', 虾: 'xia', 蛋: 'dan', 奶: 'nai', 油: 'you',
-  土: 'tu', 豆: 'dou', 番: 'fan', 茄: 'qie', 西: 'xi', 红: 'hong',
-  柿: 'shi', 苹: 'ping', 果: 'guo', 菜: 'cai',
-  
+  鸡: 'ji',
+  机: 'ji',
+  胸: 'xiong',
+  肉: 'rou',
+  猪: 'zhu',
+  牛: 'niu',
+  羊: 'yang',
+  鱼: 'yu',
+  虾: 'xia',
+  蛋: 'dan',
+  奶: 'nai',
+  油: 'you',
+  土: 'tu',
+  豆: 'dou',
+  番: 'fan',
+  茄: 'qie',
+  西: 'xi',
+  红: 'hong',
+  柿: 'shi',
+  苹: 'ping',
+  果: 'guo',
+  菜: 'cai',
+
   // 位置/动作
-  移: 'yi', 动: 'dong', 放: 'fang', 存: 'cun', 冷: 'leng', 藏: 'cang',
-  冻: 'dong', 室: 'shi', 库: 'ku', 柜: 'gui',
+  移: 'yi',
+  动: 'dong',
+  放: 'fang',
+  存: 'cun',
+  冷: 'leng',
+  藏: 'cang',
+  冻: 'dong',
+  室: 'shi',
+  库: 'ku',
+  柜: 'gui',
 };
 
 /**
@@ -49,9 +102,7 @@ export function pinyinSimilarity(source: string, target: string): number {
 
   const len1 = pySource.length;
   const len2 = pyTarget.length;
-  const matrix: number[][] = Array.from({ length: len1 + 1 }, () =>
-    new Array(len2 + 1).fill(0),
-  );
+  const matrix: number[][] = Array.from({ length: len1 + 1 }, () => new Array(len2 + 1).fill(0));
 
   for (let i = 0; i <= len1; i++) {
     const row = matrix[i];

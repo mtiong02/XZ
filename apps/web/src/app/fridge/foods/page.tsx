@@ -26,7 +26,9 @@ export default function FoodLibraryPage() {
   const groupCards = useMemo(() => {
     const groups = nutrition?.groups ?? [];
     const collect = (codes: string[]) => {
-      const names = groups.filter((group) => codes.includes(group.code)).flatMap((group) => group.foods);
+      const names = groups
+        .filter((group) => codes.includes(group.code))
+        .flatMap((group) => group.foods);
       return [...new Set(names)];
     };
     return [

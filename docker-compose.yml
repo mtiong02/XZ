@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: postgrespassword
       POSTGRES_DB: postgres
     ports:
-      - "5433:5432"
+      - '5433:5432'
     volumes:
       - xz-db-data:/var/lib/postgresql/data
       - ./supabase/migrations:/docker-entrypoint-initdb.d:ro
@@ -20,7 +20,7 @@ services:
     container_name: xz-gotrue
     restart: unless-stopped
     ports:
-      - "9999:9999"
+      - '9999:9999'
     environment:
       API_EXTERNAL_URL: https://busybeeenglish.site/auth
       GOTRUE_API_EXTERNAL_URL: https://busybeeenglish.site/auth
@@ -29,12 +29,12 @@ services:
       GOTRUE_DB_DRIVER: postgres
       DATABASE_URL: postgresql://postgres:postgrespassword@db:5432/postgres
       GOTRUE_DB_DATABASE_URL: postgresql://postgres:postgrespassword@db:5432/postgres
-      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: 'true'
       GOTRUE_SITE_URL: https://busybeeenglish.site
-      GOTRUE_URI_ALLOW_LIST: "*"
+      GOTRUE_URI_ALLOW_LIST: '*'
       GOTRUE_JWT_SECRET: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
       GOTRUE_JWT_EXP: 3600
-      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_DISABLE_SIGNUP: 'false'
       GOTRUE_LOG_LEVEL: info
     depends_on:
       - db
@@ -45,11 +45,11 @@ services:
       dockerfile: Dockerfile
     container_name: xz-speech
     restart: unless-stopped
-    command: ["pnpm", "--filter", "@xz/speech", "start"]
+    command: ['pnpm', '--filter', '@xz/speech', 'start']
     volumes:
       - ./local-models:/app/local-models:ro
     ports:
-      - "6010:6010"
+      - '6010:6010'
     environment:
       - NODE_ENV=production
       - SPEECH_PORT=6010
@@ -67,7 +67,7 @@ services:
     container_name: xz-web
     restart: unless-stopped
     ports:
-      - "3100:3000"
+      - '3100:3000'
     environment:
       - NODE_ENV=production
     cpus: 0.5
@@ -79,9 +79,9 @@ services:
       dockerfile: Dockerfile
     container_name: xz-api
     restart: unless-stopped
-    command: ["pnpm", "--filter", "@xz/api", "start"]
+    command: ['pnpm', '--filter', '@xz/api', 'start']
     ports:
-      - "4100:4000"
+      - '4100:4000'
     environment:
       - NODE_ENV=production
       - API_PORT=4000

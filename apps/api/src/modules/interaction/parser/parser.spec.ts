@@ -203,7 +203,10 @@ const cases: EvalCase[] = [
   { text: '结合冰箱现有食物推荐一些减脂餐', intent: 'QUERY_INVENTORY' },
   { text: '这些食物可以吃什么样的减脂餐', intent: 'QUERY_INVENTORY' },
   { text: '我今天下午想吃个下午茶冰箱里面有什么东西可以推荐的吗', intent: 'QUERY_INVENTORY' },
-  { text: '我要吃一个下午茶你来推荐一个根据我们冰箱里面的食材推荐一个吃的', intent: 'QUERY_INVENTORY' },
+  {
+    text: '我要吃一个下午茶你来推荐一个根据我们冰箱里面的食材推荐一个吃的',
+    intent: 'QUERY_INVENTORY',
+  },
   { text: '今晚四个人家庭晚餐，简单一点，按冰箱食材推荐', intent: 'QUERY_INVENTORY' },
   { text: '一个人吃午餐有什么简单推荐', intent: 'QUERY_INVENTORY' },
   { text: '今天下午要跟五个人一起吃吃有什么推荐的菜', intent: 'QUERY_INVENTORY' },
@@ -298,8 +301,15 @@ describe('parseTranscript evaluation set', () => {
     expect(result.confidence.overall).toBeLessThan(0.5);
   });
 
-  it('marks an implausible food/unit pair for clarification', () => {
+  it('accepts packaging units under the zero-interception policy (三瓶土豆 -> confirm, not block)', () => {
+    // 线上 07/23 会话实证：拦截"斤/袋"迫使用户口头换算，6 轮才录入一个食材。
+    // 现行策略：合法包装/通用量词一律信任放行，由确认卡片兜底，绝不说"请按克记录"。
     const result = parseTranscript(normalizeTranscript('买了三瓶土豆'), catalog);
+    expect(result.items[0]?.unit_reasonable).toBe(true);
+  });
+
+  it('still flags truly implausible volume units for solid food (三百毫升土豆)', () => {
+    const result = parseTranscript(normalizeTranscript('买了三百毫升土豆'), catalog);
     expect(result.items[0]?.unit_reasonable).toBe(false);
     expect(result.items[0]?.suggested_units).toEqual(['piece', 'jin', 'g', 'kg']);
   });
@@ -329,9 +339,9 @@ describe('parseTranscript evaluation set', () => {
     expect(parseTranscript(normalizeTranscript('把猪肉都挪到冷冻室'), catalog).intent).toBe(
       'MOVE_INVENTORY',
     );
-    expect(parseTranscript(normalizeTranscript('还有其他的推荐吗我想吃清淡点'), catalog).intent).toBe(
-      'QUERY_INVENTORY',
-    );
+    expect(
+      parseTranscript(normalizeTranscript('还有其他的推荐吗我想吃清淡点'), catalog).intent,
+    ).toBe('QUERY_INVENTORY');
   });
 
   it('does not ask for a quantity when a meal context has no food entity', () => {
@@ -381,14 +391,16 @@ describe('household custom food catalog', () => {
       aliases: ['Sprite', '雪碧汽水'],
     };
 
-    expect(parseTranscript(normalizeTranscript('帮我添加两瓶雪碧'), [customFood]).items[0]).toMatchObject({
+    expect(
+      parseTranscript(normalizeTranscript('帮我添加两瓶雪碧'), [customFood]).items[0],
+    ).toMatchObject({
       food_id: 'household-sprite',
       food_name: '雪碧',
       quantity: '2',
       unit: 'bottle',
     });
-    expect(parseTranscript(normalizeTranscript('买了一瓶Sprite'), [customFood]).items[0]?.food_id).toBe(
-      'household-sprite',
-    );
+    expect(
+      parseTranscript(normalizeTranscript('买了一瓶Sprite'), [customFood]).items[0]?.food_id,
+    ).toBe('household-sprite');
   });
 });

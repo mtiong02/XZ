@@ -96,8 +96,7 @@ class PcmPlayer {
     source.connect(this.context.destination);
     // 给流式音频一个很小的抗抖动缓冲。25ms 在移动网络上容易发生下溢卡顿；
     // 90ms 仍接近实时，但能吸收相邻 PCM 分片的网络抖动。
-    const bufferLead =
-      this.nextStartAt <= this.context.currentTime + 0.03 ? 0.09 : 0.025;
+    const bufferLead = this.nextStartAt <= this.context.currentTime + 0.03 ? 0.09 : 0.025;
     const startAt = Math.max(this.context.currentTime + bufferLead, this.nextStartAt);
     source.start(startAt);
     this.nextStartAt = startAt + buffer.duration;
@@ -266,7 +265,11 @@ export async function startRealtimeVoice(
             sendControl({ type: 'start', sampleRate: context.sampleRate });
             ready = true;
             window.clearTimeout(timer);
-            sendControl({ type: 'metric', metric: 'client_ready_ms', elapsedMs: performance.now() - voiceStartedAt });
+            sendControl({
+              type: 'metric',
+              metric: 'client_ready_ms',
+              elapsedMs: performance.now() - voiceStartedAt,
+            });
             heartbeat = window.setInterval(() => sendControl({ type: 'ping' }), HEARTBEAT_MS);
             callbacks.onReady?.();
             resolve({
@@ -348,12 +351,20 @@ export async function startRealtimeVoice(
         commitWatchdog = null;
         turnPending = false;
         if (committedAt !== null) {
-          sendControl({ type: 'metric', metric: 'turn_to_transcript_ms', elapsedMs: performance.now() - committedAt });
+          sendControl({
+            type: 'metric',
+            metric: 'turn_to_transcript_ms',
+            elapsedMs: performance.now() - committedAt,
+          });
         }
         callbacks.onTranscript(message.text.trim());
       } else if (message.type === 'audio-start') {
         if (committedAt !== null) {
-          sendControl({ type: 'metric', metric: 'turn_to_first_audio_ms', elapsedMs: performance.now() - committedAt });
+          sendControl({
+            type: 'metric',
+            metric: 'turn_to_first_audio_ms',
+            elapsedMs: performance.now() - committedAt,
+          });
           committedAt = null;
         }
         responsePlaying = true;

@@ -172,11 +172,16 @@ export function addHouseholdMember(householdId: string, display_name: string) {
   return apiPost(`/households/${householdId}/members`, { display_name });
 }
 
-export function createHouseholdInvite(householdId: string): Promise<{ code: string; expires_at: string }> {
+export function createHouseholdInvite(
+  householdId: string,
+): Promise<{ code: string; expires_at: string }> {
   return apiPost<{ code: string; expires_at: string }>(`/households/${householdId}/invites`, {});
 }
 
-export function joinHousehold(invite_code: string, display_name: string): Promise<HouseholdSummary> {
+export function joinHousehold(
+  invite_code: string,
+  display_name: string,
+): Promise<HouseholdSummary> {
   return apiPost<HouseholdSummary>('/households/join', { invite_code, display_name });
 }
 
@@ -633,6 +638,8 @@ export interface FeedbackSubmissionInput {
   contact?: string | null;
 }
 
-export function submitFeedback(input: FeedbackSubmissionInput): Promise<{ success: boolean; message: string }> {
+export function submitFeedback(
+  input: FeedbackSubmissionInput,
+): Promise<{ success: boolean; message: string }> {
   return apiPost('/feedback', input);
 }

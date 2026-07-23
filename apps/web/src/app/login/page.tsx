@@ -143,11 +143,17 @@ export default function LoginPage() {
                 minLength={8}
                 autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
               />
-              <button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)}>
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword((value) => !value)}
+              >
                 {showPassword ? '隐藏' : '显示'}
               </button>
             </div>
-            {mode === 'signup' ? <small className="field-hint">至少 8 位；密码只用于登录，系统不会保存明文。</small> : null}
+            {mode === 'signup' ? (
+              <small className="field-hint">至少 8 位；密码只用于登录，系统不会保存明文。</small>
+            ) : null}
           </div>
           {mode === 'signup' ? (
             <div className="field">
@@ -162,7 +168,11 @@ export default function LoginPage() {
                   minLength={8}
                   autoComplete="new-password"
                 />
-                <button type="button" className="password-toggle" onClick={() => setShowConfirmPassword((value) => !value)}>
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowConfirmPassword((value) => !value)}
+                >
                   {showConfirmPassword ? '隐藏' : '显示'}
                 </button>
               </div>
@@ -173,12 +183,27 @@ export default function LoginPage() {
             {busy ? '请稍候…' : mode === 'signin' ? '登录' : '注册'}
           </button>
         </form>
-        <div className="auth-divider"><span>或</span></div>
-        <button className="wechat-login-button" type="button" onClick={handleWechatLogin} disabled={wechatBusy || wechatEnabled !== true}>
+        <div className="auth-divider">
+          <span>或</span>
+        </div>
+        <button
+          className="wechat-login-button"
+          type="button"
+          onClick={handleWechatLogin}
+          disabled={wechatBusy || wechatEnabled !== true}
+        >
           <span aria-hidden="true">▣</span>
-          {wechatBusy ? '正在跳转微信…' : wechatEnabled === null ? '正在检查微信登录…' : wechatEnabled ? '微信授权登录' : '微信授权登录（待配置）'}
+          {wechatBusy
+            ? '正在跳转微信…'
+            : wechatEnabled === null
+              ? '正在检查微信登录…'
+              : wechatEnabled
+                ? '微信授权登录'
+                : '微信授权登录（待配置）'}
         </button>
-        <p className="auth-provider-note">微信登录需完成开放平台网站应用配置；未配置时不会影响邮箱密码登录。</p>
+        <p className="auth-provider-note">
+          微信登录需完成开放平台网站应用配置；未配置时不会影响邮箱密码登录。
+        </p>
         <p style={{ marginTop: 14, fontSize: 14, textAlign: 'center' }}>
           {mode === 'signin' ? '还没有账号？' : '已有账号？'}
           <button

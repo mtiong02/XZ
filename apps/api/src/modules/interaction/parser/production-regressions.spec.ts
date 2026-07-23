@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeTranscript } from './normalizer';
 import { parseTranscript, type FoodCatalogEntry } from './intent-parser';
-import { interpretReply, relativeInventoryFraction } from '../dialogue/reply-interpreter';
+import {
+  interpretReply,
+  isDialogueExit,
+  relativeInventoryFraction,
+} from '../dialogue/reply-interpreter';
 import { normalizeBareDinerReply, parseMealContext } from '../dialogue/meal-recommendations';
 import { parseReminderSchedule } from '../../notification/notification.service';
 
@@ -109,6 +113,33 @@ describe('P0-6 追问“几个人吃”后裸数字回答必须被接受（07/23
   it('带食材数量的正常语句不被误改', () => {
     expect(normalizeBareDinerReply('用了2个鸡蛋')).toBe('用了2个鸡蛋');
     expect(normalizeBareDinerReply('加两盒牛奶')).toBe('加两盒牛奶');
+  });
+});
+
+describe('P0-7 结束对话：礼貌语在前也必须退出（07/22 用户投诉“结束了还在监听”）', () => {
+  it('礼貌语前置的结束表达', () => {
+    for (const phrase of [
+      '好的谢谢结束',
+      '谢谢结束',
+      '谢谢你结束对话',
+      '辛苦了结束',
+      '好的谢谢再见',
+      '谢谢拜拜',
+    ]) {
+      expect(isDialogueExit(phrase)).toBe(true);
+    }
+  });
+
+  it('原有形态不回退', () => {
+    for (const phrase of ['结束', '结束对话', '好的结束', '结束兑换', '拜拜']) {
+      expect(isDialogueExit(phrase)).toBe(true);
+    }
+  });
+
+  it('不误伤正常业务语句', () => {
+    for (const phrase of ['结束后提醒我', '谢谢，帮我加两盒牛奶', '推荐一份晚餐']) {
+      expect(isDialogueExit(phrase)).toBe(false);
+    }
   });
 });
 

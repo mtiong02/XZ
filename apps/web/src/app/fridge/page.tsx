@@ -108,7 +108,9 @@ export default function FridgePage() {
       next.add(foodId);
       try {
         localStorage.setItem('xz-ignored-storage-audit', JSON.stringify([...next]));
-      } catch {}
+      } catch {
+        // localStorage 不可用（隐私模式/配额满）时忽略：忽略列表仅为本地偏好，丢失不影响功能
+      }
       return next;
     });
   };
@@ -222,9 +224,9 @@ export default function FridgePage() {
         id: `expiry-${item.food_id}`,
         kicker: expired ? '已过期' : '临期食材',
         title: expired ? `${item.name}已经到期` : `${item.name}快到期了`,
-        detail: `${formatInventoryQuantity(item.total_quantity, item.unit)} · ${
-          formatExpiryRelative(item.earliest_expiry)
-        } · ${expired ? '请先确认状态再处理' : '建议优先安排食用'}`,
+        detail: `${formatInventoryQuantity(item.total_quantity, item.unit)} · ${formatExpiryRelative(
+          item.earliest_expiry,
+        )} · ${expired ? '请先确认状态再处理' : '建议优先安排食用'}`,
         tone: expired ? 'danger' : 'warning',
         href: `/fridge/food/${item.food_id}`,
       };
@@ -423,7 +425,9 @@ export default function FridgePage() {
 
         {occupiedZones.map((zone) => {
           const categories = [
-            ...new Set(zone.items.map((item) => foodCategoryLabel(item.category, item.category_code))),
+            ...new Set(
+              zone.items.map((item) => foodCategoryLabel(item.category, item.category_code)),
+            ),
           ];
           const activeCategory = zoneCategoryFilters[zone.zone_id] ?? null;
           const visibleItems = activeCategory
@@ -433,68 +437,71 @@ export default function FridgePage() {
             : zone.items;
           return (
             <section className="zone inventory-zone" key={zone.zone_id}>
-            <div className="inventory-zone-heading" data-zone-label={zone.name}>
-              {categories.length > 0 ? (
-                <div className="inventory-zone-filters" aria-label={`${zone.name}食材分类筛选`}>
-                  {categories.length > 1 ? (
-                    <button
-                      className={`inventory-zone-filter${activeCategory === null ? ' selected' : ''}`}
-                      onClick={() =>
-                        setZoneCategoryFilters((current) => ({ ...current, [zone.zone_id]: null }))
-                      }
-                    >
-                      全部
-                    </button>
-                  ) : null}
-                  {categories.map((category) => (
-                    <button
-                      className={`inventory-zone-filter${activeCategory === category ? ' selected' : ''}`}
-                      key={category}
-                      onClick={() =>
-                        setZoneCategoryFilters((current) => ({
-                          ...current,
-                          [zone.zone_id]: activeCategory === category ? null : category,
-                        }))
-                      }
-                    >
-                      {category}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-            <div className="items">
-              {visibleItems.map((item) => (
-                <Link
-                  key={item.food_id}
-                  href={`/fridge/food/${item.food_id}`}
-                  className={`item-card expiry-card ${EXPIRY_CLASS[item.expiry_status]}`}
-                >
-                  <div className="item-card-main">
-                    <div className="name">{item.name}</div>
-                    <div className="qty item-card-quantity">
-                      {formatInventoryQuantity(item.total_quantity, item.unit)}
-                      {item.lot_count > 1 ? ` · ${item.lot_count} 批` : ''}
+              <div className="inventory-zone-heading" data-zone-label={zone.name}>
+                {categories.length > 0 ? (
+                  <div className="inventory-zone-filters" aria-label={`${zone.name}食材分类筛选`}>
+                    {categories.length > 1 ? (
+                      <button
+                        className={`inventory-zone-filter${activeCategory === null ? ' selected' : ''}`}
+                        onClick={() =>
+                          setZoneCategoryFilters((current) => ({
+                            ...current,
+                            [zone.zone_id]: null,
+                          }))
+                        }
+                      >
+                        全部
+                      </button>
+                    ) : null}
+                    {categories.map((category) => (
+                      <button
+                        className={`inventory-zone-filter${activeCategory === category ? ' selected' : ''}`}
+                        key={category}
+                        onClick={() =>
+                          setZoneCategoryFilters((current) => ({
+                            ...current,
+                            [zone.zone_id]: activeCategory === category ? null : category,
+                          }))
+                        }
+                      >
+                        {category}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <div className="items">
+                {visibleItems.map((item) => (
+                  <Link
+                    key={item.food_id}
+                    href={`/fridge/food/${item.food_id}`}
+                    className={`item-card expiry-card ${EXPIRY_CLASS[item.expiry_status]}`}
+                  >
+                    <div className="item-card-main">
+                      <div className="name">{item.name}</div>
+                      <div className="qty item-card-quantity">
+                        {formatInventoryQuantity(item.total_quantity, item.unit)}
+                        {item.lot_count > 1 ? ` · ${item.lot_count} 批` : ''}
+                      </div>
                     </div>
-                  </div>
-                  <div className="item-card-meta">
-                    <span
-                      className={`item-card-expiry ${EXPIRY_CLASS[item.expiry_status]}${
-                        isExpiryLongHorizon(item.earliest_expiry) ? ' long-horizon' : ''
-                      }`}
-                    >
-                      {formatExpiryRelative(item.earliest_expiry)}
-                    </span>
-                    <span className="badge category-badge">
-                      {foodCategoryLabel(item.category, item.category_code)}
-                    </span>
-                  </div>
-                </Link>
-              ))}
-              {visibleItems.length === 0 ? (
-                <p className="inventory-filter-empty">该分类暂时没有食材。</p>
-              ) : null}
-            </div>
+                    <div className="item-card-meta">
+                      <span
+                        className={`item-card-expiry ${EXPIRY_CLASS[item.expiry_status]}${
+                          isExpiryLongHorizon(item.earliest_expiry) ? ' long-horizon' : ''
+                        }`}
+                      >
+                        {formatExpiryRelative(item.earliest_expiry)}
+                      </span>
+                      <span className="badge category-badge">
+                        {foodCategoryLabel(item.category, item.category_code)}
+                      </span>
+                    </div>
+                  </Link>
+                ))}
+                {visibleItems.length === 0 ? (
+                  <p className="inventory-filter-empty">该分类暂时没有食材。</p>
+                ) : null}
+              </div>
             </section>
           );
         })}
@@ -541,7 +548,10 @@ export default function FridgePage() {
             </p>
             <div className="items">
               {visibleStorageAudit.map((item) => (
-                <article className="storage-advice-card" key={`${item.food_id}-${item.current_zone_id}`}>
+                <article
+                  className="storage-advice-card"
+                  key={`${item.food_id}-${item.current_zone_id}`}
+                >
                   <div className="advice-header">
                     <div className="advice-title-row">
                       <span className="advice-food-name">{item.food_name}</span>
@@ -602,7 +612,10 @@ export default function FridgePage() {
                         </button>
                       </div>
                     ) : (
-                      <button className="primary advice-action-btn" onClick={() => setPendingMove(item.food_id)}>
+                      <button
+                        className="primary advice-action-btn"
+                        onClick={() => setPendingMove(item.food_id)}
+                      >
                         调整位置
                       </button>
                     )}
@@ -648,10 +661,7 @@ export default function FridgePage() {
       />
 
       {feedbackOpen ? (
-        <FeedbackModal
-          householdId={household.id}
-          onClose={() => setFeedbackOpen(false)}
-        />
+        <FeedbackModal householdId={household.id} onClose={() => setFeedbackOpen(false)} />
       ) : null}
     </>
   );

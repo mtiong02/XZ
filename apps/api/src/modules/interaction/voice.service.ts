@@ -358,7 +358,10 @@ export class VoiceService {
     return this.getJob(row.id, userId);
   }
 
-  private buildOutcome(parsed: ParseResult, normalized: string = ''): {
+  private buildOutcome(
+    parsed: ParseResult,
+    normalized: string = '',
+  ): {
     status: string;
     candidate: { command_type: string; payload: CandidatePayload } | null;
     errorCode: string | null;
@@ -424,9 +427,10 @@ export class VoiceService {
         };
       }
       if (commandType === 'ADD_INVENTORY') {
-        const isPureTrigger = /^(?:添加在?库?|添加食材|记一下|开始记录|开启连续记录|存入冰箱|放进冰箱)$/i.test(
-          normalized.replace(/[\s，。！？,.!?]/g, ''),
-        );
+        const isPureTrigger =
+          /^(?:添加在?库?|添加食材|记一下|开始记录|开启连续记录|存入冰箱|放进冰箱)$/i.test(
+            normalized.replace(/[\s，。！？,.!?]/g, ''),
+          );
         return {
           status: 'AWAITING_CLARIFICATION',
           candidate: { command_type: commandType, payload: { items: [] } },
@@ -889,16 +893,14 @@ export class VoiceService {
       );
     }
 
-    const descriptions = items
-      .slice(0, 8)
-      .map((item) => {
-        const quantity = `${item.name}${item.total_quantity}${unitSpokenLabel(item.unit)}`;
-        if (!asksExpiry) return quantity;
-        if (!item.earliest_expiry) return asksExpiryDate ? `${quantity}（未记录到期日）` : quantity;
-        const expiry = new Date(item.earliest_expiry);
-        if (!Number.isFinite(expiry.getTime())) return quantity;
-        return `${quantity}（${expiry.getFullYear()}年${expiry.getMonth() + 1}月${expiry.getDate()}日到期）`;
-      });
+    const descriptions = items.slice(0, 8).map((item) => {
+      const quantity = `${item.name}${item.total_quantity}${unitSpokenLabel(item.unit)}`;
+      if (!asksExpiry) return quantity;
+      if (!item.earliest_expiry) return asksExpiryDate ? `${quantity}（未记录到期日）` : quantity;
+      const expiry = new Date(item.earliest_expiry);
+      if (!Number.isFinite(expiry.getTime())) return quantity;
+      return `${quantity}（${expiry.getFullYear()}年${expiry.getMonth() + 1}月${expiry.getDate()}日到期）`;
+    });
     const suffix = items.length > 8 ? `等${items.length}种食材` : '';
     if (asksExpiry)
       return `需要优先处理的有：${descriptions.join('、')}${suffix ? `，${suffix}` : ''}。`;
@@ -985,7 +987,9 @@ export class VoiceService {
       ]);
     }
     const originalRequest =
-      job.transcript_raw?.trim() ?? job.dialogue_turns.find((turn) => turn.role === 'user')?.text ?? '';
+      job.transcript_raw?.trim() ??
+      job.dialogue_turns.find((turn) => turn.role === 'user')?.text ??
+      '';
     const combinedMealRequest = `${originalRequest}，${input.text}`;
     // 用户在未完成的库存槽位里说“我不知道，你推荐/你来安排”时，
     // 这不是数量不清楚，而是主动把任务切换为餐食决策；清掉旧候选，保留原场景上下文。
@@ -1022,7 +1026,14 @@ export class VoiceService {
       job.candidate_command_json?.command_type === 'CREATE_REMINDER' ||
       job.candidate_command_json?.command_type === 'UPDATE_REMINDER'
     ) {
-      return this.advanceReminder(job, userId, input.text, catalog, turns, replyMembership.timezone);
+      return this.advanceReminder(
+        job,
+        userId,
+        input.text,
+        catalog,
+        turns,
+        replyMembership.timezone,
+      );
     }
 
     if (job.status === 'AWAITING_CLARIFICATION') {
@@ -1225,7 +1236,8 @@ export class VoiceService {
 
         const newSpoken = parsedReply.items
           .map(
-            (i) => `${i.food_name}${i.quantity_explicit ? i.quantity : '1'}${unitSpokenLabel(i.unit)}`,
+            (i) =>
+              `${i.food_name}${i.quantity_explicit ? i.quantity : '1'}${unitSpokenLabel(i.unit)}`,
           )
           .join('、');
         const prompt = `已记下：${newSpoken}（共${items.length}样）。继续报或说“就这些”。`;
@@ -1885,8 +1897,9 @@ function applyCorrection(
     bareQuantity: { quantity: string; unit: string } | null;
   },
 ): boolean {
-  let items = candidate.payload?.items;
-  if (!items) return false;
+  const payload = candidate.payload;
+  let items = payload?.items;
+  if (!payload || !items) return false;
 
   // 首先在候选集中对同名食材强去重（防止历史遗留的重复项如 [1g 鸡胸肉, 250g 鸡胸肉]）
   const deduped: typeof items = [];
@@ -1897,7 +1910,7 @@ function applyCorrection(
     if (idx === -1) deduped.push(item);
     else deduped[idx] = item;
   }
-  candidate.payload!.items = deduped;
+  payload.items = deduped;
   items = deduped;
 
   if (interp.hasFood && interp.items.length > 0) {

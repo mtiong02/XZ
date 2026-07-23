@@ -145,7 +145,11 @@ export class HouseholdService {
   async createInvite(householdId: string, userId: string) {
     const member = await this.membership.assertMembership(householdId, userId);
     if (member.role !== 'OWNER') {
-      throw new DomainError('AUTHORIZATION', 'OWNER_ROLE_REQUIRED', 'Only owner can create invites.');
+      throw new DomainError(
+        'AUTHORIZATION',
+        'OWNER_ROLE_REQUIRED',
+        'Only owner can create invites.',
+      );
     }
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -169,7 +173,11 @@ export class HouseholdService {
   }
 
   /** 通过邀请码把当前登录账号加入家庭；同一账号重复加入时幂等返回已有家庭。 */
-  async joinHousehold(userId: string, inviteCode: string, displayName: string): Promise<HouseholdView> {
+  async joinHousehold(
+    userId: string,
+    inviteCode: string,
+    displayName: string,
+  ): Promise<HouseholdView> {
     const normalizedCode = inviteCode.trim().toUpperCase();
     const codeHash = createHash('sha256').update(normalizedCode).digest('hex');
 
@@ -189,7 +197,11 @@ export class HouseholdService {
           [codeHash],
         )
       ).rows[0];
-      if (!invite || new Date(invite.expires_at).getTime() <= Date.now() || invite.used_count >= invite.max_uses) {
+      if (
+        !invite ||
+        new Date(invite.expires_at).getTime() <= Date.now() ||
+        invite.used_count >= invite.max_uses
+      ) {
         throw new DomainError('VALIDATION', 'HOUSEHOLD_INVITE_INVALID', '邀请码无效或已过期。');
       }
 
@@ -225,7 +237,10 @@ export class HouseholdService {
                 [invite.household_id, userId, displayName],
               )
             ).rows[0];
-        await client.query(`update household_invites set used_count = used_count + 1 where id = $1`, [invite.id]);
+        await client.query(
+          `update household_invites set used_count = used_count + 1 where id = $1`,
+          [invite.id],
+        );
       }
 
       const household = (

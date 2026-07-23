@@ -81,7 +81,8 @@ export class MealPlanningService {
     @Optional() @Inject(ContextBuilder) private readonly contextBuilder?: ContextBuilder,
     @Optional() @Inject(FamilyContextService) private readonly familyContext?: FamilyContextService,
     @Optional() @Inject(AgentToolExecutor) private readonly toolExecutor?: AgentToolExecutor,
-    @Optional() @Inject(InventoryCommandService)
+    @Optional()
+    @Inject(InventoryCommandService)
     private readonly inventoryCommands?: InventoryCommandService,
   ) {}
 
@@ -272,9 +273,8 @@ export class MealPlanningService {
   async getMealContextClarification(householdId: string, userId: string, text: string) {
     const parsed = parseMealContext(text);
     const hasDiners = parsed.dinerCount !== null || parsed.diningMode !== 'UNSPECIFIED';
-    const hasPreference = /清淡|少油|少盐|低脂|减脂|减肥|辣|不辣|口味|忌口|过敏|不吃|喜欢|偏好/.test(
-      text,
-    );
+    const hasPreference =
+      /清淡|少油|少盐|低脂|减脂|减肥|辣|不辣|口味|忌口|过敏|不吃|喜欢|偏好/.test(text);
     if (hasDiners && hasPreference) return null;
 
     const missing: string[] = [];
@@ -416,7 +416,11 @@ export class MealPlanningService {
       };
     }
     if (item.status !== 'PENDING') {
-      throw new DomainError('CONFLICT', 'SHOPPING_ITEM_NOT_PENDING', '该待购项已被移除，无法标记为已购买。');
+      throw new DomainError(
+        'CONFLICT',
+        'SHOPPING_ITEM_NOT_PENDING',
+        '该待购项已被移除，无法标记为已购买。',
+      );
     }
     if (!item.quantity || !item.unit_code) {
       throw new DomainError(
@@ -461,7 +465,11 @@ export class MealPlanningService {
     );
     if (!updated.rows[0]) {
       // 库存命令已经用幂等键成功，下一次请求会重放而不会重复入库。
-      throw new DomainError('CONFLICT', 'SHOPPING_ITEM_STATE_CHANGED', '待购项状态已发生变化，请刷新后重试。');
+      throw new DomainError(
+        'CONFLICT',
+        'SHOPPING_ITEM_STATE_CHANGED',
+        '待购项状态已发生变化，请刷新后重试。',
+      );
     }
     return {
       shopping_item_id: updated.rows[0].id,

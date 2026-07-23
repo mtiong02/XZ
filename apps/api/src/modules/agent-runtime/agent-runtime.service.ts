@@ -32,7 +32,9 @@ export class AgentRuntimeService {
       );
     } catch (error) {
       // Telemetry must never block a household action if the table is not yet migrated.
-      this.logger.warn(`Agent event skipped: ${error instanceof Error ? error.message : String(error)}`);
+      this.logger.warn(
+        `Agent event skipped: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 }

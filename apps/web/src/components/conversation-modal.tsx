@@ -72,7 +72,10 @@ function isLikelySpeakerEcho(heard: string, spoken: string): boolean {
 function isDialogueExit(text: string): boolean {
   const compact = normalizedSpeech(text);
   if (/结束后提醒/.test(compact)) return false;
-  const courtesyPrefix = '(?:好(?:的|吧)?|那就|嗯|啊|行|可以)?';
+  // 礼貌语可能出现在结束词【之前】（"好的谢谢结束"）或之后（"结束谢谢"）：
+  // 线上 07/22 会话里用户说"好的谢谢结束"未被识别，导致会话继续监听并被投诉，两侧都要放行。
+  const courtesyPrefix =
+    '(?:好(?:的|吧)?|那就|嗯|啊|行|可以)?(?:谢谢(?:力|你|啦)?|多谢|辛苦了|麻烦你了)*';
   const courtesy = '(?:谢谢(?:力|你|啦)?|多谢|辛苦了|麻烦你了|拜拜|再见|晚安|了|吧)*';
 
   if (
@@ -89,7 +92,7 @@ function isDialogueExit(text: string): boolean {
       'i',
     ).test(compact) ||
     new RegExp(
-      `^(?:好(?:的)?|那|嗯|啊|行|可以)?(?:(?:我们|咱们|我)(?:今天)?(?:就|先)?|今天)?(?:就|先)?(?:先这样|就这样|到这(?:里)?|先到这(?:里)?|没事了|没有别的了|不聊了|下次再聊|回头再聊|我先走了|我先忙了|先挂了|挂了|结束吧|退下吧|先退下|你先退下|拜拜|再见|晚安)${courtesy}$`,
+      `^${courtesyPrefix}(?:(?:我们|咱们|我)(?:今天)?(?:就|先)?|今天)?(?:就|先)?(?:先这样|就这样|到这(?:里)?|先到这(?:里)?|没事了|没有别的了|不聊了|下次再聊|回头再聊|我先走了|我先忙了|先挂了|挂了|结束吧|退下吧|先退下|你先退下|拜拜|再见|晚安)${courtesy}$`,
       'i',
     ).test(compact) ||
     new RegExp(
@@ -246,7 +249,9 @@ export function ConversationModal({
         void startRef.current();
       }, delay);
       // 保留断开原因用于开发诊断；UI 只展示简短的重连提示。
-      if (process.env.NODE_ENV !== 'production') console.warn('[xz-voice] reconnect scheduled', reason);
+      if (process.env.NODE_ENV !== 'production')
+        // eslint-disable-next-line no-console
+        console.warn('[xz-voice] reconnect scheduled', reason);
     },
     [abandonPendingJob],
   );
@@ -346,11 +351,17 @@ export function ConversationModal({
       }
       if (mealFeedbackJobRef.current && !mealFeedbackSentRef.current) {
         const compactFeedback = normalizedSpeech(text);
-        if (/^(?:嗯)?(?:好|好的|可以|可以的|没问题|没问题的|是的|行|就这个|这个可以)(?:谢谢)?$/.test(compactFeedback)) {
+        if (
+          /^(?:嗯)?(?:好|好的|可以|可以的|没问题|没问题的|是的|行|就这个|这个可以)(?:谢谢)?$/.test(
+            compactFeedback,
+          )
+        ) {
           submitMealFeedback('ACCEPTED');
           return;
         }
-        if (/不合适|不喜欢|换一个|换一道|还有(?:其他|别的)?推荐|改一下|重新推荐/.test(compactFeedback)) {
+        if (
+          /不合适|不喜欢|换一个|换一道|还有(?:其他|别的)?推荐|改一下|重新推荐/.test(compactFeedback)
+        ) {
           const rejected = /不合适|不喜欢/.test(compactFeedback);
           submitMealFeedback(rejected ? 'REJECTED' : 'MODIFIED');
           if (rejected) return;
