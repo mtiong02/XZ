@@ -38,6 +38,7 @@ import {
   UNRECOGNIZED_PROMPT,
   type SpokenItem,
 } from './dialogue/prompts';
+import { normalizeBareDinerReply } from './dialogue/meal-recommendations';
 import { unitSpokenLabel } from './dialogue/units-spoken';
 import { AgentToolExecutor } from '../agent-runtime/agent-tool-executor';
 import { AgentRuntimeService } from '../agent-runtime/agent-runtime.service';
@@ -185,7 +186,13 @@ export class VoiceService {
     });
     const outcome =
       parsed.intent === 'CREATE_REMINDER'
-        ? await this.buildReminderOutcome(input.household_id, userId, input.transcript_text, parsed)
+        ? await this.buildReminderOutcome(
+            input.household_id,
+            userId,
+            input.transcript_text,
+            parsed,
+            membership.timezone,
+          )
         : parsed.intent === 'QUERY_REMINDERS'
           ? await this.buildReminderQueryOutcome(
               input.household_id,
@@ -683,6 +690,7 @@ export class VoiceService {
     userId: string,
     rawText: string,
     parsed: ParseResult,
+    timezone: string,
   ): Promise<{
     status: string;
     candidate: {
@@ -698,7 +706,7 @@ export class VoiceService {
     errorCode: string | null;
     spokenPrompt: string | null;
   }> {
-    const scheduled = parseReminderSchedule(rawText);
+    const scheduled = parseReminderSchedule(rawText, new Date(), timezone);
     const item = parsed.items[0];
     const relativeFraction = relativeInventoryFraction(rawText);
     const relativeFoodText =
@@ -966,7 +974,7 @@ export class VoiceService {
    */
   async reply(jobId: string, userId: string, input: z.infer<typeof ReplyVoiceJobSchema>) {
     const job = await this.loadJobRow(jobId);
-    await this.membership.assertMembership(job.household_id, userId);
+    const replyMembership = await this.membership.assertMembership(job.household_id, userId);
     if (!REPLIABLE_STATUSES.has(job.status)) {
       throw new DomainError('CONFLICT', 'VOICE_JOB_NOT_REPLIABLE', `Voice job is ${job.status}.`);
     }
@@ -1014,7 +1022,7 @@ export class VoiceService {
       job.candidate_command_json?.command_type === 'CREATE_REMINDER' ||
       job.candidate_command_json?.command_type === 'UPDATE_REMINDER'
     ) {
-      return this.advanceReminder(job, userId, input.text, catalog, turns);
+      return this.advanceReminder(job, userId, input.text, catalog, turns, replyMembership.timezone);
     }
 
     if (job.status === 'AWAITING_CLARIFICATION') {
@@ -1033,24 +1041,11 @@ export class VoiceService {
     if (!original) {
       throw new DomainError('CONFLICT', 'VOICE_JOB_INVALID_CANDIDATE', '餐食上下文缺少原始请求。');
     }
-    const combined = `${original}，${replyText}`;
-    const clarification = await this.meals.getMealContextClarification(
-      job.household_id,
-      userId,
-      combined,
-    );
-    if (clarification) {
-      return this.persistTurn(job, {
-        status: 'AWAITING_CLARIFICATION',
-        candidate: job.candidate_command_json,
-        spokenPrompt: clarification,
-        turns: [
-          ...job.dialogue_turns,
-          { role: 'user' as const, text: replyText, at: nowIso() },
-        ],
-        userId,
-      });
-    }
+    // 追问"几个人吃"后，用户自然只回裸数字（"两个"/"俩"/"2"），补全为"N个人"再合并，
+    // 否则 parseMealContext 匹配不到人数会导致同一问题反复追问（线上 07/23 会话实证）。
+    const combined = `${original}，${normalizeBareDinerReply(replyText)}`;
+    // "只追问一次"（getMealContextClarification 的契约）：本方法只在已经追问过一次后被调用，
+    // 因此这里不再二次追问；缺失的槽位由推荐逻辑用保守默认值兜底。
     return this.replaceWithMealRecommendation(job, userId, combined, turnId);
   }
 
@@ -1084,6 +1079,7 @@ export class VoiceService {
     replyText: string,
     catalog: FoodCatalogEntry[],
     turns: DialogueTurn[],
+    timezone: string,
   ) {
     const candidate = job.candidate_command_json;
     const payload = candidate?.payload ?? {};
@@ -1111,7 +1107,7 @@ export class VoiceService {
 
     if (interp.kind !== 'CONFIRM' || relativeFraction) {
       const normalizedReply = normalizeReminderSpeech(replyText);
-      const scheduled = parseReminderSchedule(normalizedReply);
+      const scheduled = parseReminderSchedule(normalizedReply, new Date(), timezone);
       if (scheduled) payload.scheduled_for = scheduled.toISOString();
 
       const parsed = parseTranscript(normalizeTranscript(normalizedReply), catalog);

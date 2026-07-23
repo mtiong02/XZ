@@ -453,11 +453,15 @@ export function parseTranscript(normalized: string, catalog: FoodCatalogEntry[])
       const sub = normalized.slice(q.end);
       const m = /^\s*(?:的)?\s*([\u4e00-\u9fa5a-zA-Z0-9]{1,8})/.exec(sub);
       if (m && m[1]) {
-        const rawName = m[1].replace(/^(?:然后|接着|再|帮我|入库|添加|放进|买|买了)+/, '').trim();
+        const rawName = m[1]
+          .replace(/^(?:然后|接着|再|帮我|入库|添加|放进|买|买了|是|改成|换成|变成)+/, '')
+          .trim();
         if (
           rawName &&
           rawName.length >= 1 &&
-          !/^(?:的|了|一下|看看|吧|啊|呢|吗|对|不对|取消|算了)$/.test(rawName)
+          !/^(?:的|了|一下|看看|吧|啊|呢|吗|对|不对|取消|算了)$/.test(rawName) &&
+          // 修正话术残片（"不是2盒是3盒" 里的 "是3盒"→剥掉"是"后是纯数量），不是食材名
+          !/^\d/.test(rawName)
         ) {
           const catalogHit = catalog.find(
             (c) => c.canonicalName.includes(rawName) || rawName.includes(c.canonicalName),

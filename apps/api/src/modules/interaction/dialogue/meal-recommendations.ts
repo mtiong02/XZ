@@ -21,6 +21,23 @@ export interface MealRecipeCandidate {
 
 const DINER_CN_NUMBERS: Record<string, number> = { 一: 1, 两: 2, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
 
+/**
+ * 把对"几个人吃"追问的裸数字口语回答补全成 parseMealContext 能识别的"N个人"。
+ * 只处理整句就是一个人数的情形（"两个"、"俩"、"就2个"、"三个人吃"原样保留），
+ * 其他回答原样返回，不会误改带数量的食材语句。
+ */
+export function normalizeBareDinerReply(reply: string): string {
+  const compact = reply.replace(/[\s，。！？、,.!?：:；;]/g, '');
+  const match = /^(?:就|大概|约|差不多)?([一二两三四五六七八九十\d]{1,2}|俩)(?:个|位|口)?(?:人)?(?:吃|用餐|一起吃)?$/.exec(
+    compact,
+  );
+  if (!match?.[1]) return reply;
+  const raw = match[1] === '俩' ? '两' : match[1];
+  const count = /^\d+$/.test(raw) ? Number(raw) : (DINER_CN_NUMBERS[raw] ?? null);
+  if (!count || count < 1 || count > 30) return reply;
+  return `${count}个人`;
+}
+
 /** 从自然语言中提取用餐场景；它只解释用户意图，不产生任何库存副作用。 */
 export function parseMealContext(text: string): MealContext {
   const compact = text.replace(/[\s，。！？、,.!?：:；;]/g, '');

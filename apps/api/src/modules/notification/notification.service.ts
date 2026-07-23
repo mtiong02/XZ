@@ -46,15 +46,49 @@ export function normalizeReminderSpeech(text: string): string {
   );
 }
 
-export function parseReminderSchedule(text: string, now = new Date()): Date | null {
+/** 求某时刻在指定时区的 UTC 偏移（分钟）。 */
+function timezoneOffsetMinutes(date: Date, timeZone: string): number {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+      .formatToParts(date)
+      .map((part) => [part.type, part.value]),
+  );
+  const asUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour) % 24,
+    Number(parts.minute),
+    Number(parts.second),
+  );
+  return (asUtc - date.getTime()) / 60_000;
+}
+
+/**
+ * 解析口语提醒时间。钟点必须按**家庭时区**的墙上时间理解：
+ * 服务器跑在 UTC 时，用过程本地时区 setHours 会把“明天早上9点”落成 UTC 9 点
+ * （北京 17 点）——这是线上 07/23 会话里“九点变 17:00”的根因，勿回退。
+ */
+export function parseReminderSchedule(
+  text: string,
+  now = new Date(),
+  timeZone = 'Asia/Shanghai',
+): Date | null {
   const normalized = normalizeReminderSpeech(text);
-  const future = new Date(now);
-  if (/后天/.test(normalized)) future.setDate(future.getDate() + 2);
-  else if (/明天|明日/.test(normalized)) future.setDate(future.getDate() + 1);
-  else return null;
+  const dayOffset = /后天/.test(normalized) ? 2 : /明天|明日/.test(normalized) ? 1 : null;
+  if (dayOffset === null) return null;
   // 优先按时间短语解析，避免“中午十二点把苹果吃了”中的食材数量或其它数字干扰时间。
   const explicit = /(?:上午|早上|早晨|中午|下午|晚上|今晚)?\s*(\d{1,2})点/.exec(normalized)?.[1];
-  const hour = explicit
+  let hour = explicit
     ? Number(explicit)
     : /中午/.test(normalized)
       ? 12
@@ -63,9 +97,31 @@ export function parseReminderSchedule(text: string, now = new Date()): Date | nu
         : /下午/.test(normalized)
           ? 15
           : 9;
+  // “下午/晚上三点”这类 12 小时口语转 24 小时
+  if (explicit && hour < 12 && /下午|晚上|今晚/.test(normalized)) hour += 12;
   if (hour < 0 || hour > 23) return null;
-  future.setHours(hour, 0, 0, 0);
-  return future;
+
+  let zone = timeZone;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: zone });
+  } catch {
+    zone = 'Asia/Shanghai';
+  }
+  // 家庭时区里“今天”的年月日
+  const [year, month, day] = new Intl.DateTimeFormat('en-CA', {
+    timeZone: zone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+    .format(now)
+    .split('-')
+    .map(Number);
+  if (!year || !month || !day) return null;
+  // 先按 UTC 假设该墙上时间，再用时区偏移校正为真实 UTC 时刻
+  const utcGuess = Date.UTC(year, month - 1, day + dayOffset, hour, 0, 0);
+  const offset = timezoneOffsetMinutes(new Date(utcGuess), zone);
+  return new Date(utcGuess - offset * 60_000);
 }
 
 interface ExpiringItem {
