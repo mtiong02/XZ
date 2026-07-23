@@ -47,18 +47,30 @@ export function normalizeTranscript(raw: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 
+  // 1. 归一化模糊量词（少量/少许/适量/一点 -> 1份）
+  text = text.replace(/(?:少量|少许|适量|一点点|一点|稍微)/g, '1份');
+
+  // 2. 归一化“几根/几个/几包” -> 默认3个
+  text = text.replace(/几(根|个|包|袋|盒|颗|片|只|只|瓶)/g, '3$1');
+
   // “一千克”里的“千”属于单位而非数量位，先保护复合单位再转换中文数字。
   text = text.replace(/千克/g, '__UNIT_KG__');
 
-  // 中文数字 -> 阿拉伯数字（仅当后面跟单位/量词或食材语境时也统一转换）
+  // 3. 中文数字 -> 阿拉伯数字
   text = text.replace(CN_NUMBER_PATTERN, (match, offset: number, source: string) => {
     // 避免把口语助词误转成数字，例如“添加一下”不应变成“添加1下”。
-    // 单字数量只有紧接量词/单位时才转换；“一片”“一盒”仍会正常转换。
     const next = source[offset + match.length] ?? '';
     if (match.length === 1 && /[下些样般直会起定]/.test(next)) return match;
     const value = chineseNumberToDigits(match);
     return value === null ? match : String(value);
   });
 
-  return text.replace(/__UNIT_KG__/g, '千克');
+  text = text.replace(/__UNIT_KG__/g, '千克');
+
+  // 4. 转换“1斤半”、“2盒半” -> “1.5斤”、“2.5盒”
+  text = text.replace(/(\d+)\s*(斤|个|盒|包|袋|瓶|块|片|颗|只|根)半/g, (_m, num, unit) => {
+    return `${Number(num) + 0.5}${unit}`;
+  });
+
+  return text;
 }

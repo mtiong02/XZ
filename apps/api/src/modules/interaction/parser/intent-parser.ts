@@ -77,6 +77,7 @@ const INTENT_RULES: { intent: ParsedIntent; patterns: RegExp[]; weight: number }
 ];
 
 /** 单位词 -> 单位码（与 units 表一致） */
+/** 单位词 -> 单位码（与 units 表一致） */
 const UNIT_WORDS: Record<string, string> = {
   个: 'piece',
   只: 'piece',
@@ -86,17 +87,23 @@ const UNIT_WORDS: Record<string, string> = {
   片: 'piece',
   块: 'piece',
   段: 'piece',
+  支: 'piece',
+  条: 'piece',
   盒: 'box',
   瓶: 'bottle',
+  罐: 'can',
   包: 'pack',
   袋: 'bag',
+  份: 'pack',
   把: 'bunch',
+  串: 'bunch',
   克: 'g',
   g: 'g',
   千克: 'kg',
   公斤: 'kg',
   kg: 'kg',
   斤: 'jin',
+  两: 'liang',
   毫升: 'ml',
   ml: 'ml',
   升: 'l',
@@ -104,7 +111,21 @@ const UNIT_WORDS: Record<string, string> = {
 };
 
 const QUANTITY_PATTERN =
-  /(\d+(?:\.\d+)?)\s*(千克|公斤|毫升|克|盒|瓶|包|袋|把|个|只|颗|枚|根|片|块|段|斤|升|kg|ml|g|l)/gi;
+  /(\d+(?:\.\d+)?)\s*(千克|公斤|毫升|克|盒|瓶|罐|包|袋|把|个|只|颗|枚|根|片|块|段|支|条|份|串|斤|两|升|kg|ml|g|l)/gi;
+
+export const BATCH_COMMIT_PATTERN =
+  /(?:以上全部|前面说的|就这些|全部入库|就这么多|记录完毕|好了|完事|没了|够了|全部添加)/i;
+
+export function isReasonableUnitForFood(entry: FoodCatalogEntry, unit: string): boolean {
+  // 用户通常按包装或日常规格录入食材（“一袋香菇”“两盒南乳”“一瓶红酒”）。
+  // 零拦截策略：只要是合法的包装/通用量词（盒/袋/包/瓶/罐/个/斤/两），全量信任并放行，绝不说“请按克记录”。
+  const suggested = suggestedUnitsForFood(entry);
+  if (suggested.includes(unit)) return true;
+  if (['box', 'bag', 'pack', 'bottle', 'can', 'piece', 'jin', 'liang', 'bunch', 'g', 'kg'].includes(unit)) {
+    return true;
+  }
+  return false;
+}
 
 const INFORMATION_REQUEST = /请用\d+句|怎么|怎样|如何|做什么|介绍|告诉我|能否|能不能|是否|可以.+吗/;
 const INVENTORY_CATEGORY_QUERY =
@@ -302,28 +323,6 @@ export function suggestedUnitsForFood(entry: FoodCatalogEntry): string[] {
   const configured = entry.preferredUnitCodes?.filter(Boolean) ?? [];
   if (configured.length > 0) return configured;
   return CATEGORY_UNIT_DEFAULTS[entry.category ?? ''] ?? [entry.defaultUnitCode];
-}
-
-export function isReasonableUnitForFood(entry: FoodCatalogEntry, unit: string): boolean {
-  // 用户通常按包装录入食材（“一袋香菇”“两盒南乳”“一瓶红酒”）。
-  // 知识库的默认单位仍用于推荐和换算，但不能因为未配置包装单位就把真实表达判成错误。
-  const suggested = suggestedUnitsForFood(entry);
-  if (suggested.includes(unit)) return true;
-  if (unit === 'bunch') return entry.category === 'VEGETABLE';
-  if (unit === 'bottle') {
-    return ['bottle', 'ml', 'l'].includes(entry.defaultUnitCode) ||
-      entry.category === 'BEVERAGE' ||
-      /奶|酒|饮|醋|油/.test(entry.canonicalName);
-  }
-  if (unit === 'box') {
-    return entry.defaultUnitCode === 'box' ||
-      entry.category === 'EGG_DAIRY' ||
-      !['MEAT', 'SEAFOOD', 'FRUIT', 'VEGETABLE'].includes(entry.category ?? '');
-  }
-  if (unit === 'bag' || unit === 'pack') {
-    return entry.category !== 'MEAT' && entry.category !== 'SEAFOOD';
-  }
-  return false;
 }
 
 function collectQuantityMatches(normalized: string): QuantityMatch[] {

@@ -18,6 +18,7 @@ import {
 } from '../notification/notification.service';
 import { normalizeTranscript } from './parser/normalizer';
 import {
+  BATCH_COMMIT_PATTERN,
   isReasonableUnitForFood,
   parseTranscript,
   requestedStorageZoneCode,
@@ -416,12 +417,16 @@ export class VoiceService {
             '你想用掉哪种食材？先告诉我食材名称；如果你想让我按早餐、午餐或晚餐主动推荐，可以直接说“你来推荐”。',
         };
       }
-      const action =
-        commandType === 'ADD_INVENTORY'
-          ? '添加'
-          : commandType === 'CONSUME_INVENTORY'
-            ? '用掉'
-            : '处理';
+      if (commandType === 'ADD_INVENTORY') {
+        return {
+          status: 'AWAITING_CLARIFICATION',
+          candidate: { command_type: commandType, payload: { items: [] } },
+          errorCode: null,
+          spokenPrompt:
+            '好的，已为你开启连续记录！你可以把食材和数量一句句告诉我，比如‘薏米一盒’、‘五指毛桃一袋’；报完后说‘就这些’或‘以上全部入库’即可。',
+        };
+      }
+      const action = commandType === 'CONSUME_INVENTORY' ? '用掉' : '处理';
       return {
         status: 'AWAITING_CLARIFICATION',
         candidate: { command_type: commandType, payload: { items: [] } },
@@ -1173,6 +1178,7 @@ export class VoiceService {
     const candidate = job.candidate_command_json;
     const items = candidate?.payload?.items ?? [];
     const interp = interpretReply(replyText, catalog);
+    const normalizedReply = normalizeTranscript(replyText);
 
     if (interp.kind === 'REJECT') {
       turns.push({ role: 'system', text: CANCELLED_PROMPT, at: nowIso() });
@@ -1184,6 +1190,62 @@ export class VoiceService {
         [job.id, CANCELLED_PROMPT, JSON.stringify(turns)],
       );
       return this.getJob(job.id, userId);
+    }
+
+    // 针对 ADD_INVENTORY 连续报菜名与暂存箱模式
+    if (candidate?.command_type === 'ADD_INVENTORY') {
+      const isCommit = BATCH_COMMIT_PATTERN.test(normalizedReply);
+      const parsedReply = parseTranscript(normalizedReply, catalog);
+
+      if (isCommit && items.length > 0) {
+        const spokenList = toSpokenItems(items);
+        const itemNames = spokenList
+          .map((i) => `${i.food_name}${i.quantity}${unitSpokenLabel(i.unit)}`)
+          .join('、');
+        const prompt = `已为你整理好，准备入库 ${items.length} 样食材：${itemNames}。确认入库吗？`;
+        return this.persistTurn(job, {
+          status: 'AWAITING_CONFIRMATION',
+          candidate,
+          spokenPrompt: prompt,
+          turns,
+          userId,
+        });
+      }
+
+      if (parsedReply.items.length > 0) {
+        const newCandidateItems = parsedReply.items.map(toCandidateItem);
+        items.push(...newCandidateItems);
+        if (candidate.payload) {
+          candidate.payload.items = items;
+        }
+
+        const newSpoken = parsedReply.items
+          .map(
+            (i) => `${i.food_name}${i.quantity_explicit ? i.quantity : '1'}${unitSpokenLabel(i.unit)}`,
+          )
+          .join('、');
+        const prompt = `已记下：${newSpoken}（当前共 ${items.length} 样）。可以继续报下一个，或者说‘就这些’完成录入。`;
+        return this.persistTurn(job, {
+          status: 'AWAITING_CLARIFICATION',
+          candidate,
+          spokenPrompt: prompt,
+          turns,
+          userId,
+        });
+      }
+
+      // 如果未产生新食材，且连续追问超过 2 轮（避免“请问要添加多少这个？”复读死循环）
+      const userTurns = turns.filter((t) => t.role === 'user').length;
+      if (items.length === 0 && userTurns >= 3) {
+        const fallbackPrompt =
+          '抱歉没有听清具体的食材和数量。您可以重新说出食材（如‘加两盒牛奶’），或者直接在屏幕上手动添加。';
+        turns.push({ role: 'system', text: fallbackPrompt, at: nowIso() });
+        await this.pool.query(
+          `update voice_jobs set status='FAILED', spoken_prompt=$2, turn_count=turn_count+1, dialogue_turns=$3, completed_at=now(), error_code='CLARIFICATION_LOOP_PREVENTED' where id=$1`,
+          [job.id, fallbackPrompt, JSON.stringify(turns)],
+        );
+        return this.getJob(job.id, userId);
+      }
     }
 
     let filled = false;
