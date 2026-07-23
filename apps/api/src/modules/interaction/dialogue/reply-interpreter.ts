@@ -30,10 +30,22 @@ export type ReplyInterpretation =
     }
   | { kind: 'UNCLEAR' };
 
+// 真实口语通常不会只说一个“对”："可以的"、"没问题"、"是的帮我添加"、
+// 以及 ASR 偶尔多出的语气字（"是的准"）都应视为确认，而不是让用户重说。
 const CONFIRM_PATTERN =
-  /^(?:(?:是的?|对的?|确认|没错|好的|可以|嗯|行|ok|yes|correct|right|yep|sure|是|对))+$/i;
+  /^(?:(?:是的?|对的?|确认|没错|好的?|可以(?:的)?|(?:没|没有)问题(?:的)?|嗯嗯?|行(?:的)?|ok|yes|correct|right|yep|sure)(?:(?:了|吧|呢|呀|啊|准|正确|(?:没|没有)问题|帮我(?:添|添加|加|加上|记录|确认|执行)(?:一下)?|请帮我(?:添|添加|加|加上|记录|确认|执行)(?:一下)?))*)+$/i;
 const REJECT_PATTERN =
-  /(不对|不是的|不要|取消|算了|错了|不用了|重来|结束|退出|不用|多谢|就这|算了吧|不加了|不做|no|cancel|wrong|nope)/i;
+  /(不对|不是的|不要|取消|算了|错了|不用了|重来|结束|退出|不用|不加了|不做|no|cancel|wrong|nope)/i;
+
+/**
+ * ASR 有时会把“没问题”截成“没问”，或吞掉“没有问题”的最后一个字。
+ * 只在确认轮、且整句没有食材/数量修正时使用，避免放宽普通业务指令。
+ */
+function isFuzzyConfirmation(text: string): boolean {
+  return ['没问题', '没有问题', '是的没问题', '是的没有问题'].some(
+    (candidate) => pinyinSimilarity(text, candidate) >= 0.76,
+  );
+}
 
 /** 相对库存数量。当前先支持最常见且无歧义的“一半”。 */
 export function relativeInventoryFraction(rawReply: string): string | null {
@@ -41,7 +53,7 @@ export function relativeInventoryFraction(rawReply: string): string | null {
   return /一半|半数|0\.5数?|百分之50|50%/.test(normalized) ? '0.5' : null;
 }
 
-import { isPhoneticallyExit } from './phonetic-matcher';
+import { isPhoneticallyExit, pinyinSimilarity } from './phonetic-matcher';
 
 /** 明确结束当前会话；使用拼音音元智能匹配 + 容错识别 ASR 错别字（如“结束兑换”），但不误伤“结束后提醒我”。 */
 export function isDialogueExit(rawReply: string): boolean {
@@ -100,8 +112,11 @@ export function interpretReply(rawReply: string, catalog: FoodCatalogEntry[]): R
   }
 
   // 2. 无新值：判断确认 / 拒绝
-  if (REJECT_PATTERN.test(normalized)) return { kind: 'REJECT' };
-  if (CONFIRM_PATTERN.test(normalized.trim())) return { kind: 'CONFIRM' };
+  const compactReply = normalized.replace(/[\s，。！？、,.!?：:；;“”‘’]/g, '');
+  if (REJECT_PATTERN.test(compactReply)) return { kind: 'REJECT' };
+  if (CONFIRM_PATTERN.test(compactReply) || isFuzzyConfirmation(compactReply)) {
+    return { kind: 'CONFIRM' };
+  }
 
   return { kind: 'UNCLEAR' };
 }

@@ -504,7 +504,7 @@ export class VoiceService {
         status: 'FAILED',
         candidate: null,
         errorCode: 'MOVE_TARGET_ZONE_MISSING',
-        spokenPrompt: '没有找到目标存放区域，请稍后在冰箱页面检查冷藏、冷冻和常温区。',
+        spokenPrompt: '没有找到目标存放区域，请稍后在冰箱页面检查保鲜、冷冻和常温区。',
       };
     }
     const lots = await this.pool.query<{ id: string; canonical_name: string }>(
@@ -833,9 +833,11 @@ export class VoiceService {
       items = items.filter((item) => categoryRequest.descendantCodes.has(item.category_code));
     }
 
-    const asksExpiry = /快过期|临期|过期/.test(normalized);
+    const asksExpiryDate = /什么时候|哪天/.test(normalized) && /到期|过期/.test(normalized);
+    const asksExpiry = asksExpiryDate || /快过期|临期|过期/.test(normalized);
     const asksMealIdea = isMealDecisionRequest(normalized);
-    if (asksExpiry) {
+    // “什么时候到期”是查询具体日期，不能像“哪些快过期”一样先过滤掉正常批次。
+    if (asksExpiry && !asksExpiryDate) {
       items = items.filter(
         (item) => item.expiry_status === 'EXPIRING' || item.expiry_status === 'EXPIRED',
       );
@@ -868,7 +870,14 @@ export class VoiceService {
 
     const descriptions = items
       .slice(0, 8)
-      .map((item) => `${item.name}${item.total_quantity}${unitSpokenLabel(item.unit)}`);
+      .map((item) => {
+        const quantity = `${item.name}${item.total_quantity}${unitSpokenLabel(item.unit)}`;
+        if (!asksExpiry) return quantity;
+        if (!item.earliest_expiry) return asksExpiryDate ? `${quantity}（未记录到期日）` : quantity;
+        const expiry = new Date(item.earliest_expiry);
+        if (!Number.isFinite(expiry.getTime())) return quantity;
+        return `${quantity}（${expiry.getFullYear()}年${expiry.getMonth() + 1}月${expiry.getDate()}日到期）`;
+      });
     const suffix = items.length > 8 ? `等${items.length}种食材` : '';
     if (asksExpiry)
       return `需要优先处理的有：${descriptions.join('、')}${suffix ? `，${suffix}` : ''}。`;
@@ -1011,12 +1020,25 @@ export class VoiceService {
     if (!original) {
       throw new DomainError('CONFLICT', 'VOICE_JOB_INVALID_CANDIDATE', '餐食上下文缺少原始请求。');
     }
-    return this.replaceWithMealRecommendation(
-      job,
+    const combined = `${original}，${replyText}`;
+    const clarification = await this.meals.getMealContextClarification(
+      job.household_id,
       userId,
-      `${original}，${replyText}`,
-      turnId,
+      combined,
     );
+    if (clarification) {
+      return this.persistTurn(job, {
+        status: 'AWAITING_CLARIFICATION',
+        candidate: job.candidate_command_json,
+        spokenPrompt: clarification,
+        turns: [
+          ...job.dialogue_turns,
+          { role: 'user' as const, text: replyText, at: nowIso() },
+        ],
+        userId,
+      });
+    }
+    return this.replaceWithMealRecommendation(job, userId, combined, turnId);
   }
 
   private async replaceWithMealRecommendation(

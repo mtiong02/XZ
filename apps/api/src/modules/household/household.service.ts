@@ -33,7 +33,7 @@ export interface HouseholdView {
 }
 
 const DEFAULT_ZONES = [
-  { code: 'FRIDGE', name: '冷藏室', position: 0 },
+  { code: 'FRIDGE', name: '保鲜室', position: 0 },
   { code: 'FREEZER', name: '冷冻室', position: 1 },
   { code: 'PANTRY', name: '常温区', position: 2 },
 ] as const;

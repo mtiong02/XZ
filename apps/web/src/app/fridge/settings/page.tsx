@@ -70,6 +70,13 @@ export default function SettingsPage() {
             </div>
           </div>
           <div className="settings-link-grid">
+            <Link className="settings-link-card" href="/fridge/security">
+              <div>
+                <div className="name">账号与安全</div>
+                <div className="qty">修改密码，查看当前登录方式与安全说明</div>
+              </div>
+              <span>进入</span>
+            </Link>
             <Link className="settings-link-card" href="/fridge/household">
               <div>
                 <div className="name">家庭成员</div>

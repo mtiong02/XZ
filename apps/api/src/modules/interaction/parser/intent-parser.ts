@@ -109,8 +109,10 @@ const QUANTITY_PATTERN =
 const INFORMATION_REQUEST = /请用\d+句|怎么|怎样|如何|做什么|介绍|告诉我|能否|能不能|是否|可以.+吗/;
 const INVENTORY_CATEGORY_QUERY =
   /(?:有|剩)(?:哪些|什么)(?:肉类?|荤菜|蔬菜|青菜|菜类|水果|海鲜|水产|鱼虾|龙虾|贝类|蛋奶|奶制品|乳制品|蛋类|豆制品|主食|粮食|谷物|菌菇|蘑菇|调味料|调料|佐料)|(?:肉类?|荤菜|蔬菜|青菜|菜类|水果|海鲜|水产|鱼虾|龙虾|贝类|蛋奶|奶制品|乳制品|蛋类|豆制品|主食|粮食|谷物|菌菇|蘑菇|调味料|调料|佐料)(?:有|剩)(?:哪些|什么|多少)/;
+const SIMPLE_CATEGORY_QUERY =
+  /^(?:嗯|呃|那|请问|我们?|家里)?(?:有|有没有|还有|是否有)(?:没有)?(?:哪些|什么)?(?:肉类?|荤菜|蔬菜|青菜|菜类|水果|海鲜|水产|鱼虾|龙虾|贝类|蛋奶|奶制品|乳制品|蛋类|豆制品|主食|粮食|谷物|菌菇|蘑菇|调味料|调料|佐料)(?:吗|呢|呀|啊)?$/;
 const INVENTORY_QUERY_REQUEST =
-  /(?:冰箱|冷藏|冷冻|常温|库存|家里).*(?:有|剩|哪些|什么)|(?:我|我们)?(?:有|剩)(?:哪些|什么)食材|(?:有哪些|有什么|列出|盘点|查找|查询).*(?:食材|东西|菜)|(?:哪些|什么).*(?:快过期|临期|已经过期)|(?:快过期|临期|过期).*(?:哪些|什么)|(?:今天|今晚|中午).*(?:吃什么|做什么菜|做点什么)|(?:这些|现有|冰箱里|库存里).*(?:能做|可以做|吃什么|怎么吃|美食|菜谱|减脂餐)|(?:减脂|减肥).*(?:餐|吃什么|怎么吃|推荐)/;
+  /(?:冰箱|冷藏|冷冻|常温|库存|家里).*(?:有|剩|哪些|什么)|(?:我|我们)?(?:有|剩)(?:哪些|什么)食材|(?:有哪些|有什么|列出|盘点|查找|查询).*(?:食材|东西|菜)|(?:哪些|什么).*(?:快过期|临期|已经过期)|(?:快过期|临期|过期).*(?:哪些|什么)|(?:什么时候|哪天).*(?:到期|过期)|(?:今天|今晚|中午).*(?:吃什么|做什么菜|做点什么)|(?:这些|现有|冰箱里|库存里).*(?:能做|可以做|吃什么|怎么吃|美食|菜谱|减脂餐)|(?:减脂|减肥).*(?:餐|吃什么|怎么吃|推荐)/;
 const MEAL_OR_SHOPPING_ADVICE_REQUEST =
   /(?:想吃|做).*(?:还要买|还缺|缺什么|买什么|怎么做)|(?:还要买|还缺|缺什么|买什么).*(?:菜|肉|汤|饭|牛腩|土豆)/;
 const SNACK_RECOMMENDATION_REQUEST =
@@ -118,7 +120,7 @@ const SNACK_RECOMMENDATION_REQUEST =
 const MEAL_RECOMMENDATION_REQUEST =
   /(?:早餐|早饭|午餐|中饭|晚餐|晚饭|今晚|晚上|夜宵|宵夜|家庭餐|家庭晚餐|全家|一个人|多人|几个人|[一二两三四五六七八九十\d]+(?:个)?人|聚会|一起吃).*(?:推荐|吃什么|有什么|做什么|怎么搭配|搭配|菜单|餐食|菜品|菜|简单|快手)|(?:推荐|吃什么|有什么|做什么|怎么搭配|搭配|菜单|餐食|菜品|菜|简单|快手).*(?:早餐|早饭|午餐|中饭|晚餐|晚饭|今晚|晚上|夜宵|宵夜|家庭餐|家庭晚餐|全家|一个人|多人|几个人|聚会|一起吃)|(?:明天|后天|今天|今晚|早上|中午|晚上)?(?:早餐|早饭|午餐|中饭|晚餐|晚饭|下午茶|加餐|夜宵|宵夜|家庭餐|家庭晚餐|聚会).{0,24}(?:吃|用餐|两个人|三个人|四个人|五个人|六个人|[一二两三四五六七八九十\d]+(?:个)?(?:人|位|口)|安排|准备)|(?:想吃|想要吃|吃什么|做什么).{0,30}(?:你来推荐|帮我推荐|你推荐|推荐一下|你安排|随便安排|帮我选)/;
 const RECIPE_FOLLOW_UP_REQUEST =
-  /食谱|菜谱|具体(?:的)?菜|菜单|餐食|菜品|执行方案|给我.*(?:一道|几个|几道).*菜|继续.*(?:刚才|上一个|前面).*(?:食谱|菜|推荐)|(?:少油|少盐|清淡|低脂).*(?:做法|菜|餐|食谱|就好)|(?:搭配|菜单|方案|推荐).*(?:不合理|不够|调整|修改)|(?:不合理|不够).*(?:调味料|食材|吃|人份|菜|餐|搭配)|(?:晚餐|午餐|早餐|下午茶|聚会|朋友来|家庭晚餐|晚上|今晚).*(?:食谱|菜谱|几道菜|搭配|菜单)/;
+  /食谱|菜谱|具体(?:的)?菜|菜单|餐食|菜品|执行方案|给我.*(?:一道|几个|几道).*菜|继续.*(?:刚才|上一个|前面).*(?:食谱|菜|推荐)|(?:还有|再来|换一个|换一道|重新).{0,12}(?:推荐|菜|餐|方案|菜单)|(?:少油|少盐|清淡|低脂|减脂|减肥).*(?:推荐|吃什么|做法|菜|餐|食谱|搭配|菜单)?|(?:推荐|吃什么|安排|搭配).*(?:清淡|少油|少盐|低脂|减脂|减肥)|(?:搭配|菜单|方案|推荐).*(?:不合理|不够|调整|修改)|(?:不合理|不够).*(?:调味料|食材|吃|人份|菜|餐|搭配)|(?:晚餐|午餐|早餐|下午茶|聚会|朋友来|家庭晚餐|晚上|今晚).*(?:食谱|菜谱|几道菜|搭配|菜单)/;
 const MOVE_INVENTORY_REQUEST =
   /(?:移到|移去|挪到|转到|换到|放到).*(?:冷冻|冷库|冷柜|冰柜|冷藏|保鲜|常温|室温|橱柜|储物柜)|(?:冷冻|冷库|冷柜|冰柜|冷藏|保鲜|常温|室温|橱柜|储物柜).*(?:移|挪|转|换)/;
 const REMINDER_QUERY_REQUEST =
@@ -222,7 +224,11 @@ export function detectIntent(normalized: string): { intent: ParsedIntent; confid
   if (MEAL_OR_SHOPPING_ADVICE_REQUEST.test(normalized)) {
     return { intent: 'QUERY_INVENTORY', confidence: 0.88 };
   }
-  if (INVENTORY_QUERY_REQUEST.test(normalized) || INVENTORY_CATEGORY_QUERY.test(normalized)) {
+  if (
+    INVENTORY_QUERY_REQUEST.test(normalized) ||
+    INVENTORY_CATEGORY_QUERY.test(normalized) ||
+    SIMPLE_CATEGORY_QUERY.test(normalized)
+  ) {
     return { intent: 'QUERY_INVENTORY', confidence: 0.95 };
   }
   // “请用三句话介绍…”、“怎么用鸡蛋做菜”属于知识/闲聊请求，不是库存扣减。
@@ -299,7 +305,25 @@ export function suggestedUnitsForFood(entry: FoodCatalogEntry): string[] {
 }
 
 export function isReasonableUnitForFood(entry: FoodCatalogEntry, unit: string): boolean {
-  return suggestedUnitsForFood(entry).includes(unit);
+  // 用户通常按包装录入食材（“一袋香菇”“两盒南乳”“一瓶红酒”）。
+  // 知识库的默认单位仍用于推荐和换算，但不能因为未配置包装单位就把真实表达判成错误。
+  const suggested = suggestedUnitsForFood(entry);
+  if (suggested.includes(unit)) return true;
+  if (unit === 'bunch') return entry.category === 'VEGETABLE';
+  if (unit === 'bottle') {
+    return ['bottle', 'ml', 'l'].includes(entry.defaultUnitCode) ||
+      entry.category === 'BEVERAGE' ||
+      /奶|酒|饮|醋|油/.test(entry.canonicalName);
+  }
+  if (unit === 'box') {
+    return entry.defaultUnitCode === 'box' ||
+      entry.category === 'EGG_DAIRY' ||
+      !['MEAT', 'SEAFOOD', 'FRUIT', 'VEGETABLE'].includes(entry.category ?? '');
+  }
+  if (unit === 'bag' || unit === 'pack') {
+    return entry.category !== 'MEAT' && entry.category !== 'SEAFOOD';
+  }
+  return false;
 }
 
 function collectQuantityMatches(normalized: string): QuantityMatch[] {
@@ -386,7 +410,7 @@ function buildItem(
     quantity,
     unit,
     quantity_explicit: explicit,
-    unit_reasonable: suggestedUnits.includes(unit),
+    unit_reasonable: isReasonableUnitForFood(match.entry, unit),
     suggested_units: suggestedUnits,
   };
 }

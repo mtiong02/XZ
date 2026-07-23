@@ -88,6 +88,11 @@ services:
       - DATABASE_URL=postgresql://postgres:postgrespassword@db:5432/postgres
       - SUPABASE_URL=http://gotrue:9999
       - SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-}
+      - WECHAT_APP_ID=${WECHAT_APP_ID:-}
+      - WECHAT_APP_SECRET=${WECHAT_APP_SECRET:-}
+      - WECHAT_AUTH_CALLBACK_URL=${WECHAT_AUTH_CALLBACK_URL:-https://busybeeenglish.site/api/v1/auth/wechat/callback}
+      - WECHAT_SITE_URL=${WECHAT_SITE_URL:-https://busybeeenglish.site/login}
       # 仅由 API 容器读取；严禁放入 web/public 或 NEXT_PUBLIC_ 变量。
       - ADMIN_TOKEN=${ADMIN_TOKEN:?ADMIN_TOKEN is required}
       # 仅餐食决策等需要推理的请求调用；库存、提醒和确认仍走本地确定性工具。

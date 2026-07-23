@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Inject, Logger, Post, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { AuthGuard, type AuthenticatedUser } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -50,29 +50,45 @@ const AgentEventSchema = z.object({
 @Controller('agent-runtime')
 @UseGuards(AuthGuard)
 export class AgentRuntimeController {
+  private readonly logger = new Logger(AgentRuntimeController.name);
+
   constructor(
-    private readonly runtime: AgentRuntimeService,
-    private readonly membership: MembershipService,
-    private readonly familyContext: FamilyContextService,
+    @Inject(AgentRuntimeService) private readonly runtime: AgentRuntimeService,
+    @Inject(MembershipService) private readonly membership: MembershipService,
+    @Inject(FamilyContextService) private readonly familyContext: FamilyContextService,
   ) {}
 
   @Post('events')
   async record(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
-    const input = AgentEventSchema.parse(body);
-    const member = await this.membership.assertMembership(input.household_id, user.userId);
-    await this.runtime.recordEvent({
-      householdId: input.household_id,
-      actorMemberId: member.memberId,
-      sessionId: input.session_id,
-      turnId: input.turn_id,
-      taskId: input.task_id,
-      eventType: input.event_type,
-      intent: input.intent,
-      outcome: input.outcome,
-      latencyMs: input.latency_ms,
-      metadata: input.metadata,
-    });
-    return { ok: true };
+    // Product telemetry is best-effort. A malformed/stale event must never turn
+    // into a visible 500 or interfere with the active voice turn.
+    const parsed = AgentEventSchema.safeParse(body);
+    if (!parsed.success) {
+      this.logger.warn(`Agent event skipped: invalid payload (${parsed.error.issues.length} issues)`);
+      return { ok: false, skipped: true };
+    }
+
+    try {
+      const input = parsed.data;
+      const member = await this.membership.assertMembership(input.household_id, user.userId);
+      await this.runtime.recordEvent({
+        householdId: input.household_id,
+        actorMemberId: member.memberId,
+        sessionId: input.session_id,
+        turnId: input.turn_id,
+        taskId: input.task_id,
+        eventType: input.event_type,
+        intent: input.intent,
+        outcome: input.outcome,
+        latencyMs: input.latency_ms,
+        metadata: input.metadata,
+      });
+      return { ok: true };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Agent event skipped: ${reason}`);
+      return { ok: false, skipped: true };
+    }
   }
 
   @Post('family-context')

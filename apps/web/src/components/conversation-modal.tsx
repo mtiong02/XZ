@@ -72,6 +72,7 @@ function isLikelySpeakerEcho(heard: string, spoken: string): boolean {
 function isDialogueExit(text: string): boolean {
   const compact = normalizedSpeech(text);
   if (/结束后提醒/.test(compact)) return false;
+  const courtesyPrefix = '(?:好(?:的|吧)?|那就|嗯|啊|行|可以)?';
   const courtesy = '(?:谢谢(?:力|你|啦)?|多谢|辛苦了|麻烦你了|拜拜|再见|晚安|了|吧)*';
 
   if (
@@ -84,7 +85,7 @@ function isDialogueExit(text: string): boolean {
 
   return (
     new RegExp(
-      `^(?:好(?:的)?|那|嗯|啊|行|可以)?(?:我(?:们)?(?:要|想|先)?|请)?(?:(?:结束|退出|关闭|停止)(?:这段|本次|当前)?(?:对话|对换|兑换|绘话|会话|聊天|谈话|通话|对|聊|会)?${courtesy})+$`,
+      `^${courtesyPrefix}(?:我(?:们)?(?:要|想|先)?|请)?(?:(?:结束|退出|关闭|停止)(?:这段|本次|当前)?(?:对话|对换|兑换|绘话|会话|聊天|谈话|通话|对|聊|会)?${courtesy})+$`,
       'i',
     ).test(compact) ||
     new RegExp(
@@ -95,7 +96,7 @@ function isDialogueExit(text: string): boolean {
       `^(?:好(?:的)?|那|嗯|啊)?(?:(?:先)?(?:别|不要|不用)(?:再|继续)?(?:听|收音|说|说话|聊天|聊|回答|播报)|(?:不用|不需要)再(?:听|收音|说|说话|聊天|聊|回答|播报))${courtesy}$`,
       'i',
     ).test(compact) ||
-    new RegExp(`^(?:好(?:的)?)?(?:谢谢(?:你|啦)?|多谢)?(?:结束|退出)${courtesy}$`, 'i').test(
+    new RegExp(`^${courtesyPrefix}(?:谢谢(?:你|啦)?|多谢)?(?:结束|退出)${courtesy}$`, 'i').test(
       compact,
     ) ||
     new RegExp(
@@ -139,6 +140,8 @@ export function ConversationModal({
   const dispatchRef = useRef<(text: string, source?: SpeechSource) => void>(() => undefined);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const reminderTimersRef = useRef<number[]>([]);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const reconnectAttemptRef = useRef(0);
   const startRef = useRef<() => Promise<void>>(async () => undefined);
   const sessionIdRef = useRef<string | null>(null);
   const firstUtteranceRecordedRef = useRef(false);
@@ -207,6 +210,10 @@ export function ConversationModal({
   }, [clampMascotPosition]);
 
   const stopListening = useCallback(() => {
+    if (reconnectTimerRef.current !== null) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
     realtimeRef.current?.stop();
     realtimeRef.current = null;
     reminderTimersRef.current.forEach((timer) => window.clearTimeout(timer));
@@ -222,6 +229,27 @@ export function ConversationModal({
       setError(caught instanceof Error ? caught.message : '取消当前语音任务失败');
     });
   }, []);
+
+  const scheduleRealtimeReconnect = useCallback(
+    (reason: string) => {
+      if (closedRef.current || reconnectTimerRef.current !== null) return;
+      const attempt = reconnectAttemptRef.current + 1;
+      reconnectAttemptRef.current = attempt;
+      const delay = Math.min(1000 * 2 ** Math.min(attempt - 1, 3), 8000);
+      setError(`实时语音已断开，${Math.ceil(delay / 1000)} 秒后自动重连…`);
+      setPhase('processing');
+      reconnectTimerRef.current = window.setTimeout(() => {
+        reconnectTimerRef.current = null;
+        if (closedRef.current) return;
+        // 当前连接已经不能继续收音，先取消悬挂任务，再建立一条全新的会话。
+        abandonPendingJob();
+        void startRef.current();
+      }, delay);
+      // 保留断开原因用于开发诊断；UI 只展示简短的重连提示。
+      if (process.env.NODE_ENV !== 'production') console.warn('[xz-voice] reconnect scheduled', reason);
+    },
+    [abandonPendingJob],
+  );
 
   useEffect(() => {
     closedRef.current = false;
@@ -318,16 +346,19 @@ export function ConversationModal({
       }
       if (mealFeedbackJobRef.current && !mealFeedbackSentRef.current) {
         const compactFeedback = normalizedSpeech(text);
-        if (/^(?:嗯)?(?:好|好的|可以|行|就这个|这个可以)(?:谢谢)?$/.test(compactFeedback)) {
+        if (/^(?:嗯)?(?:好|好的|可以|可以的|没问题|没问题的|是的|行|就这个|这个可以)(?:谢谢)?$/.test(compactFeedback)) {
           submitMealFeedback('ACCEPTED');
           return;
         }
-        if (/不合适|不喜欢|换一个|换一道|改一下|重新推荐/.test(compactFeedback)) {
+        if (/不合适|不喜欢|换一个|换一道|还有(?:其他|别的)?推荐|改一下|重新推荐/.test(compactFeedback)) {
           const rejected = /不合适|不喜欢/.test(compactFeedback);
           submitMealFeedback(rejected ? 'REJECTED' : 'MODIFIED');
           if (rejected) return;
         }
       }
+      // 用户开始新的查询/任务时，上一份菜单的反馈入口失效，避免把库存任务误提交到 meal-feedback。
+      mealFeedbackJobRef.current = null;
+      mealFeedbackSentRef.current = false;
       const normalized = normalizedSpeech(text);
       const now = Date.now();
       const lastDispatch = lastDispatchRef.current;
@@ -435,6 +466,8 @@ export function ConversationModal({
     try {
       const realtime = await startRealtimeVoice({
         onReady: () => {
+          reconnectAttemptRef.current = 0;
+          setError(null);
           setVoiceMode('online');
           setPhase('standby');
           recordAgentEvent({
@@ -511,7 +544,12 @@ export function ConversationModal({
         },
         onError: (message) => {
           setInterim('');
-          setError(message);
+          const reconnectable = /断开|中断|连接失败|连接超时|无法连接/.test(message);
+          if (reconnectable) {
+            scheduleRealtimeReconnect(message);
+          } else {
+            setError(message);
+          }
         },
       });
       realtimeRef.current = realtime;
@@ -550,8 +588,13 @@ export function ConversationModal({
       return;
     } catch (onlineError) {
       if (closedRef.current) return;
-      setError(onlineError instanceof Error ? onlineError.message : 'MiniMax 在线语音不可用');
-      setPhase('idle');
+      const message = onlineError instanceof Error ? onlineError.message : 'MiniMax 在线语音不可用';
+      if (/连接|超时|不可用/.test(message)) {
+        scheduleRealtimeReconnect(message);
+      } else {
+        setError(message);
+        setPhase('idle');
+      }
     }
   }, [
     abandonPendingJob,
@@ -559,6 +602,7 @@ export function ConversationModal({
     householdId,
     pushMessage,
     scheduledReminders,
+    scheduleRealtimeReconnect,
     stopListening,
   ]);
   startRef.current = start;
@@ -590,6 +634,8 @@ export function ConversationModal({
     if (!jobId || mealFeedbackSentRef.current) return;
     mealFeedbackSentRef.current = true;
     void recordMealFeedback(jobId, outcome).catch(() => {
+      // 旧任务或非餐食任务返回 409 时，不要让同一组按钮继续重复提交。
+      mealFeedbackJobRef.current = null;
       mealFeedbackSentRef.current = false;
     });
   }

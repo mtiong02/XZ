@@ -7,6 +7,8 @@ export interface MiniMaxRealtimeOptions {
   model: string;
   voice: string;
   debug?: boolean;
+  /** 本地 Paraformer 可用时，它是唯一允许提交业务文本的 ASR 来源。 */
+  preferLocalTranscript?: boolean;
   onTranscript?: (text: string) => void;
   transcriber?: {
     setSampleRate(sampleRate: number): void;
@@ -74,6 +76,8 @@ function isPhoneticExitText(text: string): boolean {
 
 export function isEndConversation(text: string): boolean {
   const compact = text.replace(/[\s，。！？、,.!?：:；;“”‘’'"`]/g, '');
+  // ASR 常把“好的”识别成“好吧”；两者都应结束当前会话并回到唤醒词待机。
+  const courtesyPrefix = '(?:好(?:的|吧)?|那就|嗯|啊|行|可以)?';
   if (/结束后提醒/.test(compact)) return false;
   if (isPhoneticExitText(compact)) return true;
   const courtesy = '(?:谢谢(?:你|啦)?|多谢|辛苦了|麻烦你了|拜拜|再见|晚安|了|吧)*';
@@ -84,7 +88,7 @@ export function isEndConversation(text: string): boolean {
 
   return (
     new RegExp(
-      `^(?:好(?:的)?|那|嗯|啊|行|可以)?(?:我(?:们)?(?:要|想|先)?|请)?(?:(?:结束|退出|关闭|停止)(?:这段|本次|当前)?(?:对话|对换|兑换|绘话|会话|聊天|谈话|通话|对|聊|会)?${courtesy})+$`,
+      `^${courtesyPrefix}(?:我(?:们)?(?:要|想|先)?|请)?(?:(?:结束|退出|关闭|停止)(?:这段|本次|当前)?(?:对话|对换|兑换|绘话|会话|聊天|谈话|通话|对|聊|会)?${courtesy})+$`,
       'i',
     ).test(compact) ||
     new RegExp(
@@ -95,7 +99,7 @@ export function isEndConversation(text: string): boolean {
       `^(?:好(?:的)?|那|嗯|啊)?(?:(?:先)?(?:别|不要|不用)(?:再|继续)?(?:听|收音|说|说话|聊天|聊|回答|播报)|(?:不用|不需要)再(?:听|收音|说|说话|聊天|聊|回答|播报))${courtesy}$`,
       'i',
     ).test(compact) ||
-    new RegExp(`^(?:好(?:的)?)?(?:谢谢(?:你|啦)?|多谢)?(?:结束|退出)${courtesy}$`, 'i').test(compact) ||
+    new RegExp(`^${courtesyPrefix}(?:谢谢(?:你|啦)?|多谢)?(?:结束|退出)${courtesy}$`, 'i').test(compact) ||
     new RegExp(`^(?:结束|退出|取消|算了|不用了|不加了)(?:对话|会话|对换|聊天|谈话|通话|谢谢|吧|了)?${courtesy}$`, 'i').test(compact)
   );
 }
@@ -390,7 +394,7 @@ export function handleMiniMaxRealtime(client: WebSocket, options: MiniMaxRealtim
           output_audio_format: 'pcm16',
           temperature: 0.7,
           max_response_output_tokens: '500',
-          turn_detection: null, // 禁用云端自作主张的激进 VAD 截断，交由客户端以 2.2 秒平滑静音判定
+          turn_detection: null, // 云端不自行截断；实时链路由浏览器 VAD 的唯一 commit 结束一轮
         },
       });
       return;
@@ -422,7 +426,12 @@ export function handleMiniMaxRealtime(client: WebSocket, options: MiniMaxRealtim
           transcript,
         };
       }
-      options.transcriber?.onTranscript?.(transcript);
+      // MiniMax 的输入转写只用于归档最新 audio item；本地 Paraformer 才是业务文本唯一来源。
+      // 没有本地模型时才允许使用云端转写作为降级路径，避免两套 ASR 各自提交一轮。
+      if (!options.preferLocalTranscript) {
+        if (options.transcriber?.onTranscript) options.transcriber.onTranscript(transcript);
+        else options.onTranscript?.(transcript);
+      }
       if (committedAt !== null) {
         options.metrics?.recordLatency('turn_to_transcript_ms', Date.now() - committedAt);
         committedAt = null;

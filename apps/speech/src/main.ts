@@ -305,9 +305,8 @@ function createRealtimeTranscriber(socket: WebSocket, onTranscript?: (text: stri
         lastPartial = text;
         sendJson(socket, { type: 'partial', text });
       }
-      if (recognizer.isEndpoint(stream)) {
-        emitFinal();
-      }
+      // 实时链路只有浏览器 VAD 的 commit 可以结束一轮。
+      // 不在这里再用 Paraformer endpoint 自动提交，避免两套端点检测各自触发一次业务任务。
     },
     finishTurn() {
       if (!closed && mode === 'active') emitFinal();
@@ -482,6 +481,8 @@ realtimeSockets.on('connection', (socket) => {
     apiKey: MINIMAX_API_KEY,
     model: MINIMAX_REALTIME_MODEL,
     voice: MINIMAX_REALTIME_VOICE,
+    preferLocalTranscript: Boolean(recognizer),
+    onTranscript: (text) => sendJson(socket, { type: 'transcript', text }),
     debug: process.env.MINIMAX_REALTIME_DEBUG === 'true',
     transcriber,
     metrics: runtimeMetrics,

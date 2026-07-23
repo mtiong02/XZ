@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { AgentToolRegistry } from './agent-tool-registry';
 
 export interface ToolExecutionContext {
@@ -14,7 +14,7 @@ export interface ToolExecutionContext {
 export class AgentToolExecutor {
   private readonly inFlight = new Map<string, Promise<unknown>>();
 
-  constructor(private readonly registry: AgentToolRegistry) {}
+  constructor(@Inject(AgentToolRegistry) private readonly registry: AgentToolRegistry) {}
 
   execute<T>(
     name: string,

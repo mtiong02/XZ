@@ -7,6 +7,10 @@ import { z } from 'zod';
 
 const LOCAL_DATABASE_URL = 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
 const LOCAL_SUPABASE_URL = 'http://127.0.0.1:54321';
+const optionalNonEmptyString = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.string().min(1).optional(),
+);
 
 export const EnvSchema = z
   .object({
@@ -16,6 +20,11 @@ export const EnvSchema = z
     SUPABASE_URL: z.string().url().optional(),
     // GoTrue 校验 token 所需（本地值见 supabase status 的 ANON_KEY）
     SUPABASE_ANON_KEY: z.string().min(1).optional(),
+    SUPABASE_SERVICE_ROLE_KEY: optionalNonEmptyString,
+    WECHAT_APP_ID: optionalNonEmptyString,
+    WECHAT_APP_SECRET: optionalNonEmptyString,
+    WECHAT_AUTH_CALLBACK_URL: z.string().url().default('https://busybeeenglish.site/api/v1/auth/wechat/callback'),
+    WECHAT_SITE_URL: z.string().url().default('https://busybeeenglish.site/login'),
     REVERSAL_WINDOW_HOURS: z.coerce.number().int().positive().default(24),
   })
   .transform((env) => ({

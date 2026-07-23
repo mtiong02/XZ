@@ -12,6 +12,7 @@ import { MemberWellnessModule } from './modules/member-wellness/member-wellness.
 import { NutritionModule } from './modules/nutrition/nutrition.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { FeedbackModule } from './modules/feedback/feedback.module';
+import { WechatModule } from './modules/wechat/wechat.module';
 
 /**
  * 模块化单体入口（docs/02 §7）。
@@ -31,7 +32,7 @@ import { FeedbackModule } from './modules/feedback/feedback.module';
     NutritionModule,
     AdminModule,
     FeedbackModule,
+    WechatModule,
   ],
 })
 export class AppModule {}
-

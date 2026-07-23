@@ -20,7 +20,14 @@ import {
   type ShoppingListItemView,
   type StorageAuditItem,
 } from '../../lib/api';
-import { EXPIRY_CLASS, EXPIRY_LABEL, formatDate, unitLabel } from '../../lib/format';
+import {
+  EXPIRY_CLASS,
+  foodCategoryLabel,
+  formatExpiryRelative,
+  formatInventoryQuantity,
+  isExpiryLongHorizon,
+  unitLabel,
+} from '../../lib/format';
 import { signOut, useHousehold } from '../../lib/use-household';
 import { useRealtimeInventory } from '../../lib/use-realtime';
 
@@ -79,6 +86,7 @@ export default function FridgePage() {
   const [shopping, setShopping] = useState<ShoppingListItemView[]>([]);
   const [pendingMove, setPendingMove] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
+  const [zoneCategoryFilters, setZoneCategoryFilters] = useState<Record<string, string | null>>({});
   const [highlightIndex, setHighlightIndex] = useState(0);
   const [highlightPaused, setHighlightPaused] = useState(false);
   const highlightTouchStartY = useRef<number | null>(null);
@@ -214,8 +222,8 @@ export default function FridgePage() {
         id: `expiry-${item.food_id}`,
         kicker: expired ? '已过期' : '临期食材',
         title: expired ? `${item.name}已经到期` : `${item.name}快到期了`,
-        detail: `${item.total_quantity} ${unitLabel(item.unit)}${
-          item.earliest_expiry ? ` · ${formatDate(item.earliest_expiry)}到期` : ''
+        detail: `${formatInventoryQuantity(item.total_quantity, item.unit)} · ${
+          formatExpiryRelative(item.earliest_expiry)
         } · ${expired ? '请先确认状态再处理' : '建议优先安排食用'}`,
         tone: expired ? 'danger' : 'warning',
         href: `/fridge/food/${item.food_id}`,
@@ -413,32 +421,83 @@ export default function FridgePage() {
           </div>
         </div>
 
-        {occupiedZones.map((zone) => (
-          <section className="zone inventory-zone" key={zone.zone_id}>
-            <h2>{zone.name}</h2>
+        {occupiedZones.map((zone) => {
+          const categories = [
+            ...new Set(zone.items.map((item) => foodCategoryLabel(item.category, item.category_code))),
+          ];
+          const activeCategory = zoneCategoryFilters[zone.zone_id] ?? null;
+          const visibleItems = activeCategory
+            ? zone.items.filter(
+                (item) => foodCategoryLabel(item.category, item.category_code) === activeCategory,
+              )
+            : zone.items;
+          return (
+            <section className="zone inventory-zone" key={zone.zone_id}>
+            <div className="inventory-zone-heading" data-zone-label={zone.name}>
+              {categories.length > 0 ? (
+                <div className="inventory-zone-filters" aria-label={`${zone.name}食材分类筛选`}>
+                  {categories.length > 1 ? (
+                    <button
+                      className={`inventory-zone-filter${activeCategory === null ? ' selected' : ''}`}
+                      onClick={() =>
+                        setZoneCategoryFilters((current) => ({ ...current, [zone.zone_id]: null }))
+                      }
+                    >
+                      全部
+                    </button>
+                  ) : null}
+                  {categories.map((category) => (
+                    <button
+                      className={`inventory-zone-filter${activeCategory === category ? ' selected' : ''}`}
+                      key={category}
+                      onClick={() =>
+                        setZoneCategoryFilters((current) => ({
+                          ...current,
+                          [zone.zone_id]: activeCategory === category ? null : category,
+                        }))
+                      }
+                    >
+                      {category}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             <div className="items">
-              {zone.items.map((item) => (
+              {visibleItems.map((item) => (
                 <Link
                   key={item.food_id}
                   href={`/fridge/food/${item.food_id}`}
-                  className="item-card"
+                  className={`item-card expiry-card ${EXPIRY_CLASS[item.expiry_status]}`}
                 >
-                  <div>
+                  <div className="item-card-main">
                     <div className="name">{item.name}</div>
-                    <div className="qty">
-                      {item.total_quantity} {unitLabel(item.unit)}
+                    <div className="qty item-card-quantity">
+                      {formatInventoryQuantity(item.total_quantity, item.unit)}
                       {item.lot_count > 1 ? ` · ${item.lot_count} 批` : ''}
-                      {item.earliest_expiry ? ` · ${formatDate(item.earliest_expiry)}到期` : ''}
                     </div>
                   </div>
-                  <span className={`badge ${EXPIRY_CLASS[item.expiry_status]}`}>
-                    {EXPIRY_LABEL[item.expiry_status]}
-                  </span>
+                  <div className="item-card-meta">
+                    <span
+                      className={`item-card-expiry ${EXPIRY_CLASS[item.expiry_status]}${
+                        isExpiryLongHorizon(item.earliest_expiry) ? ' long-horizon' : ''
+                      }`}
+                    >
+                      {formatExpiryRelative(item.earliest_expiry)}
+                    </span>
+                    <span className="badge category-badge">
+                      {foodCategoryLabel(item.category, item.category_code)}
+                    </span>
+                  </div>
                 </Link>
               ))}
+              {visibleItems.length === 0 ? (
+                <p className="inventory-filter-empty">该分类暂时没有食材。</p>
+              ) : null}
             </div>
-          </section>
-        ))}
+            </section>
+          );
+        })}
 
         {inventory && occupiedZones.length === 0 ? (
           <div className="empty inventory-empty">

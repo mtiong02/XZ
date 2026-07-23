@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import { z } from 'zod';
 import { PG_POOL } from '../../infra/db/database.module';
 import { MembershipService } from '../household/membership.service';
+import { InventoryCommandService } from '../inventory/application/inventory-command.service';
 import { InventoryQueryService } from '../inventory/application/inventory-query.service';
 import { DomainError } from '../inventory/domain/errors';
 import {
@@ -80,6 +81,8 @@ export class MealPlanningService {
     @Optional() @Inject(ContextBuilder) private readonly contextBuilder?: ContextBuilder,
     @Optional() @Inject(FamilyContextService) private readonly familyContext?: FamilyContextService,
     @Optional() @Inject(AgentToolExecutor) private readonly toolExecutor?: AgentToolExecutor,
+    @Optional() @Inject(InventoryCommandService)
+    private readonly inventoryCommands?: InventoryCommandService,
   ) {}
 
   async suggestions(householdId: string, userId: string): Promise<MealSuggestion[]> {
@@ -268,11 +271,16 @@ export class MealPlanningService {
    */
   async getMealContextClarification(householdId: string, userId: string, text: string) {
     const parsed = parseMealContext(text);
-    if (parsed.dinerCount !== null || parsed.diningMode !== 'UNSPECIFIED') return null;
-    const member = await this.memberships.assertMembership(householdId, userId);
-    const family = await this.familyContext?.build(householdId, member.memberId);
-    if (!family || family.defaultDiners <= 1) return null;
-    return `今天还是${family.defaultDiners}个人一起吃吗？如果只有你一个人，直接说“我一个人吃”。`;
+    const hasDiners = parsed.dinerCount !== null || parsed.diningMode !== 'UNSPECIFIED';
+    const hasPreference = /清淡|少油|少盐|低脂|减脂|减肥|辣|不辣|口味|忌口|过敏|不吃|喜欢|偏好/.test(
+      text,
+    );
+    if (hasDiners && hasPreference) return null;
+
+    const missing: string[] = [];
+    if (!hasDiners) missing.push('今天几个人吃');
+    if (!hasPreference) missing.push('想清淡、少油，还是有忌口');
+    return `我先结合你家的库存来分析。为了推荐得更合适，请告诉我${missing.join('，以及')}。`;
   }
 
   /** 手动页面与语音复用同一套按需 Agent；调用只生成建议，不产生库存副作用。 */
@@ -372,5 +380,95 @@ export class MealPlanningService {
     if (!result.rows[0])
       throw new DomainError('NOT_FOUND', 'SHOPPING_ITEM_NOT_FOUND', '购物清单项目不存在。');
     return result.rows[0];
+  }
+
+  /**
+   * 将“已购买”作为一个完整业务动作处理：购买的数量先通过库存命令边界入库，
+   * 再完成待购项状态更新。幂等键绑定待购项，网络重试不会重复增加库存。
+   */
+  async markShoppingItemPurchased(householdId: string, itemId: string, userId: string) {
+    const member = await this.memberships.assertMembership(householdId, userId);
+    const itemResult = await this.pool.query<{
+      id: string;
+      food_id: string;
+      food_name: string;
+      quantity: string | null;
+      unit_code: string | null;
+      status: 'PENDING' | 'PURCHASED' | 'CANCELLED';
+    }>(
+      `select sli.id,sli.food_id,fc.canonical_name as food_name,sli.quantity::text,
+       sli.unit_code,sli.status
+       from shopping_list_items sli
+       join food_catalog fc on fc.id=sli.food_id
+       where sli.id=$1 and sli.household_id=$2`,
+      [itemId, householdId],
+    );
+    const item = itemResult.rows[0];
+    if (!item) {
+      throw new DomainError('NOT_FOUND', 'SHOPPING_ITEM_NOT_FOUND', '购物清单项目不存在。');
+    }
+    if (item.status === 'PURCHASED') {
+      return {
+        shopping_item_id: item.id,
+        status: item.status,
+        inventory_transaction_id: null,
+        idempotent_replay: true,
+      };
+    }
+    if (item.status !== 'PENDING') {
+      throw new DomainError('CONFLICT', 'SHOPPING_ITEM_NOT_PENDING', '该待购项已被移除，无法标记为已购买。');
+    }
+    if (!item.quantity || !item.unit_code) {
+      throw new DomainError(
+        'VALIDATION',
+        'SHOPPING_QUANTITY_UNIT_REQUIRED',
+        `“${item.food_name}”缺少数量或单位，请先补充后再标记为已购买。`,
+      );
+    }
+    if (!this.inventoryCommands) {
+      throw new Error('Inventory command service is not available');
+    }
+
+    const command = await this.inventoryCommands.execute(
+      {
+        command_type: 'ADD_INVENTORY',
+        schema_version: '1.0',
+        household_id: householdId,
+        source: {
+          channel: 'WEB_MANUAL',
+          client: 'meal-shopping-list',
+          interaction_id: `shopping:${item.id}`,
+        },
+        idempotency_key: `shopping-purchase-${item.id}`,
+        payload: {
+          items: [
+            {
+              food_id: item.food_id,
+              quantity: item.quantity,
+              unit: item.unit_code,
+            },
+          ],
+        },
+      },
+      userId,
+    );
+
+    const updated = await this.pool.query<{ id: string; status: string; completed_at: string }>(
+      `update shopping_list_items set status='PURCHASED',completed_at=now()
+       where id=$1 and household_id=$2 and status='PENDING'
+       returning id,status,completed_at`,
+      [item.id, householdId],
+    );
+    if (!updated.rows[0]) {
+      // 库存命令已经用幂等键成功，下一次请求会重放而不会重复入库。
+      throw new DomainError('CONFLICT', 'SHOPPING_ITEM_STATE_CHANGED', '待购项状态已发生变化，请刷新后重试。');
+    }
+    return {
+      shopping_item_id: updated.rows[0].id,
+      status: updated.rows[0].status,
+      inventory_transaction_id: command.transaction_id,
+      idempotent_replay: command.idempotent_replay,
+      member_id: member.memberId,
+    };
   }
 }

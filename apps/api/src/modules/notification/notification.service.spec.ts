@@ -16,7 +16,7 @@ describe('buildExpiryNotification', () => {
         unit: 'box',
         expires_at: '2026-07-20T00:00:00.000Z',
         expiry_status: 'EXPIRED',
-        zone_name: '冷藏室',
+        zone_name: '保鲜室',
       }),
     ).toMatchObject({ inventoryRef: 'lot-1', severity: 'CRITICAL', type: 'EXPIRED' });
   });

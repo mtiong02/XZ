@@ -11,8 +11,9 @@ import {
   EXPIRY_LABEL,
   formatDate,
   formatDateTime,
+  formatExpiryRelative,
+  formatInventoryQuantity,
   TRANSACTION_LABEL,
-  unitLabel,
 } from '../../../../lib/format';
 import { useHousehold } from '../../../../lib/use-household';
 
@@ -97,20 +98,15 @@ export default function FoodDetailPage() {
     <>
       <AppHeader
         title={detail?.food.canonical_name ?? '食材详情'}
-        subtitle={`当前共 ${total} ${detail ? unitLabel(detail.food.default_unit_code) : ''}`}
+        subtitle={
+          detail
+            ? `当前共 ${formatInventoryQuantity(total, detail.food.default_unit_code)}`
+            : '当前库存'
+        }
       />
 
       <main className="container">
         {error ? <div className="error-box">{error}</div> : null}
-
-        <div className="actions" style={{ display: 'flex', gap: 8, margin: '12px 0' }}>
-          <button className="primary" onClick={() => setAction('ADD')}>
-            添加
-          </button>
-          <button onClick={() => setAction('CONSUME')}>使用</button>
-          <button onClick={() => setAction('DISCARD')}>丢弃</button>
-          <button onClick={() => setAction('CORRECT')}>修正库存</button>
-        </div>
 
         <h2 className="section-title">库存批次（按到期日排序）</h2>
         {detail?.lots.length === 0 ? <p className="empty">当前无库存</p> : null}
@@ -118,13 +114,14 @@ export default function FoodDetailPage() {
           <div className="lot-row" key={lot.id}>
             <div>
               <div>
-                {lot.remaining_quantity} / {lot.initial_quantity} {unitLabel(lot.unit_code)} ·{' '}
+                {formatInventoryQuantity(lot.remaining_quantity, lot.unit_code)} /{' '}
+                {formatInventoryQuantity(lot.initial_quantity, lot.unit_code)} ·{' '}
                 {lot.zone_name}
               </div>
               <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>
                 {formatDate(lot.purchased_at)}加入
                 {lot.expires_at
-                  ? ` · ${formatDate(lot.expires_at)}到期${
+                  ? ` · ${formatExpiryRelative(lot.expires_at)}${
                       lot.expiry_source === 'RULE_ESTIMATED' ? '（估算）' : ''
                     }`
                   : ''}
@@ -158,6 +155,15 @@ export default function FoodDetailPage() {
             ) : null}
           </div>
         ))}
+
+        <div className="food-detail-actions" aria-label="食材库存操作">
+          <button className="primary" onClick={() => setAction('ADD')}>
+            添加
+          </button>
+          <button onClick={() => setAction('CONSUME')}>使用</button>
+          <button onClick={() => setAction('DISCARD')}>丢弃</button>
+          <button onClick={() => setAction('CORRECT')}>修正库存</button>
+        </div>
       </main>
 
       {action ? (

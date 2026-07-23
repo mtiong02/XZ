@@ -76,4 +76,13 @@ export class MealPlanningController {
     const input = ShoppingItemStatusSchema.parse(body);
     return this.meals.updateShoppingItemStatus(householdId, itemId, user.userId, input.status);
   }
+
+  @Post('shopping-list/:itemId/purchase')
+  markPurchased(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('householdId', ParseUUIDPipe) householdId: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+  ) {
+    return this.meals.markShoppingItemPurchased(householdId, itemId, user.userId);
+  }
 }

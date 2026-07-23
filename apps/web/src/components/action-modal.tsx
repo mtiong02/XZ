@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { InventoryView } from '@xz/contracts';
 import {
   apiGet,
+  createHouseholdFood,
   executeCommand,
   type CommandType,
   type FoodCategorySummary,
@@ -55,6 +56,19 @@ function dateAfterDays(days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+function recommendedCustomUnit(groupLabel: string, units: UnitSummary[]): string {
+  const preferredByGroup: Record<string, string[]> = {
+    饮品: ['bottle', 'box', 'ml'],
+    蔬菜: ['g', 'piece', 'bunch'],
+    水果: ['piece', 'g', 'box'],
+    肉禽蛋: ['g', 'piece', 'jin'],
+    水产海鲜: ['g', 'piece', 'jin'],
+    奶类乳品: ['box', 'bottle', 'ml'],
+  };
+  const preferred = preferredByGroup[groupLabel] ?? ['piece', 'g', 'box'];
+  return preferred.find((code) => units.some((unit) => unit.code === code)) ?? units[0]?.code ?? '';
+}
+
 interface Props {
   kind: ActionKind;
   householdId: string;
@@ -88,6 +102,12 @@ export function ActionModal({
   const [zoneId, setZoneId] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
   const [customExpiryDays, setCustomExpiryDays] = useState('');
+  const [customFormOpen, setCustomFormOpen] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customCategoryCode, setCustomCategoryCode] = useState('');
+  const [customUnit, setCustomUnit] = useState('');
+  const [customShelfLifeDays, setCustomShelfLifeDays] = useState('');
+  const [customBusy, setCustomBusy] = useState(false);
   const [reason, setReason] = useState(kind === 'DISCARD' ? 'SPOILED' : 'PHYSICAL_COUNT');
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -133,6 +153,23 @@ export function ActionModal({
     });
   }, [categoryByCode, foods, selectedGroup]);
 
+  const customCategoryOptions = useMemo(() => {
+    const group = FOOD_ENTRY_GROUPS.find((item) => item.label === selectedGroup);
+    const parents = new Set(categories.map((category) => category.parent_code).filter(Boolean));
+    const isInGroup = (code: string) => {
+      if (!group) return true;
+      let current: string | null = code;
+      while (current) {
+        if ((group.codes as readonly string[]).includes(current)) return true;
+        current = categoryByCode.get(current)?.parent_code ?? null;
+      }
+      return false;
+    };
+    return categories.filter((category) => !parents.has(category.code) && isInGroup(category.code));
+  }, [categories, categoryByCode, selectedGroup]);
+  const customCategory = customCategoryOptions.find((category) => category.code === customCategoryCode);
+  const customUnitName = units.find((item) => item.code === customUnit)?.name_zh;
+
   const orderedUnits = useMemo(() => {
     const preferred = new Set(selectedFood?.preferred_unit_codes ?? []);
     return [...units].sort((left, right) => {
@@ -145,6 +182,12 @@ export function ActionModal({
   useEffect(() => {
     if (selectedFood && !unit) setUnit(selectedFood.default_unit_code);
   }, [selectedFood, unit]);
+
+  useEffect(() => {
+    if (!customFormOpen) return;
+    if (!customCategoryCode && customCategoryOptions[0]) setCustomCategoryCode(customCategoryOptions[0].code);
+    if (!customUnit && units.length) setCustomUnit(recommendedCustomUnit(selectedGroup, units));
+  }, [customCategoryCode, customCategoryOptions, customFormOpen, customUnit, selectedGroup, units]);
 
   const quickQuantities = useMemo(() => {
     const unitKind = units.find((item) => item.code === unit)?.kind;
@@ -169,6 +212,40 @@ export function ActionModal({
   function chooseExpiryDays(days: number) {
     setExpiresAt(dateAfterDays(days));
     setCustomExpiryDays(String(days));
+  }
+
+  function openCustomFoodForm() {
+    setCustomFormOpen(true);
+    setCustomName('');
+    setCustomCategoryCode(customCategoryOptions[0]?.code ?? '');
+    setCustomUnit(recommendedCustomUnit(selectedGroup, units));
+    setCustomShelfLifeDays('');
+    setError(null);
+  }
+
+  async function saveCustomFood() {
+    const name = customName.trim();
+    if (!name || !customCategoryCode || !customUnit) return;
+    setCustomBusy(true);
+    setError(null);
+    try {
+      const shelfLife = customShelfLifeDays.trim() === '' ? null : Number(customShelfLifeDays);
+      const food = await createHouseholdFood(householdId, {
+        canonical_name: name,
+        category_code: customCategoryCode,
+        default_unit_code: customUnit,
+        preferred_unit_codes: [customUnit],
+        default_shelf_life_days: shelfLife && Number.isInteger(shelfLife) && shelfLife > 0 ? shelfLife : null,
+        aliases: [],
+      });
+      setFoods((current) => [...current.filter((item) => item.id !== food.id), food]);
+      chooseFood(food);
+      setCustomFormOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '自定义食材添加失败');
+    } finally {
+      setCustomBusy(false);
+    }
   }
 
   const currentTotal = useMemo(() => {
@@ -266,6 +343,7 @@ export function ActionModal({
                         key={group.label}
                         onClick={() => {
                           setSelectedGroup((current) => current === group.label ? '' : group.label);
+                          setCustomFormOpen(false);
                         }}
                       >
                         {group.label}
@@ -286,6 +364,60 @@ export function ActionModal({
                     {selectedGroup && visibleFoods.length === 0 ? <p>这个分类暂时还没有可选食材。</p> : null}
                     {!selectedGroup ? <p>先点一种分类，再选择具体食材。</p> : null}
                   </div>
+                  {kind === 'ADD' && selectedGroup ? (
+                    <div className="custom-food-trigger">
+                      <span>分类里没有？直接添加到「{selectedGroup}」</span>
+                      <button type="button" onClick={openCustomFoodForm}>
+                        <span aria-hidden="true">＋</span> 添加
+                      </button>
+                    </div>
+                  ) : null}
+                  {kind === 'ADD' && customFormOpen ? (
+                    <div className="custom-food-form" aria-label="添加自定义食材">
+                      <div className="custom-food-form-heading">
+                        <strong>添加到「{selectedGroup}」</strong>
+                        <small>不用再选分类和单位，系统会按当前分类自动设置。</small>
+                      </div>
+                      <div className="field">
+                        <label htmlFor="custom-food-name">食材名称</label>
+                        <input
+                          id="custom-food-name"
+                          value={customName}
+                          onChange={(event) => setCustomName(event.target.value)}
+                          placeholder="例如：雪碧"
+                          autoFocus
+                        />
+                      </div>
+                      <div className="custom-food-defaults">
+                        <span>将归入：{customCategory?.name_path?.join(' / ') || selectedGroup}</span>
+                        <span>默认单位：{customUnitName || '按分类推荐'}</span>
+                      </div>
+                      <div className="field">
+                        <label htmlFor="custom-food-shelf-life">默认保质期（天，可选）</label>
+                        <input
+                          id="custom-food-shelf-life"
+                          type="number"
+                          min="1"
+                          step="1"
+                          inputMode="numeric"
+                          value={customShelfLifeDays}
+                          onChange={(event) => setCustomShelfLifeDays(event.target.value)}
+                          placeholder="不知道可以留空，之后按包装日期"
+                        />
+                      </div>
+                      <div className="custom-food-form-actions">
+                        <button type="button" onClick={() => setCustomFormOpen(false)}>返回食材列表</button>
+                        <button
+                          type="button"
+                          className="primary"
+                          disabled={customBusy || !customName.trim() || !customCategoryCode || !customUnit}
+                          onClick={saveCustomFood}
+                        >
+                          {customBusy ? '保存中…' : '保存并选择'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </>
             ) : null}

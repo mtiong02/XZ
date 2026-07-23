@@ -17,4 +17,15 @@ describe('loadEnv', () => {
       /Invalid environment configuration/,
     );
   });
+
+  it('treats blank optional integration secrets as disabled', () => {
+    const env = loadEnv({
+      SUPABASE_SERVICE_ROLE_KEY: ' ',
+      WECHAT_APP_ID: '',
+      WECHAT_APP_SECRET: '   ',
+    });
+    expect(env.SUPABASE_SERVICE_ROLE_KEY).toBeUndefined();
+    expect(env.WECHAT_APP_ID).toBeUndefined();
+    expect(env.WECHAT_APP_SECRET).toBeUndefined();
+  });
 });

@@ -18,6 +18,26 @@ function getApiBase(): string {
 
 const API_BASE = getApiBase();
 
+export function getApiBaseUrl(): string {
+  return API_BASE;
+}
+
+export function startWechatLogin(): void {
+  if (typeof window === 'undefined') return;
+  window.location.assign(`${API_BASE}/auth/wechat/start`);
+}
+
+export async function checkWechatLogin(): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/auth/wechat/status`, { cache: 'no-store' });
+    if (!response.ok) return false;
+    const body = (await response.json()) as { enabled?: boolean };
+    return body.enabled === true;
+  } catch {
+    return false;
+  }
+}
+
 export interface ProblemDetails {
   title: string;
   status: number;
@@ -201,6 +221,19 @@ export interface FoodCategorySummary {
   parent_code: string | null;
   name_zh: string;
   name_path: string[];
+}
+
+export interface CreateHouseholdFoodInput {
+  canonical_name: string;
+  category_code: string;
+  default_unit_code: string;
+  preferred_unit_codes: string[];
+  default_shelf_life_days?: number | null;
+  aliases?: string[];
+}
+
+export function createHouseholdFood(householdId: string, input: CreateHouseholdFoodInput) {
+  return apiPost<FoodSummary>(`/households/${householdId}/foods`, input);
 }
 
 export interface UnitSummary {
@@ -580,6 +613,17 @@ export function updateShoppingItemStatus(
 ) {
   return apiPost(`/households/${householdId}/shopping-list/${itemId}/status`, { status });
 }
+export function markShoppingItemPurchased(
+  householdId: string,
+  itemId: string,
+): Promise<{
+  shopping_item_id: string;
+  status: string;
+  inventory_transaction_id: string | null;
+  idempotent_replay?: boolean;
+}> {
+  return apiPost(`/households/${householdId}/shopping-list/${itemId}/purchase`, {});
+}
 
 export interface FeedbackSubmissionInput {
   household_id?: string | null;
@@ -592,4 +636,3 @@ export interface FeedbackSubmissionInput {
 export function submitFeedback(input: FeedbackSubmissionInput): Promise<{ success: boolean; message: string }> {
   return apiPost('/feedback', input);
 }
-

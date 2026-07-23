@@ -19,11 +19,15 @@ function getRealtimeUrl(): string {
 const CONNECT_TIMEOUT_MS = 12000;
 const SPEECH_THRESHOLD = 0.011;
 // 中文口语在补充数量、思考或说话顿音时常有自然停顿；
-// 调至 2.2 秒静音容忍度，既确保用户不会说到一半被截断，又能流畅响应句末。
-const END_SILENCE_MS = 2200;
+// 1.2 秒给足短暂停顿，同时避免用户说完后还要等两秒才提交。
+// 这一处是实时链路唯一的 turn commit 判定，Paraformer 不再另行 endpoint 提交。
+const END_SILENCE_MS = 1200;
 const MIN_SPEECH_MS = 260;
 const PRE_ROLL_CHUNKS = 8;
 const HEARTBEAT_MS = 25_000;
+// 本地 ASR 偶尔会在一轮结束时没有产出 final transcript；没有看门狗时
+// turnPending 会一直卡住，后续所有语音都会被丢弃。
+const COMMIT_WATCHDOG_MS = 4_500;
 
 interface ServerMessage {
   type?:
@@ -163,6 +167,7 @@ export async function startRealtimeVoice(
   const voiceStartedAt = performance.now();
   let committedAt: number | null = null;
   let heartbeat: number | null = null;
+  let commitWatchdog: number | null = null;
   const preRoll: ArrayBuffer[] = [];
 
   const sendControl = (value: object): void => {
@@ -173,6 +178,8 @@ export async function startRealtimeVoice(
     stopped = true;
     if (heartbeat) window.clearInterval(heartbeat);
     heartbeat = null;
+    if (commitWatchdog) window.clearTimeout(commitWatchdog);
+    commitWatchdog = null;
     player.stop();
     processor?.disconnect();
     source?.disconnect();
@@ -236,6 +243,15 @@ export async function startRealtimeVoice(
                 if (armed && !responsePlaying) {
                   committedAt = performance.now();
                   sendControl({ type: 'commit' });
+                  if (commitWatchdog) window.clearTimeout(commitWatchdog);
+                  commitWatchdog = window.setTimeout(() => {
+                    commitWatchdog = null;
+                    // ASR 没有最终文本时也必须释放本轮，否则后续语音会被永久忽略。
+                    if (!stopped && turnPending && !responsePlaying) {
+                      turnPending = false;
+                      callbacks.onListening?.();
+                    }
+                  }, COMMIT_WATCHDOG_MS);
                 }
                 turnPending = armed;
                 speechActive = false;
@@ -287,6 +303,8 @@ export async function startRealtimeVoice(
           }
         })();
       } else if (message.type === 'wake') {
+        if (commitWatchdog) window.clearTimeout(commitWatchdog);
+        commitWatchdog = null;
         armed = true;
         speechActive = false;
         turnPending = false;
@@ -301,6 +319,8 @@ export async function startRealtimeVoice(
           audioGeneration += 1;
         }
       } else if (message.type === 'standby') {
+        if (commitWatchdog) window.clearTimeout(commitWatchdog);
+        commitWatchdog = null;
         armed = false;
         speechActive = false;
         turnPending = false;
@@ -316,12 +336,17 @@ export async function startRealtimeVoice(
         armed = false;
         callbacks.onSessionEnding?.();
       } else if (message.type === 'session-ended') {
+        if (commitWatchdog) window.clearTimeout(commitWatchdog);
+        commitWatchdog = null;
         armed = false;
         turnPending = false;
         callbacks.onSessionEnded?.();
       } else if (message.type === 'partial' && message.text && armed) {
         callbacks.onUserInterim?.(message.text);
       } else if (message.type === 'transcript' && message.text?.trim() && armed) {
+        if (commitWatchdog) window.clearTimeout(commitWatchdog);
+        commitWatchdog = null;
+        turnPending = false;
         if (committedAt !== null) {
           sendControl({ type: 'metric', metric: 'turn_to_transcript_ms', elapsedMs: performance.now() - committedAt });
         }
@@ -347,6 +372,8 @@ export async function startRealtimeVoice(
         if (text) callbacks.onAssistantFinal?.(text);
         assistantFinalSent = true;
       } else if (message.type === 'audio-done') {
+        if (commitWatchdog) window.clearTimeout(commitWatchdog);
+        commitWatchdog = null;
         const generation = audioGeneration;
         void player.waitUntilIdle().then(() => {
           if (stopped || generation !== audioGeneration) return;

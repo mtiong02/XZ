@@ -46,7 +46,7 @@ describe('extractReminderText', () => {
 
 describe('selectInventoryZones', () => {
   const zones = [
-    { zone_id: 'fridge', code: 'FRIDGE', name: '冷藏室', items: [] },
+    { zone_id: 'fridge', code: 'FRIDGE', name: '保鲜室', items: [] },
     { zone_id: 'freezer', code: 'FREEZER', name: '冷冻室', items: [] },
     { zone_id: 'pantry', code: 'PANTRY', name: '常温区', items: [] },
   ] satisfies InventoryZoneView[];

@@ -65,6 +65,38 @@ const catalog: FoodCatalogEntry[] = [
     preferredUnitCodes: ['piece', 'jin', 'g', 'kg'],
     aliases: ['鸡胸', '机胸肉'],
   },
+  {
+    id: 'f-preserved-egg',
+    canonicalName: '皮蛋',
+    category: 'EGG_DAIRY',
+    defaultUnitCode: 'piece',
+    preferredUnitCodes: ['piece', 'box'],
+    aliases: ['松花蛋', '鸭皮蛋'],
+  },
+  {
+    id: 'f-basa',
+    canonicalName: '巴沙鱼',
+    category: 'SEAFOOD',
+    defaultUnitCode: 'g',
+    preferredUnitCodes: ['piece', 'jin', 'g', 'kg'],
+    aliases: ['巴沙'],
+  },
+  {
+    id: 'f-red-wine',
+    canonicalName: '红酒',
+    category: 'BEVERAGE',
+    defaultUnitCode: 'bottle',
+    preferredUnitCodes: ['bottle', 'ml', 'l'],
+    aliases: ['葡萄酒'],
+  },
+  {
+    id: 'f-mushroom',
+    canonicalName: '香菇',
+    category: 'VEGETABLE',
+    defaultUnitCode: 'g',
+    preferredUnitCodes: ['g'],
+    aliases: ['冬菇'],
+  },
 ];
 
 interface EvalCase {
@@ -125,6 +157,26 @@ const cases: EvalCase[] = [
     items: [{ food_id: 'f-spinach', quantity: '2', unit: 'bunch' }],
   },
   {
+    text: '帮我添加一瓶红酒',
+    intent: 'ADD_INVENTORY',
+    items: [{ food_id: 'f-red-wine', quantity: '1', unit: 'bottle' }],
+  },
+  {
+    text: '科在帮我添加两颗皮蛋',
+    intent: 'ADD_INVENTORY',
+    items: [{ food_id: 'f-preserved-egg', quantity: '2', unit: 'piece' }],
+  },
+  {
+    text: '添加五百克的巴沙',
+    intent: 'ADD_INVENTORY',
+    items: [{ food_id: 'f-basa', quantity: '500', unit: 'g' }],
+  },
+  {
+    text: '加一袋香菇',
+    intent: 'ADD_INVENTORY',
+    items: [{ food_id: 'f-mushroom', quantity: '1', unit: 'bag' }],
+  },
+  {
     text: '买了2000克菠菜',
     intent: 'ADD_INVENTORY',
     items: [{ food_id: 'f-spinach', quantity: '2000', unit: 'g' }],
@@ -141,6 +193,8 @@ const cases: EvalCase[] = [
   { text: '冰箱里有什么', intent: 'QUERY_INVENTORY' },
   { text: '冷冷冻区有什么东西啊', intent: 'QUERY_INVENTORY' },
   { text: '我们现在还有哪些肉', intent: 'QUERY_INVENTORY' },
+  { text: '我们有蔬菜吗', intent: 'QUERY_INVENTORY' },
+  { text: '冰箱里的牛肉什么时候到期', intent: 'QUERY_INVENTORY' },
   { text: '还剩什么蔬菜', intent: 'QUERY_INVENTORY' },
   { text: '现在还有哪些调味料', intent: 'QUERY_INVENTORY' },
   { text: '哪些东西快过期了', intent: 'QUERY_INVENTORY' },
@@ -159,6 +213,7 @@ const cases: EvalCase[] = [
   { text: '那有什么餐食或者是菜品来推荐', intent: 'QUERY_INVENTORY' },
   { text: '搭配一下今天晚上的菜', intent: 'QUERY_INVENTORY' },
   { text: '这个搭配不合理，四个人吃不够', intent: 'QUERY_INVENTORY' },
+  { text: '还有其他的推荐吗我想吃清淡点', intent: 'QUERY_INVENTORY' },
   { text: '我想要一个少油少盐的食谱', intent: 'QUERY_INVENTORY' },
   { text: '继续刚才的食谱', intent: 'QUERY_INVENTORY' },
   { text: '把所有猪肉移到冷冻室里', intent: 'MOVE_INVENTORY' },
@@ -274,6 +329,9 @@ describe('parseTranscript evaluation set', () => {
     expect(parseTranscript(normalizeTranscript('把猪肉都挪到冷冻室'), catalog).intent).toBe(
       'MOVE_INVENTORY',
     );
+    expect(parseTranscript(normalizeTranscript('还有其他的推荐吗我想吃清淡点'), catalog).intent).toBe(
+      'QUERY_INVENTORY',
+    );
   });
 
   it('does not ask for a quantity when a meal context has no food entity', () => {
@@ -290,5 +348,47 @@ describe('parseTranscript evaluation set', () => {
       unit: 'piece',
       quantity_explicit: true,
     });
+  });
+
+  it('accepts natural packaging units even when the knowledge default is mass', () => {
+    const mushroom: FoodCatalogEntry = {
+      id: 'f-mushroom',
+      canonicalName: '香菇',
+      category: 'VEGETABLE',
+      defaultUnitCode: 'g',
+      preferredUnitCodes: ['g'],
+      aliases: [],
+    };
+    const result = parseTranscript(normalizeTranscript('加一袋香菇'), [mushroom]);
+    expect(result.items[0]).toMatchObject({
+      food_id: 'f-mushroom',
+      quantity: '1',
+      unit: 'bag',
+      quantity_explicit: true,
+      unit_reasonable: true,
+    });
+  });
+});
+
+describe('household custom food catalog', () => {
+  it('resolves a newly added custom food and its alias for voice input', () => {
+    const customFood: FoodCatalogEntry = {
+      id: 'household-sprite',
+      canonicalName: '雪碧',
+      category: 'BEVERAGE',
+      defaultUnitCode: 'bottle',
+      preferredUnitCodes: ['bottle', 'box'],
+      aliases: ['Sprite', '雪碧汽水'],
+    };
+
+    expect(parseTranscript(normalizeTranscript('帮我添加两瓶雪碧'), [customFood]).items[0]).toMatchObject({
+      food_id: 'household-sprite',
+      food_name: '雪碧',
+      quantity: '2',
+      unit: 'bottle',
+    });
+    expect(parseTranscript(normalizeTranscript('买了一瓶Sprite'), [customFood]).items[0]?.food_id).toBe(
+      'household-sprite',
+    );
   });
 });

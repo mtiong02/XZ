@@ -8,6 +8,7 @@ import {
   fetchPersonalizedMealRecommendation,
   fetchNutritionStructure,
   fetchShoppingList,
+  markShoppingItemPurchased,
   updateShoppingItemStatus,
   type MealSuggestionView,
   type NutritionStructureView,
@@ -29,6 +30,7 @@ export default function MealsPage() {
   const [servingsFilter, setServingsFilter] = useState<number | null>(null);
   const [agentRecommendation, setAgentRecommendation] = useState('');
   const [agentBusy, setAgentBusy] = useState(false);
+  const [purchasingItemId, setPurchasingItemId] = useState<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -298,13 +300,22 @@ export default function MealsPage() {
                     <div className="workspace-card-actions">
                       <button
                         className="primary"
+                        disabled={purchasingItemId === item.id}
                         onClick={async () => {
-                          await updateShoppingItemStatus(household.id, item.id, 'PURCHASED');
-                          setMessage('');
-                          await reload();
+                          setPurchasingItemId(item.id);
+                          setError('');
+                          try {
+                            await markShoppingItemPurchased(household.id, item.id);
+                            setMessage(`已购买并加入库存：${item.food_name}`);
+                            await reload();
+                          } catch (caught) {
+                            setError(caught instanceof Error ? caught.message : '标记购买失败');
+                          } finally {
+                            setPurchasingItemId(null);
+                          }
                         }}
                       >
-                        已购买
+                        {purchasingItemId === item.id ? '正在入库…' : '已购买'}
                       </button>
                       <button
                         onClick={async () => {
