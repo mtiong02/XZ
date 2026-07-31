@@ -11,8 +11,8 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: '#16a34a',
     icons: [
       {
-        src: '/mascot/xiaozhi.png',
-        sizes: 'any',
+        src: '/mascot/xiaozhi-icon.png',
+        sizes: '192x192',
         type: 'image/png',
       },
     ],

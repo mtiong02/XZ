@@ -18,6 +18,68 @@ import { unitLabel } from '../../../lib/format';
 import { useHousehold } from '../../../lib/use-household';
 import { AppHeader } from '../../../components/app-header';
 
+type GroceryPlatform = 'JD' | 'HEMA' | 'DINGDONG' | 'MEITUAN';
+
+const groceryPlatforms: Array<{
+  id: GroceryPlatform;
+  name: string;
+  description: string;
+  androidPackage: string;
+}> = [
+  { id: 'JD', name: '京东', description: '京东超市 / 京东秒送', androidPackage: 'com.jingdong.app.mall' },
+  { id: 'HEMA', name: '盒马', description: '盒马鲜生', androidPackage: 'com.wudaokou.hippo' },
+  { id: 'DINGDONG', name: '叮咚买菜', description: '附近生鲜配送', androidPackage: 'com.yaya.zone' },
+  { id: 'MEITUAN', name: '美团买菜', description: '美团闪购 / 买菜', androidPackage: 'com.baobaoaichi.imaicai' },
+];
+
+function foodShoppingWebUrl(platform: GroceryPlatform, foodName: string) {
+  const keyword = encodeURIComponent(foodName);
+
+  switch (platform) {
+    case 'JD':
+      return `https://search.jd.com/Search?keyword=${keyword}`;
+    case 'HEMA':
+      return 'https://www.hema.com/';
+    case 'DINGDONG':
+      return 'https://www.dingdongxiaoqu.com/';
+    case 'MEITUAN':
+      return `https://www.meituan.com/search?query=${keyword}`;
+  }
+}
+
+function foodShoppingAppUrl(platform: GroceryPlatform, foodName: string) {
+  const keyword = encodeURIComponent(foodName);
+
+  switch (platform) {
+    case 'JD':
+      return `openapp.jdmobile://virtual?params=${encodeURIComponent(
+        JSON.stringify({ category: 'jump', des: 'productList', keyWord: foodName, from: 'search' }),
+      )}`;
+    case 'HEMA':
+      return `freshhema://search?keyword=${keyword}`;
+    case 'DINGDONG':
+      return `ddmc://search?keyword=${keyword}`;
+    case 'MEITUAN':
+      return `imeituan://www.meituan.com/search?q=${keyword}`;
+  }
+}
+
+function androidIntentUrl(platform: GroceryPlatform, foodName: string) {
+  const target = groceryPlatforms.find((candidate) => candidate.id === platform);
+  const appUrl = foodShoppingAppUrl(platform, foodName);
+  const [scheme, path = ''] = appUrl.split('://');
+  const fallback = encodeURIComponent(foodShoppingWebUrl(platform, foodName));
+  return `intent://${path}#Intent;scheme=${scheme};package=${target?.androidPackage};S.browser_fallback_url=${fallback};end`;
+}
+
+function isMobileBrowser() {
+  return /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+
+function isWechatBrowser() {
+  return /micromessenger/i.test(navigator.userAgent);
+}
+
 export default function MealsPage() {
   const { household, loading } = useHousehold();
   const [recipes, setRecipes] = useState<MealSuggestionView[]>([]);
@@ -28,9 +90,13 @@ export default function MealsPage() {
   const [addingRecipeId, setAddingRecipeId] = useState<string | null>(null);
   const [focusFood, setFocusFood] = useState<{ id: string; name: string } | null>(null);
   const [servingsFilter, setServingsFilter] = useState<number | null>(null);
+  const [showMakeableOnly, setShowMakeableOnly] = useState(false);
   const [agentRecommendation, setAgentRecommendation] = useState('');
   const [agentBusy, setAgentBusy] = useState(false);
   const [purchasingItemId, setPurchasingItemId] = useState<string | null>(null);
+  const [selectedShoppingIds, setSelectedShoppingIds] = useState<Set<string>>(new Set());
+  const [purchaseItems, setPurchaseItems] = useState<ShoppingListItemView[] | null>(null);
+  const [purchaseStatus, setPurchaseStatus] = useState('');
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -49,6 +115,9 @@ export default function MealsPage() {
       ]);
       setRecipes(nextRecipes);
       setShopping(nextShopping);
+      setSelectedShoppingIds((current) =>
+        new Set([...current].filter((id) => nextShopping.some((item) => item.id === id))),
+      );
       setNutrition(nextNutrition);
       setError('');
     } catch (caught) {
@@ -71,7 +140,7 @@ export default function MealsPage() {
       )
       .finally(() => setAgentBusy(false));
   }, [focusFood, household]);
-  if (loading || !household) return <div className="empty">加载中…</div>;
+
   const makeableCount = recipes.filter((recipe) => recipe.can_make).length;
   const scopedRecipes = useMemo(
     () =>
@@ -90,15 +159,96 @@ export default function MealsPage() {
   }, [scopedRecipes]);
   const visibleRecipes = useMemo(
     () =>
-      servingsFilter === null
-        ? scopedRecipes
-        : scopedRecipes.filter((recipe) => recipe.servings === servingsFilter),
-    [scopedRecipes, servingsFilter],
+      scopedRecipes.filter(
+        (recipe) =>
+          (servingsFilter === null || recipe.servings === servingsFilter) &&
+          (!showMakeableOnly || recipe.can_make),
+      ),
+    [scopedRecipes, servingsFilter, showMakeableOnly],
   );
   const attentionObservations =
     nutrition?.observations
       .filter((observation) => observation.severity === 'ATTENTION')
       .slice(0, 2) ?? [];
+  const selectedShoppingItems = shopping.filter((item) => selectedShoppingIds.has(item.id));
+  const firstPurchaseItem = purchaseItems?.[0] ?? null;
+
+  const closePurchaseDialog = () => {
+    setPurchaseItems(null);
+    setPurchaseStatus('');
+  };
+
+  const jumpTo = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const openGroceryPlatform = async (platform: GroceryPlatform, items: ShoppingListItemView[]) => {
+    const foodName = items[0]?.food_name ?? '食材';
+    const isBatchPurchase = items.length > 1;
+    const searchKeyword = isBatchPurchase ? items.map((item) => item.food_name).join(' ') : foodName;
+    const shoppingText = items
+      .map((item, index) => {
+        const quantity = item.quantity ? `${item.quantity} ${unitLabel(item.unit_code ?? '')}` : '数量待定';
+        return `${index + 1}. ${item.food_name} · ${quantity}`;
+      })
+      .join('\n');
+    const name = groceryPlatforms.find((candidate) => candidate.id === platform)?.name ?? '购物平台';
+    const webUrl = foodShoppingWebUrl(platform, searchKeyword);
+
+    if (isBatchPurchase) {
+      try {
+        await navigator.clipboard?.writeText(`鲜知待购清单\n${shoppingText}`);
+      } catch {
+        // Clipboard access is optional; the dialog keeps the selection visible until navigation begins.
+      }
+    }
+
+    if (isWechatBrowser()) {
+      try {
+        await navigator.clipboard?.writeText(foodName);
+      } catch {
+        // Clipboard access is not guaranteed in embedded browsers. The visible food name remains usable.
+      }
+      setPurchaseStatus(
+        `微信内无法稳定唤起${name}。已尝试复制${isBatchPurchase ? `${items.length} 项采购清单` : `“${foodName}”`}，请点右上角“…”后选择在浏览器打开。`,
+      );
+      return;
+    }
+
+    if (!isMobileBrowser()) {
+      window.open(webUrl, '_blank', 'noopener,noreferrer');
+      setPurchaseStatus(
+        isBatchPurchase
+          ? `已复制 ${items.length} 项采购清单，并在新标签页打开${name}。`
+          : `已在新标签页打开${name}搜索。`,
+      );
+      return;
+    }
+
+    const appUrl = /android/i.test(navigator.userAgent)
+      ? androidIntentUrl(platform, searchKeyword)
+      : foodShoppingAppUrl(platform, searchKeyword);
+    let appOpened = document.hidden;
+    const markAppOpened = () => {
+      appOpened = true;
+    };
+    document.addEventListener('visibilitychange', markAppOpened, { once: true });
+    window.addEventListener('pagehide', markAppOpened, { once: true });
+    setPurchaseStatus(
+      isBatchPurchase
+        ? `正在打开${name}，已带入 ${items.length} 项食材关键词；完整采购清单也已复制。`
+        : `正在打开${name}并搜索“${foodName}”…`,
+    );
+    window.location.href = appUrl;
+
+    window.setTimeout(() => {
+      if (!appOpened && !document.hidden) {
+        window.location.href = webUrl;
+      }
+    }, 1600);
+  };
+
+  if (loading || !household) return <div className="empty">加载中…</div>;
 
   return (
     <>
@@ -138,19 +288,35 @@ export default function MealsPage() {
             </h2>
             <p>候选只依据当前库存、临期状态和已确认限制，不自动扣减库存，也不会代你下单。</p>
           </div>
-          <div className="workspace-summary-grid">
-            <div>
+          <div className="workspace-summary-grid meal-summary-grid">
+            <button
+              type="button"
+              onClick={() => {
+                setShowMakeableOnly(false);
+                jumpTo('meal-candidates');
+              }}
+            >
               <strong>{recipes.length}</strong>
               <span>餐食候选</span>
-            </div>
-            <div>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowMakeableOnly(true);
+                jumpTo('meal-candidates');
+              }}
+            >
               <strong>{makeableCount}</strong>
               <span>现在可做</span>
-            </div>
-            <div className={shopping.length > 0 ? 'attention' : ''}>
+            </button>
+            <button
+              className={shopping.length > 0 ? 'attention' : ''}
+              type="button"
+              onClick={() => jumpTo('meal-shopping')}
+            >
               <strong>{shopping.length}</strong>
               <span>待购食材</span>
-            </div>
+            </button>
           </div>
           {attentionObservations.length > 0 ? (
             <div className="meal-attention-strip">
@@ -165,7 +331,7 @@ export default function MealsPage() {
         </section>
 
         <div className="workspace-layout meal-layout">
-          <section className="zone workspace-section meal-recipes">
+          <section className="zone workspace-section meal-recipes" id="meal-candidates">
             <div className="workspace-section-heading">
               <div>
                 <span>结合现有食材</span>
@@ -180,7 +346,10 @@ export default function MealsPage() {
                   type="button"
                   className={servingsFilter === null ? 'selected' : ''}
                   aria-pressed={servingsFilter === null}
-                  onClick={() => setServingsFilter(null)}
+                  onClick={() => {
+                    setServingsFilter(null);
+                    setShowMakeableOnly(false);
+                  }}
                 >
                   全部 <small>{scopedRecipes.length}</small>
                 </button>
@@ -195,7 +364,10 @@ export default function MealsPage() {
                       aria-pressed={servingsFilter === servings}
                       disabled={count === 0}
                       key={servings}
-                      onClick={() => setServingsFilter(servings)}
+                      onClick={() => {
+                        setServingsFilter(servings);
+                        setShowMakeableOnly(false);
+                      }}
                     >
                       {servings}人 <small>{count}</small>
                     </button>
@@ -276,7 +448,7 @@ export default function MealsPage() {
             </div>
           </section>
 
-          <section className="zone workspace-section meal-shopping">
+          <section className="zone workspace-section meal-shopping" id="meal-shopping">
             <div className="workspace-section-heading">
               <div>
                 <span>只放确认要买的东西</span>
@@ -287,55 +459,164 @@ export default function MealsPage() {
             {shopping.length === 0 ? (
               <p className="empty workspace-empty">购物清单还是空的。</p>
             ) : (
-              <div className="workspace-card-list">
-                {shopping.map((item) => (
-                  <article className="workspace-card workspace-card-stack" key={item.id}>
-                    <div>
-                      <div className="name">{item.food_name}</div>
-                      <div className="qty">
-                        {item.quantity
-                          ? `${item.quantity} ${unitLabel(item.unit_code ?? '')}`
-                          : '数量待定'}
-                        {item.recipe_name ? ` · 来自${item.recipe_name}` : ''}
+              <>
+                <div className="shopping-batch-toolbar">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={shopping.length > 0 && selectedShoppingItems.length === shopping.length}
+                      onChange={(event) =>
+                        setSelectedShoppingIds(
+                          event.target.checked ? new Set(shopping.map((item) => item.id)) : new Set(),
+                        )
+                      }
+                    />
+                    全选
+                  </label>
+                  <span>已选 {selectedShoppingItems.length} 项</span>
+                  <button
+                    className="primary"
+                    type="button"
+                    disabled={selectedShoppingItems.length === 0}
+                    onClick={() => setPurchaseItems(selectedShoppingItems)}
+                  >
+                    批量去购买
+                  </button>
+                </div>
+                <div className="workspace-card-list">
+                  {shopping.map((item) => (
+                    <article className="workspace-card workspace-card-stack" key={item.id}>
+                      <div className="shopping-card-title-row">
+                        <label className="shopping-select-item">
+                          <input
+                            type="checkbox"
+                            checked={selectedShoppingIds.has(item.id)}
+                            onChange={(event) =>
+                              setSelectedShoppingIds((current) => {
+                                const next = new Set(current);
+                                if (event.target.checked) next.add(item.id);
+                                else next.delete(item.id);
+                                return next;
+                              })
+                            }
+                          />
+                          <span className="name">{item.food_name}</span>
+                        </label>
+                        <div className="qty">
+                          {item.quantity
+                            ? `${item.quantity} ${unitLabel(item.unit_code ?? '')}`
+                            : '数量待定'}
+                          {item.recipe_name ? ` · 来自${item.recipe_name}` : ''}
+                        </div>
                       </div>
-                    </div>
-                    <div className="workspace-card-actions">
-                      <button
-                        className="primary"
-                        disabled={purchasingItemId === item.id}
-                        onClick={async () => {
-                          setPurchasingItemId(item.id);
-                          setError('');
-                          try {
-                            await markShoppingItemPurchased(household.id, item.id);
-                            setMessage(`已购买并加入库存：${item.food_name}`);
+                      <div className="workspace-card-actions">
+                        <button
+                          className="primary"
+                          type="button"
+                          onClick={() => setPurchaseItems([item])}
+                        >
+                          去购买
+                        </button>
+                        <button
+                          disabled={purchasingItemId === item.id}
+                          onClick={async () => {
+                            setPurchasingItemId(item.id);
+                            setError('');
+                            try {
+                              await markShoppingItemPurchased(household.id, item.id);
+                              setMessage(`已购买并加入库存：${item.food_name}`);
+                              await reload();
+                            } catch (caught) {
+                              setError(caught instanceof Error ? caught.message : '标记购买失败');
+                            } finally {
+                              setPurchasingItemId(null);
+                            }
+                          }}
+                        >
+                          {purchasingItemId === item.id ? '正在入库…' : '已购买'}
+                        </button>
+                        <button
+                          onClick={async () => {
+                            await updateShoppingItemStatus(household.id, item.id, 'CANCELLED');
+                            setMessage('');
                             await reload();
-                          } catch (caught) {
-                            setError(caught instanceof Error ? caught.message : '标记购买失败');
-                          } finally {
-                            setPurchasingItemId(null);
-                          }
-                        }}
-                      >
-                        {purchasingItemId === item.id ? '正在入库…' : '已购买'}
-                      </button>
-                      <button
-                        onClick={async () => {
-                          await updateShoppingItemStatus(household.id, item.id, 'CANCELLED');
-                          setMessage('');
-                          await reload();
-                        }}
-                      >
-                        移除
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
+                          }}
+                        >
+                          移除
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </>
             )}
           </section>
         </div>
       </main>
+      {purchaseItems?.length ? (
+        <div className="grocery-platform-backdrop" onClick={closePurchaseDialog}>
+          <section
+            className="grocery-platform-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="grocery-platform-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="grocery-platform-dialog-header">
+              <div>
+                <span>前往购买</span>
+                <h2 id="grocery-platform-title">
+                  {purchaseItems.length === 1 && firstPurchaseItem
+                    ? `购买${firstPurchaseItem.food_name}`
+                    : `购买 ${purchaseItems.length} 项食材`}
+                </h2>
+                <p>
+                  {purchaseItems.length === 1 && firstPurchaseItem
+                    ? `选择常用平台，小知会带上“${firstPurchaseItem.food_name}”直接搜索。`
+                    : '先确认本次采购清单，再选择一次常用平台。'}
+                </p>
+              </div>
+              <button
+                className="grocery-platform-close"
+                type="button"
+                aria-label="关闭购买平台选择"
+                onClick={closePurchaseDialog}
+              >
+                关闭
+              </button>
+            </div>
+            <div className="grocery-platform-options">
+              {groceryPlatforms.map((platform) => (
+                <button
+                  type="button"
+                  className="grocery-platform-option"
+                  key={platform.id}
+                  onClick={() => void openGroceryPlatform(platform.id, purchaseItems)}
+                >
+                  <strong>{platform.name}</strong>
+                  <span>{platform.description}</span>
+                  <small>
+                    {purchaseItems.length === 1 && firstPurchaseItem
+                      ? `搜索${firstPurchaseItem.food_name}`
+                      : `购买已选 ${purchaseItems.length} 项`}
+                  </small>
+                </button>
+              ))}
+            </div>
+            {purchaseStatus ? (
+              <p className="grocery-platform-status" role="status" aria-live="polite">
+                {purchaseStatus}
+              </p>
+            ) : null}
+            <p className="grocery-platform-note">
+              {purchaseItems.length === 1
+                ? '手机会优先尝试打开已安装的 App；未安装或跳转失败时会自动进入平台网页。'
+                : '会先复制完整采购清单，再打开所选平台；平台暂未授权跨食材直接写入购物车，因此请在平台内粘贴清单并确认商品。'}
+              实际商品、价格与配送范围以平台显示为准。
+            </p>
+          </section>
+        </div>
+      ) : null}
     </>
   );
 }

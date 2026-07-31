@@ -1,0 +1,4 @@
+interface:
+  display_name: "XZ Voice Regression Learning"
+  short_description: "Turn real dialogue feedback into safe, full-suite voice fixes."
+  default_prompt: "Use this skill to diagnose a real 小知 voice dialogue failure, add regression coverage, update every affected layer, and verify the release."

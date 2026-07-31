@@ -26,7 +26,7 @@ import {
   type FoodCatalogEntry,
   type ParseResult,
 } from './parser/intent-parser';
-import { interpretReply, relativeInventoryFraction } from './dialogue/reply-interpreter';
+import { interpretReply, relativeInventoryFraction, isDialogueExit } from './dialogue/reply-interpreter';
 import {
   CANCELLED_PROMPT,
   clarifyQuantityPrompt,
@@ -175,6 +175,43 @@ export class VoiceService {
     const catalog = await this.loadCatalog(input.household_id);
     const parsed = parseTranscript(normalized, catalog);
     const sessionId = input.session_id ?? randomUUID();
+    const isExit = isDialogueExit(input.transcript_text);
+
+    if (input.session_id && !isExit) {
+      const pendingResult = await this.pool.query<{
+        id: string;
+        candidate_command_json: VoiceJobRow['candidate_command_json'];
+      }>(
+        `select id, candidate_command_json 
+         from voice_jobs 
+         where household_id = $1 and session_id = $2 
+         and status in ('AWAITING_CLARIFICATION', 'AWAITING_CONFIRMATION') 
+         order by created_at desc limit 1`,
+        [input.household_id, input.session_id],
+      );
+      const pendingJob = pendingResult.rows[0];
+      if (pendingJob) {
+        const pendingIntent = pendingJob.candidate_command_json?.command_type;
+        const interp = interpretReply(input.transcript_text, catalog);
+        const isFragmentOrMatch =
+          parsed.intent === 'UNKNOWN' ||
+          pendingIntent === 'AMBIGUOUS_COMMAND' ||
+          (pendingIntent && parsed.intent === pendingIntent) ||
+          interp.kind === 'CONFIRM' ||
+          interp.kind === 'REJECT' ||
+          relativeInventoryFraction(input.transcript_text) !== null;
+
+        // 如果明确判断为无意图废话，则忽略（返回提示重新说）。
+        // 其他情况（即使是UNCLEAR，但意图匹配）都进入 reply 处理
+        if (isFragmentOrMatch && (interp.kind !== 'UNCLEAR' || parsed.intent === pendingIntent || parsed.intent === 'UNKNOWN' || pendingIntent === 'AMBIGUOUS_COMMAND' || relativeInventoryFraction(input.transcript_text) !== null)) {
+          return this.reply(pendingJob.id, userId, {
+            text: input.transcript_text,
+            turn_id: input.turn_id,
+          });
+        }
+      }
+    }
+
     const turnId = input.turn_id ?? randomUUID();
     const taskId = randomUUID();
     const task = this.coordinator?.begin({
@@ -184,8 +221,17 @@ export class VoiceService {
       sessionId,
       intent: parsed.intent,
     });
+    // 结束语必须在任何业务路由之前拦截。会话中没有待确认任务时，用户仍可能说
+    // “没有了，退下吧”；此时不能创建一个 UNKNOWN 任务后再报“没听懂”。
     const outcome =
-      parsed.intent === 'CREATE_REMINDER'
+      isExit
+        ? {
+            status: 'CANCELLED',
+            candidate: null,
+            errorCode: null,
+            spokenPrompt: '好的，我先退下。需要时喊“小知小知”。',
+          }
+        : parsed.intent === 'CREATE_REMINDER'
         ? await this.buildReminderOutcome(
             input.household_id,
             userId,
@@ -405,6 +451,19 @@ export class VoiceService {
         },
         errorCode: null,
         spokenPrompt: null,
+      };
+    }
+    if (parsed.intent === 'UNKNOWN' && parsed.items.length > 0) {
+      const entities = toSpokenItems(parsed.items.map(toCandidateItem));
+      const entitiesStr = entities.map(e => e.food_name).join('、');
+      return {
+        status: 'AWAITING_CLARIFICATION',
+        candidate: {
+          command_type: 'AMBIGUOUS_COMMAND',
+          payload: { items: parsed.items.map((it) => ({ ...toCandidateItem(it) })) },
+        } as any,
+        errorCode: null,
+        spokenPrompt: `我听到了${entitiesStr}，请问是要添加、用掉还是查询库存？`,
       };
     }
     const commandType = INTENT_TO_COMMAND[parsed.intent];
@@ -1005,6 +1064,23 @@ export class VoiceService {
     }
     const catalog = await this.loadCatalog(job.household_id);
     const replacement = parseTranscript(normalizeTranscript(input.text), catalog);
+    if (job.candidate_command_json?.command_type === 'AMBIGUOUS_COMMAND') {
+      if (replacement.intent !== 'UNKNOWN' && replacement.intent !== 'AMBIGUOUS_COMMAND') {
+        job.candidate_command_json.command_type = replacement.intent;
+        if (replacement.items.length > 0) {
+          job.candidate_command_json.payload.items = replacement.items.map(it => ({ ...it }));
+        }
+      } else {
+        return this.persistTurn(job, {
+          status: 'AWAITING_CLARIFICATION',
+          candidate: job.candidate_command_json,
+          spokenPrompt: '抱歉我没听清，请问是要添加、用掉还是查询库存？',
+          turns: [...job.dialogue_turns, { role: 'user' as const, text: input.text, at: nowIso() }],
+          userId,
+        });
+      }
+    }
+
     if (READ_ONLY_QUERY_INTENTS.has(replacement.intent)) {
       await this.pool.query(
         `update voice_jobs set status='CANCELLED',completed_at=now() where id=$1`,
@@ -1094,7 +1170,7 @@ export class VoiceService {
   ) {
     const candidate = job.candidate_command_json;
     const payload = candidate?.payload ?? {};
-    const interp = interpretReply(replyText, catalog);
+    const interp = interpretReply(replyText, catalog); 
     const relativeFraction = relativeInventoryFraction(replyText);
 
     if (interp.kind === 'REJECT') {
@@ -1192,7 +1268,7 @@ export class VoiceService {
   ) {
     const candidate = job.candidate_command_json;
     const items = candidate?.payload?.items ?? [];
-    const interp = interpretReply(replyText, catalog);
+    const interp = interpretReply(replyText, catalog); 
     const normalizedReply = normalizeTranscript(replyText);
 
     if (interp.kind === 'REJECT') {
@@ -1210,7 +1286,34 @@ export class VoiceService {
     // 针对 ADD_INVENTORY 连续报菜名与暂存箱模式
     if (candidate?.command_type === 'ADD_INVENTORY') {
       const isCommit = BATCH_COMMIT_PATTERN.test(normalizedReply);
-      const parsedReply = parseTranscript(normalizedReply, catalog);
+      const parsedReply = parseTranscript(normalizedReply, catalog); 
+      const isExplicitCorrection = /(?:不是|不对|错|别|不要|改|换)/.test(normalizedReply);
+
+      if (interp.kind === 'CORRECTION' && isExplicitCorrection) {
+        const negatedMatch = normalizedReply.match(/(?:不是|别|不要|错)[\s了]*([a-zA-Z\u4e00-\u9fa5]{1,4})/);
+        if (negatedMatch) {
+          const negatedStr = negatedMatch[1];
+          const idx = items.findIndex(i => i.display_text.includes(negatedStr) || negatedStr.includes(i.display_text));
+          if (idx !== -1) items.splice(idx, 1);
+          const interpIdx = interp.items.findIndex(i => i.food_name.includes(negatedStr) || negatedStr.includes(i.food_name));
+          if (interpIdx !== -1) interp.items.splice(interpIdx, 1);
+        }
+        const newCandidateItems = interp.items.map(toCandidateItem);
+        items.push(...newCandidateItems);
+        if (candidate.payload) {
+          candidate.payload.items = items;
+        }
+        const spokenList = toSpokenItems(candidate.payload?.items ?? []);
+        const itemNames = spokenList.map((i) => `${i.food_name}${i.quantity}${unitSpokenLabel(i.unit)}`).join('、');
+        const prompt = `已修改，目前有：${itemNames}。继续报或说“就这些”。`;
+        return this.persistTurn(job, {
+          status: 'AWAITING_CLARIFICATION',
+          candidate,
+          spokenPrompt: prompt,
+          turns,
+          userId,
+        });
+      }
 
       if (isCommit && items.length > 0) {
         const spokenList = toSpokenItems(items);
@@ -1228,7 +1331,7 @@ export class VoiceService {
       }
 
       if (parsedReply.items.length > 0) {
-        const newCandidateItems = parsedReply.items.map(toCandidateItem);
+         const newCandidateItems = parsedReply.items.map(toCandidateItem);
         items.push(...newCandidateItems);
         if (candidate.payload) {
           candidate.payload.items = items;
@@ -1374,7 +1477,7 @@ export class VoiceService {
     turns: DialogueTurn[],
   ) {
     const candidate = job.candidate_command_json;
-    const interp = interpretReply(replyText, catalog);
+    const interp = interpretReply(replyText, catalog); 
 
     await this.applyRequestedStorageZone(
       job.household_id,
@@ -1397,8 +1500,29 @@ export class VoiceService {
     if (interp.kind === 'CONFIRM') {
       // 执行后返回"呈现后的任务"（含 status=COMPLETED、spoken_prompt、executed_transaction_id），
       // 供前端对话循环判断终态并播报"好的，已添加。"
-      await this.executeCandidate(job, userId, undefined, turns);
-      return this.getJob(job.id, userId);
+      try {
+        await this.executeCandidate(job, userId, undefined, turns);
+        return this.getJob(job.id, userId);
+      } catch (error) {
+        if (error instanceof DomainError) {
+          let prompt = error.message;
+          if (error.code === 'INVENTORY_INSUFFICIENT' && error.details) {
+            prompt = `库存不足，当前只有 ${error.details.available}${unitSpokenLabel(error.details.unit as string)}，是要全部用掉吗？`;
+          } else if (error.code === 'UNIT_MISMATCH') {
+            prompt = `单位不匹配，目前记录的是 ${unitSpokenLabel(error.details?.from_unit as string)}，请确认您的单位。`;
+          } else {
+            prompt = `执行失败：${error.message}，您可以重新告诉我数量或修改操作。`;
+          }
+          return this.persistTurn(job, {
+            status: 'AWAITING_CLARIFICATION',
+            candidate,
+            spokenPrompt: prompt,
+            turns,
+            userId,
+          });
+        }
+        throw error;
+      }
     }
 
     if (interp.kind === 'CORRECTION' && candidate?.command_type) {

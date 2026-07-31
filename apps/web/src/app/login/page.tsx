@@ -22,8 +22,14 @@ export default function LoginPage() {
   const [wechatEnabled, setWechatEnabled] = useState<boolean | null>(null);
 
   useEffect(() => {
-    const wechatError = new URLSearchParams(window.location.search).get('wechat_error');
+    const params = new URLSearchParams(window.location.search);
+    const wechatError = params.get('wechat_error');
     if (wechatError) setError(wechatError);
+    const sharedInviteCode = params.get('invite')?.trim().toUpperCase();
+    if (sharedInviteCode) setInviteCode(sharedInviteCode);
+    const familyInviteCode = params.get('family_invite')?.trim().toUpperCase();
+    if (familyInviteCode) sessionStorage.setItem('xz-pending-family-invite', familyInviteCode);
+    if (params.get('mode') === 'signup') setMode('signup');
     checkWechatLogin()
       .then(setWechatEnabled)
       .catch(() => setWechatEnabled(false));

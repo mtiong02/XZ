@@ -305,7 +305,7 @@ export default function WellnessPage() {
             <div className="wellness-avatar" aria-label="小知个人健康伙伴默认形象">
               <div className="wellness-avatar-halo" aria-hidden="true" />
               <Image
-                src="/mascot/xiaozhi.png"
+                src="/mascot/xiaozhi.webp?v=20260729"
                 alt="小知个人健康伙伴"
                 width={220}
                 height={220}

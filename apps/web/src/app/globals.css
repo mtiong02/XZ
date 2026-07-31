@@ -1073,6 +1073,30 @@ select {
   border-radius: 15px;
   background: rgb(255 255 255 / 72%);
 }
+.meal-summary-grid > button,
+.notifications-page .workspace-summary-grid > button {
+  min-height: 88px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 12px 14px;
+  border: 1px solid rgb(210 213 202 / 72%);
+  border-radius: 15px;
+  background: rgb(255 255 255 / 72%);
+  box-shadow: none;
+  text-align: left;
+  cursor: pointer;
+}
+.meal-summary-grid > button:hover,
+.notifications-page .workspace-summary-grid > button:hover {
+  border-color: rgb(40 122 91 / 46%);
+  background: var(--green-soft);
+}
+.meal-summary-grid > button.attention,
+.notifications-page .workspace-summary-grid > button.attention {
+  border-color: rgb(167 101 22 / 24%);
+  background: var(--amber-bg);
+}
 .workspace-summary-grid > div.attention {
   border-color: rgb(167 101 22 / 24%);
   background: var(--amber-bg);
@@ -1155,6 +1179,192 @@ select {
   min-height: 34px;
   padding: 6px 10px;
   font-size: 11px;
+}
+
+.grocery-platform-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(23 32 26 / 38%);
+  backdrop-filter: blur(4px);
+}
+.grocery-platform-dialog {
+  width: min(100%, 460px);
+  padding: 22px;
+  border: 1px solid rgb(255 255 255 / 72%);
+  border-radius: 24px;
+  background: var(--white);
+  box-shadow: var(--shadow-lg);
+}
+.grocery-platform-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.grocery-platform-dialog-header span {
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 760;
+}
+.grocery-platform-dialog-header h2 {
+  margin-top: 2px;
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+}
+.grocery-platform-dialog-header p {
+  margin-top: 7px;
+  color: var(--gray-500);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.grocery-platform-close {
+  min-height: 32px;
+  padding: 5px 8px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--gray-500);
+  font-size: 12px;
+  box-shadow: none;
+}
+.grocery-platform-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 20px;
+}
+.grocery-platform-option {
+  min-height: 108px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 15px;
+  appearance: none;
+  box-shadow: none;
+  cursor: pointer;
+  text-align: left;
+  border: 1px solid var(--gray-200);
+  border-radius: 16px;
+  background: var(--gray-50);
+  color: var(--gray-900);
+  text-decoration: none;
+  transition:
+    transform var(--transition),
+    border-color var(--transition),
+    background var(--transition);
+}
+.grocery-platform-option:hover {
+  border-color: rgb(40 122 91 / 52%);
+  background: var(--green-soft);
+  transform: translateY(-1px);
+}
+.grocery-platform-option strong {
+  font-size: 16px;
+}
+.grocery-platform-option span,
+.grocery-platform-option small {
+  color: var(--gray-500);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.grocery-platform-option span {
+  margin-top: 3px;
+}
+.grocery-platform-option small {
+  margin-top: 8px;
+  color: var(--green);
+  font-weight: 700;
+}
+.grocery-platform-note {
+  margin-top: 15px;
+  color: var(--gray-500);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.shopping-batch-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid rgb(40 122 91 / 18%);
+  border-radius: 14px;
+  background: var(--green-soft);
+}
+.shopping-batch-toolbar label,
+.shopping-select-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--green-dark);
+  font-size: 12px;
+  font-weight: 760;
+}
+.shopping-batch-toolbar input,
+.shopping-select-item input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--green);
+}
+.shopping-batch-toolbar > span {
+  color: var(--gray-600);
+  font-size: 11px;
+}
+.shopping-batch-toolbar button {
+  min-height: 34px;
+  margin-left: auto;
+  padding: 6px 10px;
+  font-size: 11px;
+}
+.shopping-card-title-row {
+  display: grid;
+  gap: 5px;
+}
+.shopping-card-title-row .qty {
+  padding-left: 21px;
+}
+.grocery-platform-status {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--green-soft);
+  color: var(--green-strong);
+  font-size: 12px;
+  line-height: 1.55;
+}
+@media (max-width: 520px) {
+  .grocery-platform-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+  .grocery-platform-dialog {
+    width: 100%;
+    padding: 20px 18px calc(20px + env(safe-area-inset-bottom));
+    border-radius: 24px 24px 0 0;
+  }
+  .grocery-platform-dialog-header h2 {
+    font-size: 22px;
+  }
+  .grocery-platform-options {
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .grocery-platform-option {
+    min-height: 96px;
+    padding: 13px;
+  }
+  .shopping-batch-toolbar {
+    flex-wrap: wrap;
+  }
+  .shopping-batch-toolbar button {
+    flex: 1 0 100%;
+    margin-left: 0;
+  }
 }
 .workspace-section-note,
 .workspace-footnote {
@@ -1619,6 +1829,17 @@ select {
   color: var(--gray-600);
   font-size: 12px;
 }
+.family-beta-invite-card {
+  background:
+    radial-gradient(circle at 92% 14%, rgb(206 247 226 / 76%), transparent 30%),
+    var(--white);
+}
+.family-beta-invite-card > p {
+  margin-bottom: 15px;
+  color: var(--gray-600);
+  font-size: 12px;
+  line-height: 1.7;
+}
 .family-invite-code {
   display: grid;
   gap: 4px;
@@ -1641,6 +1862,14 @@ select {
   justify-self: start;
   padding-inline: 0;
 }
+.family-invite-actions {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+.family-invite-actions button {
+  min-height: auto;
+}
 .family-add-row {
   display: flex;
   gap: 8px;
@@ -1651,6 +1880,190 @@ select {
 }
 .family-add-row button {
   flex: 0 0 auto;
+}
+.beta-invite-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow-y: auto;
+  background: rgb(14 31 24 / 48%);
+  backdrop-filter: blur(7px);
+}
+.beta-invite-dialog {
+  position: relative;
+  width: min(100%, 430px);
+  padding: 16px;
+  border: 1px solid rgb(255 255 255 / 74%);
+  border-radius: 28px;
+  background: var(--white);
+  box-shadow: var(--shadow-lg);
+}
+.beta-invite-close {
+  position: absolute;
+  z-index: 1;
+  top: 25px;
+  right: 25px;
+  min-height: 30px;
+  padding: 4px 7px;
+  border-color: transparent;
+  background: rgb(255 255 255 / 64%);
+  color: var(--gray-600);
+  box-shadow: none;
+  font-size: 11px;
+}
+.beta-invite-poster {
+  position: relative;
+  overflow: hidden;
+  padding: 28px 24px 24px;
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 83% 16%, rgb(255 255 255 / 84%) 0 4%, transparent 4.2%),
+    radial-gradient(circle at 11% 85%, rgb(213 247 228 / 90%) 0 16%, transparent 16.3%),
+    linear-gradient(145deg, #d7f5e6, #f7fffb 56%, #e9f8ef);
+  color: #123c2c;
+}
+.beta-invite-poster::after {
+  position: absolute;
+  right: -24px;
+  bottom: -42px;
+  width: 170px;
+  height: 170px;
+  border: 1px solid rgb(33 113 79 / 16%);
+  border-radius: 50%;
+  content: '';
+}
+.beta-invite-poster-topline {
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.beta-invite-mascot {
+  position: absolute;
+  top: 20px;
+  right: 27px;
+  z-index: 1;
+  width: 100px;
+  height: 100px;
+  object-fit: contain;
+  filter: drop-shadow(0 12px 13px rgb(27 102 74 / 16%));
+}
+.beta-invite-poster h2 {
+  position: relative;
+  z-index: 1;
+  max-width: 265px;
+  margin-top: 31px;
+  font-size: 29px;
+  line-height: 1.24;
+  letter-spacing: -0.05em;
+}
+.beta-invite-poster > p {
+  position: relative;
+  z-index: 1;
+  max-width: 250px;
+  margin-top: 11px;
+  color: rgb(18 60 44 / 72%);
+  font-size: 12px;
+  line-height: 1.65;
+}
+.beta-invite-qr-wrap {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-height: 96px;
+  margin-top: 23px;
+  padding: 11px;
+  border: 1px solid rgb(35 113 79 / 14%);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 82%);
+}
+.beta-invite-qr-wrap > span {
+  display: grid;
+  width: 76px;
+  height: 76px;
+  place-items: center;
+  color: var(--gray-500);
+  font-size: 10px;
+  text-align: center;
+}
+.beta-invite-qr {
+  width: 76px;
+  height: 76px;
+  border-radius: 7px;
+}
+.beta-invite-qr-wrap strong,
+.beta-invite-qr-wrap span {
+  display: block;
+}
+.beta-invite-qr-wrap strong {
+  font-size: 14px;
+}
+.beta-invite-qr-wrap div span {
+  margin-top: 5px;
+  color: var(--gray-600);
+  font-size: 11px;
+}
+.beta-invite-code {
+  position: relative;
+  z-index: 1;
+  margin-top: 13px;
+  color: var(--green-dark);
+  font-size: 11px;
+  font-weight: 780;
+  letter-spacing: 0.05em;
+}
+.beta-invite-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.beta-invite-actions button,
+.beta-invite-actions a {
+  flex: 1;
+  min-height: 40px;
+  padding: 8px 9px;
+  font-size: 11px;
+  text-align: center;
+}
+.beta-invite-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--gray-200);
+  border-radius: 10px;
+  color: var(--gray-700);
+  text-decoration: none;
+}
+.beta-invite-status {
+  margin: 11px 4px 1px;
+  color: var(--green-dark);
+  font-size: 11px;
+  line-height: 1.55;
+}
+@media (max-width: 520px) {
+  .beta-invite-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+  .beta-invite-dialog {
+    width: 100%;
+    padding: 12px;
+    border-radius: 24px 24px 0 0;
+  }
+  .beta-invite-poster h2 {
+    font-size: 27px;
+  }
+  .beta-invite-actions {
+    flex-wrap: wrap;
+  }
+  .beta-invite-actions button:first-child {
+    flex-basis: 100%;
+  }
 }
 .security-card {
   max-width: 640px;
@@ -2507,7 +2920,7 @@ label {
   overflow: hidden;
   border-radius: 15px;
   background: var(--green);
-  background-image: url('/mascot/xiaozhi.png');
+  background-image: url('/mascot/xiaozhi.webp?v=20260729');
   background-position: center;
   background-repeat: no-repeat;
   background-size: contain;
@@ -3262,6 +3675,11 @@ label {
     gap: 6px;
   }
   .workspace-summary-grid > div {
+    min-height: 78px;
+    padding: 10px;
+  }
+  .meal-summary-grid > button,
+  .notifications-page .workspace-summary-grid > button {
     min-height: 78px;
     padding: 10px;
   }

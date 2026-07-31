@@ -450,6 +450,27 @@ function buildItem(
   };
 }
 
+export interface ExtractedSlots {
+  items: ParsedItem[];
+  standaloneQuantities: { quantity: string; unit: string }[];
+}
+
+/**
+ * 仅用于多轮澄清阶段的槽位提取，不进行全句的意图推断。
+ * 能够提取出完整的食材列表，以及孤立的（未匹配到食材的）数量，供外层继承。
+ */
+export function extractSlots(normalized: string, catalog: FoodCatalogEntry[]): ExtractedSlots {
+  const foodMatches = matchFoods(normalized, catalog);
+  const quantityMatches = collectQuantityMatches(normalized);
+  const items = assignQuantities(normalized, foodMatches, quantityMatches);
+  
+  const standaloneQuantities = quantityMatches
+    .filter((q) => !q.used)
+    .map((q) => ({ quantity: q.quantity, unit: q.unit ?? '' }));
+    
+  return { items, standaloneQuantities };
+}
+
 export function parseTranscript(normalized: string, catalog: FoodCatalogEntry[]): ParseResult {
   const { intent, confidence: intentConfidence } = detectIntent(normalized);
   const foodMatches = matchFoods(normalized, catalog);

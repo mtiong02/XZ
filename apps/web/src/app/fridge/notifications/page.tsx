@@ -55,6 +55,9 @@ export default function NotificationsPage() {
   if (loading || !household) return <div className="empty">加载中…</div>;
   const unreadCount = items.filter((item) => item.status === 'UNREAD').length;
   const criticalCount = items.filter((item) => item.severity === 'CRITICAL').length;
+  const jumpTo = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   return (
     <>
       <AppHeader
@@ -75,22 +78,26 @@ export default function NotificationsPage() {
             <p>定时提醒和临期消息分别管理，任何提醒都不会自动修改库存。</p>
           </div>
           <div className="workspace-summary-grid">
-            <div>
+            <button type="button" onClick={() => jumpTo('notification-feed')}>
               <strong>{unreadCount}</strong>
               <span>未读消息</span>
-            </div>
-            <div className={criticalCount > 0 ? 'attention' : ''}>
+            </button>
+            <button
+              type="button"
+              className={criticalCount > 0 ? 'attention' : ''}
+              onClick={() => jumpTo('notification-feed')}
+            >
               <strong>{criticalCount}</strong>
               <span>优先确认</span>
-            </div>
-            <div>
+            </button>
+            <button type="button" onClick={() => jumpTo('scheduled-reminders')}>
               <strong>{reminders.length}</strong>
               <span>定时任务</span>
-            </div>
+            </button>
           </div>
         </section>
         <div className="workspace-layout workspace-layout-two">
-          <section className="zone workspace-section">
+          <section className="zone workspace-section" id="scheduled-reminders">
             <div className="workspace-section-heading">
               <div>
                 <span>按时间执行</span>
@@ -124,7 +131,7 @@ export default function NotificationsPage() {
             )}
             <p className="workspace-section-note">取消只会移除这次提醒，不会扣减库存。</p>
           </section>
-          <section className="zone workspace-section">
+          <section className="zone workspace-section" id="notification-feed">
             <div className="workspace-section-heading">
               <div>
                 <span>按食材状态生成</span>

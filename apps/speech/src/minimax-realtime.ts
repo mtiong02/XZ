@@ -79,6 +79,8 @@ export function isEndConversation(text: string): boolean {
   // ASR 常把“好的”识别成“好吧”；两者都应结束当前会话并回到唤醒词待机。
   const courtesyPrefix = '(?:好(?:的|吧)?|那就|嗯|啊|行|可以)?';
   if (/结束后提醒/.test(compact)) return false;
+  // 前缀可能被 ASR 重复，但“退下吧”作为末尾明确命令时仍应结束。
+  if (/(?:退下|先退下|你先退下)(?:吧|了)?$/.test(compact)) return true;
   if (isPhoneticExitText(compact)) return true;
   const courtesy = '(?:谢谢(?:你|啦)?|多谢|辛苦了|麻烦你了|拜拜|再见|晚安|了|吧)*';
 

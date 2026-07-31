@@ -25,6 +25,7 @@ const catalog: FoodCatalogEntry[] = [
   { id: 'f-shiitake', canonicalName: '香菇', defaultUnitCode: 'g', aliases: [] },
   { id: 'f-yogurt', canonicalName: '酸奶', defaultUnitCode: 'box', aliases: [] },
   { id: 'f-tomato', canonicalName: '西红柿', defaultUnitCode: 'piece', aliases: ['番茄'] },
+  { id: 'f-soybean', canonicalName: '黄豆', defaultUnitCode: 'g', aliases: [] },
 ];
 
 const parse = (raw: string) => parseTranscript(normalizeTranscript(raw), catalog);
@@ -95,6 +96,15 @@ describe('P0-5 “全部/都吃完了” 语义', () => {
     expect(relativeInventoryFraction('所有的全用掉')).toBe('1.0');
     expect(relativeInventoryFraction('把所有鸡胸肉删除就可以了')).toBe('1.0');
   });
+
+  it('“所有的黄豆三百克”在确认轮以最后数量覆盖旧候选', () => {
+    const result = interpretReply('不是一克黄豆，是所有的黄豆三百克', catalog);
+    expect(result.kind).toBe('CORRECTION');
+    if (result.kind === 'CORRECTION') {
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toMatchObject({ food_id: 'f-soybean', quantity: '300', unit: 'g' });
+    }
+  });
 });
 
 describe('P0-6 追问“几个人吃”后裸数字回答必须被接受（07/23 死循环会话）', () => {
@@ -125,6 +135,7 @@ describe('P0-7 结束对话：礼貌语在前也必须退出（07/22 用户投�
       '辛苦了结束',
       '好的谢谢再见',
       '谢谢拜拜',
+      '没有有的的退下吧',
     ]) {
       expect(isDialogueExit(phrase)).toBe(true);
     }

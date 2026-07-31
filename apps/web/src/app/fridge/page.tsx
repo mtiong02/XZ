@@ -337,7 +337,7 @@ export default function FridgePage() {
           <div className="fridge-mascot-wrapper">
             <Image
               className="fridge-greeting-mascot"
-              src="/mascot/xiaozhi.png"
+              src="/mascot/xiaozhi.webp?v=20260729"
               width={132}
               height={132}
               priority

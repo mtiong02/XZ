@@ -7,8 +7,8 @@ export const metadata: Metadata = {
   description: '家庭食材、提醒与饮食管理',
   manifest: '/manifest.webmanifest',
   icons: {
-    icon: '/mascot/xiaozhi.png',
-    apple: '/mascot/xiaozhi.png',
+    icon: '/mascot/xiaozhi-icon.png',
+    apple: '/mascot/xiaozhi-icon.png',
   },
 };
 

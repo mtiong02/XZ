@@ -74,7 +74,14 @@ describe('interpretReply', () => {
     expect(interpretReply('今天天气不错', catalog).kind).toBe('UNCLEAR');
   });
 
-  it.each(['结束对话', '结束兑换', '退出本次绘话', '我要结束对话了', '你先退下吧'])(
+  it.each([
+    '结束对话',
+    '结束兑换',
+    '退出本次绘话',
+    '我要结束对话了',
+    '你先退下吧',
+    '没有有的的退下吧',
+  ])(
     'treats session exit as rejection: %s',
     (text) => {
       expect(isDialogueExit(text)).toBe(true);

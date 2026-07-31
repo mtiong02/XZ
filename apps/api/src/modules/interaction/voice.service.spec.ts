@@ -9,6 +9,8 @@ import {
   VoiceService,
 } from './voice.service';
 import { CANCELLED_PROMPT } from './dialogue/prompts';
+import { normalizeTranscript } from './parser/normalizer';
+import { parseTranscript, type FoodCatalogEntry } from './parser/intent-parser';
 
 describe('isMealDecisionRequest', () => {
   it('routes only decision-heavy meal requests to the model agent', () => {
@@ -148,5 +150,51 @@ describe('VoiceService clarification cancellation', () => {
       CANCELLED_PROMPT,
       expect.any(String),
     ]);
+  });
+});
+
+describe('VoiceService relative inventory commands', () => {
+  const catalog: FoodCatalogEntry[] = [
+    { id: 'soybean', canonicalName: '黄豆', defaultUnitCode: 'g', aliases: [] },
+  ];
+
+  it('turns “黄豆吃完了” into the exact current inventory before first confirmation', async () => {
+    const queries = {
+      getInventoryView: vi.fn().mockResolvedValue({
+        zones: [
+          {
+            zone_id: 'fridge',
+            code: 'FRIDGE',
+            name: '保鲜室',
+            items: [{ food_id: 'soybean', total_quantity: '300', unit: 'g' }],
+          },
+        ],
+      }),
+    };
+    const service = new VoiceService(
+      {} as never,
+      {} as never,
+      {} as never,
+      queries as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const parsed = parseTranscript(normalizeTranscript('黄豆已经吃完了'), catalog);
+    const outcome = await (
+      service as unknown as {
+        buildOutcome: (
+          householdId: string,
+          userId: string,
+          parsedInput: ReturnType<typeof parseTranscript>,
+          normalized: string,
+        ) => Promise<{ candidate: { payload: { items: Array<{ quantity: string; unit: string }> } } | null; spokenPrompt: string | null }>;
+      }
+    ).buildOutcome('household-1', 'user-1', parsed, normalizeTranscript('黄豆已经吃完了'));
+
+    expect(queries.getInventoryView).toHaveBeenCalledWith('household-1', 'user-1');
+    expect(outcome.candidate?.payload.items[0]).toMatchObject({ quantity: '300', unit: 'g' });
+    expect(outcome.spokenPrompt).toContain('全部是300克');
+    expect(outcome.spokenPrompt).toContain('确认用掉300克黄豆');
   });
 });

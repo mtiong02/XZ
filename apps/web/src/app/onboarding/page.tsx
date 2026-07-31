@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiPost, joinHousehold } from '../../lib/api';
 
@@ -12,6 +12,17 @@ export default function OnboardingPage() {
   const [inviteCode, setInviteCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const pendingInvite =
+      params.get('family_invite')?.trim().toUpperCase() ??
+      sessionStorage.getItem('xz-pending-family-invite')?.trim().toUpperCase();
+    if (!pendingInvite) return;
+    setMode('join');
+    setInviteCode(pendingInvite);
+    sessionStorage.removeItem('xz-pending-family-invite');
+  }, []);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();

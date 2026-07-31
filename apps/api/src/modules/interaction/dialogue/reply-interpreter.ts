@@ -61,6 +61,10 @@ export function isDialogueExit(rawReply: string): boolean {
   const compact = rawReply.replace(/[\s，。！？、,.!?：:；;“”‘’'"`]/g, '');
   if (/结束后提醒/.test(compact)) return false;
 
+  // ASR 常在“没有了，退下吧”前面重复“有/的”等无意义字。只要一句话以明确的
+  // 退下指令收尾，就优先安全退出，而不是把用户留在“没听懂”的循环里。
+  if (/(?:退下|先退下|你先退下)(?:吧|了)?$/.test(compact)) return true;
+
   // 优先进行拼音音元智能匹配 (支持近音字、错别字及重复短语)
   if (isPhoneticallyExit(compact)) return true;
 
@@ -114,6 +118,17 @@ export function interpretReply(rawReply: string, catalog: FoodCatalogEntry[]): R
   const hasBareQuantity = BARE_QUANTITY_PATTERN.test(normalized) || bareQty !== null;
 
   if (hasNewFood || hasBareQuantity) {
+    // 同一食材在一句纠正里重复出现时，基础解析器按首次命中食材；而“不是 1 克黄豆，
+    // 是所有的黄豆 300 克”真正要采用的是最后报出的数量。确认轮以最后数量为准，
+    // 既保持“旧值 → 新值”的口语习惯，也避免幽灵 1 克覆盖修正。
+    if (hasNewFood && bareQty) {
+      const target = parsed.items[parsed.items.length - 1];
+      if (target) {
+        target.quantity = bareQty.quantity;
+        if (bareQty.unit) target.unit = bareQty.unit;
+        target.quantity_explicit = true;
+      }
+    }
     // 纯确认词误伤保护：如果整句其实是"对"，parseTranscript 不会出食材，也无裸数量，走不到这里
     return {
       kind: 'CORRECTION',

@@ -72,6 +72,8 @@ function isLikelySpeakerEcho(heard: string, spoken: string): boolean {
 function isDialogueExit(text: string): boolean {
   const compact = normalizedSpeech(text);
   if (/结束后提醒/.test(compact)) return false;
+  // 容忍“没有有的的退下吧”这类 ASR 重复字：明确以退下收尾时立即回到唤醒词待机。
+  if (/(?:退下|先退下|你先退下)(?:吧|了)?$/.test(compact)) return true;
   // 礼貌语可能出现在结束词【之前】（"好的谢谢结束"）或之后（"结束谢谢"）：
   // 线上 07/22 会话里用户说"好的谢谢结束"未被识别，导致会话继续监听并被投诉，两侧都要放行。
   const courtesyPrefix =
