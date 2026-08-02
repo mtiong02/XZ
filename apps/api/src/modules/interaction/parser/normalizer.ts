@@ -67,8 +67,8 @@ export function normalizeTranscript(raw: string): string {
 
   text = text.replace(/__UNIT_KG__/g, '千克');
 
-  // 4. 转换“1斤半”、“2盒半” -> “1.5斤”、“2.5盒”
-  text = text.replace(/(\d+)\s*(斤|个|盒|包|袋|瓶|块|片|颗|只|根)半/g, (_m, num, unit) => {
+  // 4. 转换“1斤半”、“2盒半” -> “1.5斤”、“2.5盒” (由于前面“半”变成了“0.5”)
+  text = text.replace(/(\d+(?:\.\d+)?)\s*(斤|公斤|千克|克|个|盒|包|袋|瓶|块|片|颗|只|根|把|段|支|条|份|串|两|升)0\.5/g, (_m, num, unit) => {
     return `${Number(num) + 0.5}${unit}`;
   });
 

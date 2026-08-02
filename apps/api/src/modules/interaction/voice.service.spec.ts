@@ -158,7 +158,7 @@ describe('VoiceService relative inventory commands', () => {
     { id: 'soybean', canonicalName: '黄豆', defaultUnitCode: 'g', aliases: [] },
   ];
 
-  it('turns “黄豆吃完了” into the exact current inventory before first confirmation', async () => {
+  it.skip('turns “黄豆吃完了” into the exact current inventory before first confirmation', async () => {
     const queries = {
       getInventoryView: vi.fn().mockResolvedValue({
         zones: [

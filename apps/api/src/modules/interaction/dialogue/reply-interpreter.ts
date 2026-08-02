@@ -28,13 +28,16 @@ export type ReplyInterpretation =
       /** 无食材的裸数量修正（"改成三盒"），取修正目标（最后一个数量）。 */
       bareQuantity: { quantity: string; unit: string } | null;
     }
-  | { kind: 'UNCLEAR' };
+  | { kind: 'UNCLEAR' }
+  | { kind: 'SKIP' };
 
 // 真实口语确认：除了单字"对/是的"，还支持"是的用掉了"、"是的用"、"对的是"、"是的是的"、"好的加了"等常见确认后缀。
 const CONFIRM_PATTERN =
-  /^(?:是的?|对的?|确认|没错|好的?|可以(?:的)?|(?:没|没有)问题(?:的)?|嗯嗯?|行(?:的)?|ok|yes|correct|right|yep|sure)(?:[\s,，.！!]*)(?:是|是的?|对|对的?|确认|好的?|用掉了?|用了?|用|吃了|删了|删除了?|加了|添加了?|放了|移了|记录了|没问题|帮我(?:添|添加|加|加上|用|用掉|记录|确认|执行)(?:一下)?|请帮我(?:添|添加|加|加上|用|用掉|记录|确认|执行)(?:一下)?|了|吧|呢|呀|啊|准|正确)*$/i;
+  /^(?:是的?|对(?:对|的)?|确认(?:是)?|没错|好的?|可以(?:的)?|(?:没|没有)问题(?:的)?|嗯嗯?|行(?:的)?|ok|yes|correct|right|yep|sure|我说(?:的)?(?:是)?)(?:[\s,，.！!]*)(?:是|是的?|对|对的?|确认|好的?|用掉了?|用了?|用|吃了?|吃完(?:了)?|删了|删除了?|加了|添加了?|放了|移了|记录了|没问题|我吃完(?:了)?|帮我(?:添|添加|加|加上|用|用掉|记录|确认|执行)(?:一下)?|请帮我(?:添|添加|加|加上|用|用掉|记录|确认|执行)(?:一下)?|了|吧|呢|呀|啊|准|正确)*$/i;
 const REJECT_PATTERN =
-  /(不对|不是的|不要|取消|算了|错了|不用了|重来|结束|退出|不用|不加了|不做|no|cancel|wrong|nope)/i;
+  /^(?:不对|不是(?:的)?|不要|不想(?:要)?|取消|算了|错了|不用(?:了)?|重来|结束|退出|不(?:加|用|买|做)(?:了)?|打断|停(?:止)?|都不是|no|cancel|wrong|nope)+(?:了|吧|啊|的|呀)?$/i;
+const SKIP_PATTERN =
+  /^(?:不知道|不清楚|没看|没数|没称|忘了|忘记(?:了)?|无所谓|随便|直接(?:存|加|记|写|执行)|算(?:了)?吧|就这样(?:吧)?|(?:不|没)需要(?:补充)?)$/i;
 
 /**
  * ASR 有时会把“没问题”截成“没问”，或吞掉“没有问题”的最后一个字。
@@ -148,8 +151,9 @@ export function interpretReply(rawReply: string, catalog: FoodCatalogEntry[]): R
     };
   }
 
-  // 3. 无新值：判断确认 / 拒绝
+  // 3. 无新值：判断确认 / 拒绝 / 跳过
   const compactReply = normalized.replace(/[\s，。！？、,.!?：:；;“”‘’]/g, '');
+  if (SKIP_PATTERN.test(compactReply)) return { kind: 'SKIP' };
   if (REJECT_PATTERN.test(compactReply)) return { kind: 'REJECT' };
   if (CONFIRM_PATTERN.test(compactReply) || isFuzzyConfirmation(compactReply)) {
     return { kind: 'CONFIRM' };

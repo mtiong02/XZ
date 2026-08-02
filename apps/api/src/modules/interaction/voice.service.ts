@@ -159,7 +159,7 @@ export class VoiceService {
    * 文本通道：Web Speech / 手动输入的文本进入同一解析流水线。
    * ASR 文本 -> Normalizer -> Parser -> 候选命令 -> 等待确认（docs/02 §10.2）。
    */
-  async createTextJob(userId: string, input: z.infer<typeof CreateTextVoiceJobSchema>) {
+  async createTextJob(userId: string, input: z.infer<typeof CreateTextVoiceJobSchema>): Promise<any> {
     const membership = await this.membership.assertMembership(input.household_id, userId);
 
     if (input.client_request_id) {
@@ -195,7 +195,7 @@ export class VoiceService {
         const interp = interpretReply(input.transcript_text, catalog);
         const isFragmentOrMatch =
           parsed.intent === 'UNKNOWN' ||
-          pendingIntent === 'AMBIGUOUS_COMMAND' ||
+          (pendingIntent as any) === 'AMBIGUOUS_COMMAND' ||
           (pendingIntent && parsed.intent === pendingIntent) ||
           interp.kind === 'CONFIRM' ||
           interp.kind === 'REJECT' ||
@@ -203,7 +203,7 @@ export class VoiceService {
 
         // 如果明确判断为无意图废话，则忽略（返回提示重新说）。
         // 其他情况（即使是UNCLEAR，但意图匹配）都进入 reply 处理
-        if (isFragmentOrMatch && (interp.kind !== 'UNCLEAR' || parsed.intent === pendingIntent || parsed.intent === 'UNKNOWN' || pendingIntent === 'AMBIGUOUS_COMMAND' || relativeInventoryFraction(input.transcript_text) !== null)) {
+        if (isFragmentOrMatch && (interp.kind !== 'UNCLEAR' || parsed.intent === pendingIntent || parsed.intent === 'UNKNOWN' || (pendingIntent as any) === 'AMBIGUOUS_COMMAND' || relativeInventoryFraction(input.transcript_text) !== null)) {
           return this.reply(pendingJob.id, userId, {
             text: input.transcript_text,
             turn_id: input.turn_id,
@@ -298,6 +298,40 @@ export class VoiceService {
         );
       }
     }
+
+    // 初次对话如果是“用掉全部的xxx”，由于 buildOutcome 是同步的，数量会暂时保留为 1。
+    // 在这里异步查询库存，将真正的数量替换进去，并更新口播。
+    const relativeFraction = relativeInventoryFraction(input.transcript_text);
+    if (
+      relativeFraction &&
+      outcome.status === 'AWAITING_CONFIRMATION' &&
+      outcome.candidate &&
+      ['CONSUME_INVENTORY', 'DISCARD_INVENTORY'].includes(outcome.candidate.command_type)
+    ) {
+      const items = (outcome.candidate.payload as any)?.items;
+      if (items && items.length === 1 && items[0]) {
+        const inventory = await this.queries.getInventoryView(input.household_id, userId);
+        const matching = inventory.zones
+          .flatMap((zone) => zone.items)
+          .filter((item) => item.food_id === items[0]?.food_id);
+        const units = new Set(matching.map((item) => item.unit));
+        if (matching.length > 0 && units.size === 1) {
+          const quantity = matching
+            .reduce((total, item) => total.plus(item.total_quantity), new Big(0))
+            .times(new Big(relativeFraction));
+          items[0].quantity = quantity.toString();
+          items[0].unit = matching[0]?.unit ?? items[0].unit;
+          items[0].quantity_explicit = true;
+          
+          const prefix = relativeFraction === '1.0'
+              ? `按当前库存计算，全部是${items[0].quantity}${unitSpokenLabel(items[0].unit)}。`
+              : `按当前库存计算，一半是${items[0].quantity}${unitSpokenLabel(items[0].unit)}。`;
+          
+          outcome.spokenPrompt = `${prefix}${correctedPrompt(outcome.candidate.command_type as any, toSpokenItems(items))}`;
+        }
+      }
+    }
+
     const firstTurn: DialogueTurn[] = [{ role: 'user', text: input.transcript_text, at: nowIso() }];
     if (outcome.spokenPrompt) {
       firstTurn.push({ role: 'system', text: outcome.spokenPrompt, at: nowIso() });
@@ -323,7 +357,7 @@ export class VoiceService {
         outcome.candidate ? JSON.stringify(outcome.candidate) : null,
         JSON.stringify(parsed.confidence),
         outcome.candidate !== null &&
-          !['QUERY_INVENTORY', 'MEAL_RECOMMENDATION'].includes(outcome.candidate.command_type),
+          !['QUERY_INVENTORY', 'MEAL_RECOMMENDATION'].includes(outcome.candidate.command_type ?? ''),
         outcome.errorCode,
         input.client_request_id ?? null,
         outcome.spokenPrompt,
@@ -346,7 +380,7 @@ export class VoiceService {
       metadata: {
         requires_confirmation:
           outcome.candidate !== null &&
-          !['QUERY_INVENTORY', 'MEAL_RECOMMENDATION'].includes(outcome.candidate.command_type),
+          !['QUERY_INVENTORY', 'MEAL_RECOMMENDATION'].includes(outcome.candidate.command_type ?? ''),
       },
     });
     void this.runtime?.recordEvent({
@@ -541,6 +575,34 @@ export class VoiceService {
           parsedItem.suggested_units,
         ),
       };
+    }
+
+    // 新增：针对连续重量单位但支持离散个体的食材（如苹果、鸡蛋）：
+    // 1. 若以重量录入，问包含几个。
+    // 2. 若以个数录入，问大概有多重。
+    if (commandType === 'ADD_INVENTORY' && parsedItem && parsedItem.quantity_explicit && parsedItem.unit_reasonable) {
+      const isWeight = ['jin', 'kg', 'g', 'liang', 'l', 'ml'].includes(parsedItem.unit);
+      const isCount = parsedItem.unit === 'piece';
+      const supportsCount = parsedItem.suggested_units.includes('piece');
+      const supportsWeight = parsedItem.suggested_units.some((u) => ['jin', 'kg', 'g'].includes(u));
+
+      if (isWeight && supportsCount && !(candidate as any)._clarification_type) {
+        (candidate as any)._clarification_type = 'count';
+        return {
+          status: 'AWAITING_CLARIFICATION',
+          candidate,
+          errorCode: null,
+          spokenPrompt: `${parsedItem.quantity}${unitSpokenLabel(parsedItem.unit)}${parsedItem.food_name}大概包含几个呢？记录个数会更方便以后吃的时候直接扣减哦。（如果您没数，可以说“不知道”）`,
+        };
+      } else if (isCount && supportsWeight && !(candidate as any)._clarification_type) {
+        (candidate as any)._clarification_type = 'weight';
+        return {
+          status: 'AWAITING_CLARIFICATION',
+          candidate,
+          errorCode: null,
+          spokenPrompt: `${parsedItem.quantity}${unitSpokenLabel(parsedItem.unit)}${parsedItem.food_name}大概有多重呢？（如果您没称，可以说“不知道”）`,
+        };
+      }
     }
 
     // 库存写操作一律需要用户确认（AGENTS.md §2）
@@ -1033,7 +1095,7 @@ export class VoiceService {
    * - AWAITING_CONFIRMATION ：CONFIRM 执行 / REJECT 取消 / CORRECTION 改后重新确认 / UNCLEAR 追问
    * 全部确定性；执行走同一 Command 管道，库存事实仍由领域层把关（docs/07 §9）。
    */
-  async reply(jobId: string, userId: string, input: z.infer<typeof ReplyVoiceJobSchema>) {
+  async reply(jobId: string, userId: string, input: z.infer<typeof ReplyVoiceJobSchema>): Promise<any> {
     const job = await this.loadJobRow(jobId);
     const replyMembership = await this.membership.assertMembership(job.household_id, userId);
     if (!REPLIABLE_STATUSES.has(job.status)) {
@@ -1065,10 +1127,10 @@ export class VoiceService {
     const catalog = await this.loadCatalog(job.household_id);
     const replacement = parseTranscript(normalizeTranscript(input.text), catalog);
     if (job.candidate_command_json?.command_type === 'AMBIGUOUS_COMMAND') {
-      if (replacement.intent !== 'UNKNOWN' && replacement.intent !== 'AMBIGUOUS_COMMAND') {
+      if (replacement.intent !== 'UNKNOWN' && (replacement.intent as any) !== 'AMBIGUOUS_COMMAND') {
         job.candidate_command_json.command_type = replacement.intent;
         if (replacement.items.length > 0) {
-          job.candidate_command_json.payload.items = replacement.items.map(it => ({ ...it }));
+          if (job.candidate_command_json?.payload) job.candidate_command_json.payload.items = replacement.items.map(it => ({ ...it }));
         }
       } else {
         return this.persistTurn(job, {
@@ -1136,12 +1198,7 @@ export class VoiceService {
     return this.replaceWithMealRecommendation(job, userId, combined, turnId);
   }
 
-  private async replaceWithMealRecommendation(
-    job: VoiceJobRow,
-    userId: string,
-    requestText: string,
-    turnId?: string,
-  ) {
+  private async replaceWithMealRecommendation(job: VoiceJobRow, userId: string, requestText: string, turnId?: string): Promise<any> {
     await this.pool.query(
       `update voice_jobs
           set status='CANCELLED', completed_at=now(), error_code='MEAL_CONTEXT_REPLACED'
@@ -1292,10 +1349,10 @@ export class VoiceService {
       if (interp.kind === 'CORRECTION' && isExplicitCorrection) {
         const negatedMatch = normalizedReply.match(/(?:不是|别|不要|错)[\s了]*([a-zA-Z\u4e00-\u9fa5]{1,4})/);
         if (negatedMatch) {
-          const negatedStr = negatedMatch[1];
-          const idx = items.findIndex(i => i.display_text.includes(negatedStr) || negatedStr.includes(i.display_text));
+          const negatedStr = negatedMatch[1]!;
+          const idx = items.findIndex(i => i.display_text?.includes(negatedStr) || (i.display_text && negatedStr.includes(i.display_text)));
           if (idx !== -1) items.splice(idx, 1);
-          const interpIdx = interp.items.findIndex(i => i.food_name.includes(negatedStr) || negatedStr.includes(i.food_name));
+          const interpIdx = interp.items.findIndex(i => i.food_name?.includes(negatedStr) || (i.food_name && negatedStr.includes(i.food_name)));
           if (interpIdx !== -1) interp.items.splice(interpIdx, 1);
         }
         const newCandidateItems = interp.items.map(toCandidateItem);
@@ -1366,7 +1423,24 @@ export class VoiceService {
       }
     }
 
-    let filled = false;
+    if (interp.kind === 'SKIP' || interp.kind === 'CONFIRM') {
+      const isOptionalClarification = !!(candidate as any)?._clarification_type;
+      if (isOptionalClarification) {
+        // Skip optional clarification, we already have a valid quantity
+      } else if (interp.kind === 'SKIP') {
+        const fallbackPrompt = '好的，那先不操作了。';
+        turns.push({ role: 'system', text: fallbackPrompt, at: nowIso() });
+        await this.pool.query(
+          `update voice_jobs set status='CANCELLED', spoken_prompt=$2, turn_count=turn_count+1, dialogue_turns=$3, completed_at=now() where id=$1`,
+          [job.id, fallbackPrompt, JSON.stringify(turns)],
+        );
+        return this.getJob(job.id, userId);
+      }
+    }
+
+    let filled = items.length > 0 && items.every((i) => i.quantity_explicit && i.unit);
+    let optionalWeightAck = '';
+
     let relativePrompt = '';
     const relativeFraction = relativeInventoryFraction(replyText);
     if (
@@ -1395,7 +1469,7 @@ export class VoiceService {
       filled = true;
     }
 
-    if (!filled && interp.kind === 'CORRECTION') {
+    if (interp.kind === 'CORRECTION') {
       if (interp.hasFood && interp.items[0]) {
         // 用户直接补了“两个苹果”。若上轮只缺食材，先把完整候选补齐。
         const first = interp.items[0];
@@ -1408,9 +1482,15 @@ export class VoiceService {
           filled = true;
         }
       } else if (interp.bareQuantity && items[0]) {
-        items[0].quantity = interp.bareQuantity.quantity;
-        items[0].unit = interp.bareQuantity.unit;
-        filled = true;
+        if ((candidate as any)?._clarification_type === 'weight') {
+          // 只追加重量口播，不覆写原有的“个”单位以保护优质库存颗粒度
+          optionalWeightAck = `好的，${items[0].quantity}${unitSpokenLabel(items[0].unit)}约重${interp.bareQuantity.quantity}${unitSpokenLabel(interp.bareQuantity.unit)}，`;
+          filled = true;
+        } else {
+          items[0].quantity = interp.bareQuantity.quantity;
+          items[0].unit = interp.bareQuantity.unit;
+          filled = true;
+        }
       }
     }
 
@@ -1459,7 +1539,7 @@ export class VoiceService {
       });
     }
 
-    const prompt = `${relativePrompt}${confirmPrompt(candidate.command_type, toSpokenItems(items))}`;
+    const prompt = `${relativePrompt}${optionalWeightAck}${confirmPrompt(candidate.command_type, toSpokenItems(items))}`;
     return this.persistTurn(job, {
       status: 'AWAITING_CONFIRMATION',
       candidate,
@@ -1478,6 +1558,23 @@ export class VoiceService {
   ) {
     const candidate = job.candidate_command_json;
     const interp = interpretReply(replyText, catalog); 
+
+    // 如果纠正的内容实际上与当前待确认的意图/数量完全一致，则视作自然复述/确认
+    if (interp.kind === 'CORRECTION' && candidate?.payload?.items) {
+      const prevItems = candidate.payload.items;
+      let isIdentical = false;
+      if (interp.hasFood && !interp.bareQuantity && prevItems.length === 1 && interp.items.length === 1 && prevItems[0] && interp.items[0]) {
+        const prev = prevItems[0];
+        const ci = interp.items[0];
+        const newQty = ci.quantity_explicit === false ? prev.quantity : ci.quantity;
+        if (prev.food_id === ci.food_id && prev.quantity === newQty && (!ci.unit || prev.unit === ci.unit)) {
+          isIdentical = true;
+        }
+      }
+      if (isIdentical) {
+        (interp as any).kind = 'CONFIRM';
+      }
+    }
 
     await this.applyRequestedStorageZone(
       job.household_id,

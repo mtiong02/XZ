@@ -313,10 +313,11 @@ export function matchFoods(normalized: string, catalog: FoodCatalogEntry[]): Foo
   for (const entry of catalog) {
     const names = [entry.canonicalName, ...entry.aliases].sort((a, b) => b.length - a.length);
     for (const name of names) {
-      const index = normalized.toLowerCase().indexOf(name.toLowerCase());
-      if (index !== -1) {
+      const lowerName = name.toLowerCase();
+      let index = normalized.toLowerCase().indexOf(lowerName);
+      while (index !== -1) {
         matches.push({ entry, index, matchedText: name });
-        break;
+        index = normalized.toLowerCase().indexOf(lowerName, index + lowerName.length);
       }
     }
   }
@@ -488,6 +489,7 @@ export function parseTranscript(normalized: string, catalog: FoodCatalogEntry[])
       if (m && m[1]) {
         const rawName = m[1]
           .replace(/^(?:然后|接着|再|帮我|入库|添加|放进|买|买了|是|改成|换成|变成)+/, '')
+          .replace(/(?:帮我|帮忙|记录|添加|入库|放进|买|买下|买来|然后|接着|再|用掉|吃掉|的|了|把).*$/, '')
           .trim();
         if (
           rawName &&
