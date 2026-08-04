@@ -47,6 +47,31 @@ describe('P0-1 同一食材不得被拆成两条（幽灵 1 克）', () => {
   });
 });
 
+describe('P0-10 裸声明默认入库（07/22 段4：列货省略动词，逐句被追问“是要添加还是查询”）', () => {
+  it('“薏米一盒”这类无动词的食材+数量默认按添加处理', () => {
+    // 用目录里已有的食材复现同一现象（酸奶=box、羊肉=g）
+    const yogurt = parse('酸奶一盒');
+    expect(yogurt.intent).toBe('ADD_INVENTORY');
+    expect(yogurt.items[0]?.food_name).toContain('酸奶');
+    expect(yogurt.items[0]?.quantity).toBe('1');
+
+    const lamb = parse('六斤羊肉');
+    expect(lamb.intent).toBe('ADD_INVENTORY');
+    expect(lamb.items[0]?.quantity).toBe('6');
+    expect(lamb.items[0]?.unit).toBe('jin');
+  });
+
+  it('无明确数量时不擅自默认入库（仍交由澄清）', () => {
+    // “还有多少鸡蛋”是查询；“鸡胸肉”单独出现无数量，不应被当成添加
+    expect(parse('鸡胸肉').intent).not.toBe('ADD_INVENTORY');
+  });
+
+  it('已有明确动词时不被裸声明规则覆盖', () => {
+    expect(parse('用掉两盒酸奶').intent).toBe('CONSUME_INVENTORY');
+    expect(parse('扔了三个西红柿').intent).toBe('DISCARD_INVENTORY');
+  });
+});
+
 describe('P0-2 多食材一句话不得静默丢失', () => {
   it('“五百克排骨 + 一根胡萝卜 + 一颗西兰花” 三样都在', () => {
     const result = parse('我买了五百克的排骨然后一根胡萝卜然后一颗西兰花');

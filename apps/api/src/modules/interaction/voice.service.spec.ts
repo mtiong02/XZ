@@ -26,6 +26,15 @@ describe('isMealDecisionRequest', () => {
     expect(isMealDecisionRequest('明天中午提醒我吃苹果')).toBe(false);
   });
 
+  it('裸推荐请求也走推荐（07/22 段7：“有什么推荐的菜”只回了库存清单）', () => {
+    expect(isMealDecisionRequest('有什么推荐的菜')).toBe(true);
+    expect(isMealDecisionRequest('推荐个菜吧')).toBe(true);
+    expect(isMealDecisionRequest('那有什么餐食或者是菜品来推荐')).toBe(true);
+    // 不误伤普通库存查询与非餐请求
+    expect(isMealDecisionRequest('还有几个苹果')).toBe(false);
+    expect(isMealDecisionRequest('把猪肉移到冷冻室')).toBe(false);
+  });
+
   it('switches an unfinished food slot into a meal recommendation task', () => {
     expect(isRecommendationModeSwitch('我不知道，你推荐')).toBe(true);
     expect(isRecommendationModeSwitch('随便安排')).toBe(true);

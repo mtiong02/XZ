@@ -169,7 +169,16 @@ insert into recipe_ingredients (recipe_id, food_id, quantity, unit_code, optiona
 select r.id, fc.id, i.qty, i.unit, i.opt
 from raw_ing i
 join recipes r on r.name = i.recipe_name
-join food_catalog fc on fc.canonical_name = i.food_name or i.food_name = any(fc.aliases)
+-- 别名存放在独立的 food_aliases 表，food_catalog 无 aliases 列；
+-- 通过关联表匹配标准名或别名（全局食材，household_id 为空）。
+join food_catalog fc
+  on fc.household_id is null
+  and (
+    fc.canonical_name = i.food_name
+    or exists (
+      select 1 from food_aliases fa where fa.food_id = fc.id and fa.alias = i.food_name
+    )
+  )
 on conflict (recipe_id, food_id) do update set
   quantity = excluded.quantity,
   unit_code = excluded.unit_code,

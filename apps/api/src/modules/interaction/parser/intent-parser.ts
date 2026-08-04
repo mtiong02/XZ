@@ -535,7 +535,9 @@ export function extractSlots(normalized: string, catalog: FoodCatalogEntry[]): E
 }
 
 export function parseTranscript(normalized: string, catalog: FoodCatalogEntry[]): ParseResult {
-  const { intent, confidence: intentConfidence } = detectIntent(normalized);
+  const detected = detectIntent(normalized);
+  let intent = detected.intent;
+  let intentConfidence = detected.confidence;
   const foodMatches = matchFoods(normalized, catalog);
   const quantityMatches = collectQuantityMatches(normalized);
   let items = assignQuantities(normalized, foodMatches, quantityMatches);
@@ -613,6 +615,21 @@ export function parseTranscript(normalized: string, catalog: FoodCatalogEntry[])
     }
   }
   items = deduplicated;
+
+  // 裸声明默认入库：用户列货时常省略动词（"薏米一盒"、"两盒南乳"、"6斤腊肉"）。
+  // 当没有识别到动作意图、但已解析出【带明确数量单位的目录食材】时，默认按添加候选处理，
+  // 仍会经确认卡兜底，避免像 07/22 段4 那样对每一句都追问"是要添加、用掉还是查询"。
+  if (
+    intent === 'UNKNOWN' &&
+    items.length > 0 &&
+    items.every((item) => item.quantity_explicit && !item.food_id.startsWith('custom_')) &&
+    // 排除信息/菜谱类问句（"怎么用两个鸡蛋做菜"、"…做什么"、"…吗"），这类不是入库
+    !INFORMATION_REQUEST.test(normalized) &&
+    !/做菜|做什么菜|怎么做|食谱|菜谱|推荐|吗\s*$|呢\s*$/.test(normalized)
+  ) {
+    intent = 'ADD_INVENTORY';
+    intentConfidence = 0.7;
+  }
 
   const catalogMatched = items.some((item) => !item.food_id.startsWith('custom_'));
   const foodConfidence = catalogMatched ? 0.95 : items.length > 0 ? 0.4 : 0;
