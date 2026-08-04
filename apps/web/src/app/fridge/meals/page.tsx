@@ -145,21 +145,27 @@ export default function MealsPage() {
   // 厨房实操模式下自动锁定屏幕常亮，防止下厨过程中熄屏 (Screen Wake Lock API)
   useEffect(() => {
     if (!kitchenModeActive) return;
-    let wakeLock: unknown = null;
+    // Wake Lock API 尚未进入 lib.dom 稳定类型，声明所需最小结构，避免 any。
+    interface WakeLockSentinelLike {
+      release(): Promise<void>;
+    }
+    interface WakeLockNavigator {
+      wakeLock?: { request(type: 'screen'): Promise<WakeLockSentinelLike> };
+    }
+    let wakeLock: WakeLockSentinelLike | null = null;
     const requestWakeLock = async () => {
       try {
-        if ('wakeLock' in navigator) {
-          wakeLock = await (navigator as any).wakeLock.request('screen');
+        const lockApi = (navigator as Navigator & WakeLockNavigator).wakeLock;
+        if (lockApi) {
+          wakeLock = await lockApi.request('screen');
         }
       } catch {
-        // Wake Lock API fallback
+        // Wake Lock 不被支持或被拒绝时忽略：仅影响推荐页是否常亮，不影响功能。
       }
     };
     void requestWakeLock();
     return () => {
-      if (wakeLock && typeof (wakeLock as any).release === 'function') {
-        void (wakeLock as any).release();
-      }
+      if (wakeLock) void wakeLock.release();
     };
   }, [kitchenModeActive]);
 

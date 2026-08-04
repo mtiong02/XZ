@@ -55,7 +55,6 @@ export default function HouseholdPage() {
   const [shareMessage, setShareMessage] = useState('');
 
   const shareIsHouseholdInvite = sharePosterKind === 'HOUSEHOLD';
-  const sharedInviteCode = shareIsHouseholdInvite ? (invite?.code ?? '') : BETA_INVITE_CODE;
   const shareInviteUrl = useMemo(() => {
     if (typeof window === 'undefined' || !sharePosterKind) return '';
     const params = new URLSearchParams({ mode: 'signup', invite: BETA_INVITE_CODE });

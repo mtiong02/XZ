@@ -8,8 +8,8 @@ import { DomainError } from '../inventory/domain/errors';
  * 场景演化压力测试 (多场景集成测试)
  */
 describe('Voice Engine - Multi-turn Scenarios', () => {
-  let jobsDb: Map<string, any>;
-  let executeCommandMock: any;
+  let jobsDb: Map<string, Record<string, unknown>>;
+  let executeCommandMock: ReturnType<typeof vi.fn>;
   let service: VoiceService;
 
   const catalog: FoodCatalogEntry[] = [
@@ -42,7 +42,7 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
     jobsDb = new Map();
     executeCommandMock = vi.fn().mockResolvedValue({ transaction_id: 'txn-1' });
 
-    const queryMock = vi.fn(async (sql: string, params?: any[]) => {
+    const queryMock = vi.fn(async (sql: string, params?: unknown[]) => {
       // Mock catalog
       if (sql.includes('from food_catalog fc')) {
         return {
@@ -74,18 +74,18 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
 
       // Voice job by ID
       if (sql.includes('from voice_jobs where id = $1')) {
-        const job = jobsDb.get(params?.[0]);
+        const job = jobsDb.get(params?.[0] as string);
         return { rows: job ? [job] : [] };
       }
 
       // Update
       if (sql.includes('update voice_jobs')) {
-        const id = params?.[0];
+        const id = params?.[0] as string;
         const job = jobsDb.get(id);
         if (job) {
           if (sql.includes('set status = $2')) {
             job.status = params?.[1];
-            job.candidate_command_json = params?.[2] ? JSON.parse(params[2]) : null;
+            job.candidate_command_json = params?.[2] ? JSON.parse(params[2] as string) : null;
             job.spoken_prompt = params?.[3];
           } else if (sql.includes("status = 'COMPLETED'")) {
             job.status = 'COMPLETED';
@@ -102,7 +102,7 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
       }
 
       if (sql.includes('insert into voice_jobs')) {
-        const job: any = {
+        const job: Record<string, unknown> = {
           id: params?.[0],
           household_id: params?.[1],
           actor_member_id: params?.[2],
@@ -111,21 +111,21 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
           source_channel: params?.[5],
           transcript_raw: params?.[6],
           transcript_normalized: params?.[7],
-          candidate_command_json: params?.[8] ? JSON.parse(params[8]) : null,
-          confidence_json: params?.[9] ? JSON.parse(params[9]) : {},
+          candidate_command_json: params?.[8] ? JSON.parse(params[8] as string) : null,
+          confidence_json: params?.[9] ? JSON.parse(params[9] as string) : {},
           requires_confirmation: params?.[10],
           error_code: params?.[11],
           client_request_id: params?.[12],
           spoken_prompt: params?.[13],
-          dialogue_turns: params?.[14] ? JSON.parse(params[14]) : [],
+          dialogue_turns: params?.[14] ? JSON.parse(params[14] as string) : [],
           session_id: params?.[15],
           turn_id: params?.[16],
           turn_count: 1,
           created_at: new Date(),
           completed_at: null,
           executed_transaction_id: null,
-        } as any;
-        jobsDb.set(job.id, job);
+        };
+        jobsDb.set(job.id as string, job);
         return { rows: [{ id: job.id }] };
       }
 
@@ -137,11 +137,9 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
       { assertMembership: vi.fn().mockResolvedValue({ memberId: 'member-1' }) } as never,
       { execute: executeCommandMock } as never,
       {
-        getInventoryView: vi
-          .fn()
-          .mockResolvedValue({
-            zones: [{ items: [{ food_id: 'apple', total_quantity: '5', unit: 'piece' }] }],
-          }),
+        getInventoryView: vi.fn().mockResolvedValue({
+          zones: [{ items: [{ food_id: 'apple', total_quantity: '5', unit: 'piece' }] }],
+        }),
       } as never, // queries
       { resolveSpokenQuery: vi.fn().mockResolvedValue(null) } as never, // foodCategories
       {} as never, // notifications
@@ -187,7 +185,7 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
     });
     expect(res.status).toBe('AWAITING_CLARIFICATION');
     expect(res.spoken_prompt).toContain('已记下：苹果1个（共1样）。继续报或说“就这些”。');
-    expect(res.candidate_command?.payload.items[0].food_id).toBe('apple');
+    expect(res.candidate_command?.payload?.items?.[0]?.food_id).toBe('apple');
 
     // 3. 用户说: "三个"
     res = await service.createTextJob(userId, {
@@ -199,7 +197,7 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
       client_request_id: randomUUID(),
     });
     expect(res.status).toBe('AWAITING_CONFIRMATION');
-    expect(res.candidate_command?.payload.items[0].quantity).toBe('3');
+    expect(res.candidate_command?.payload?.items?.[0]?.quantity).toBe('3');
 
     // 4. 用户说: "对"
     res = await service.createTextJob(userId, {
@@ -257,7 +255,7 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
       client_request_id: randomUUID(),
     });
     expect(res.status).toBe('AWAITING_CONFIRMATION');
-    expect(res.candidate_command?.payload.items[0].quantity).toBe('5'); // 从库存解析
+    expect(res.candidate_command?.payload?.items?.[0]?.quantity).toBe('5'); // 从库存解析
 
     // 4. 用户说: "对" -> 执行成功
     res = await service.createTextJob(userId, {
@@ -344,8 +342,8 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
       client_request_id: randomUUID(),
     });
     expect(res.status).toBe('AWAITING_CLARIFICATION');
-    expect(res.candidate_command?.payload.items).toHaveLength(1);
-    expect(res.candidate_command?.payload.items[0].food_id).toBe('banana');
+    expect(res.candidate_command?.payload?.items).toHaveLength(1);
+    expect(res.candidate_command?.payload?.items?.[0]?.food_id).toBe('banana');
 
     // 3. 用户说: "还有三个苹果"
     res = await service.createTextJob(userId, {
@@ -357,7 +355,7 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
       client_request_id: randomUUID(),
     });
     expect(res.status).toBe('AWAITING_CLARIFICATION');
-    expect(res.candidate_command?.payload.items).toHaveLength(2);
+    expect(res.candidate_command?.payload?.items).toHaveLength(2);
 
     // 4. 用户说: "不是香蕉，是五个梨"
     res = await service.createTextJob(userId, {
@@ -369,11 +367,10 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
       client_request_id: randomUUID(),
     });
     expect(res.status).toBe('AWAITING_CLARIFICATION'); // Still clarifying because it expects "就这些"
-    expect(res.candidate_command?.payload.items).toHaveLength(2);
-    expect(res.candidate_command?.payload.items.map((i: any) => i.food_id).sort()).toEqual([
-      'apple',
-      'pear',
-    ]);
+    expect(res.candidate_command?.payload?.items).toHaveLength(2);
+    expect(
+      res.candidate_command?.payload?.items?.map((i: { food_id: string }) => i.food_id).sort(),
+    ).toEqual(['apple', 'pear']);
 
     // 5. 用户说: "就这些"
     res = await service.createTextJob(userId, {
@@ -410,8 +407,8 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
     });
     expect(res.status).toBe('AWAITING_CLARIFICATION');
     expect(res.spoken_prompt).toContain('大概包含几个呢？记录个数会更方便以后吃的时候直接扣减哦。');
-    expect(res.candidate_command?.payload.items[0].quantity).toBe('2');
-    expect(res.candidate_command?.payload.items[0].unit).toBe('jin');
+    expect(res.candidate_command?.payload?.items?.[0]?.quantity).toBe('2');
+    expect(res.candidate_command?.payload?.items?.[0]?.unit).toBe('jin');
 
     // 2. 用户说: "六个"
     res = await service.createTextJob(userId, {
@@ -423,8 +420,8 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
       client_request_id: randomUUID(),
     });
     expect(res.status).toBe('AWAITING_CONFIRMATION');
-    expect(res.candidate_command?.payload.items[0].quantity).toBe('6');
-    expect(res.candidate_command?.payload.items[0].unit).toBe('piece');
+    expect(res.candidate_command?.payload?.items?.[0]?.quantity).toBe('6');
+    expect(res.candidate_command?.payload?.items?.[0]?.unit).toBe('piece');
     expect(res.spoken_prompt).toContain('确认添加6个苹果');
 
     // 3. 用户说: "是的"
@@ -462,8 +459,8 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
     });
     expect(res.status).toBe('AWAITING_CONFIRMATION');
     // 依然保持两斤
-    expect(res.candidate_command?.payload.items[0].quantity).toBe('2');
-    expect(res.candidate_command?.payload.items[0].unit).toBe('jin');
+    expect(res.candidate_command?.payload?.items?.[0]?.quantity).toBe('2');
+    expect(res.candidate_command?.payload?.items?.[0]?.unit).toBe('jin');
   });
 
   it('Scenario 8: 离散数量转换为连续重量追问并保护原始单位 (Count to Weight Clarification)', async () => {
@@ -503,9 +500,9 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
       client_request_id: randomUUID(),
     });
     expect(res.status).toBe('AWAITING_CONFIRMATION');
-    expect(res.candidate_command?.payload.items[0].display_text).toBe('鸡胸肉');
-    expect(res.candidate_command?.payload.items[0].quantity).toBe('200');
-    expect(res.candidate_command?.payload.items[0].unit).toBe('g');
+    expect(res.candidate_command?.payload?.items?.[0]?.display_text).toBe('鸡胸肉');
+    expect(res.candidate_command?.payload?.items?.[0]?.quantity).toBe('200');
+    expect(res.candidate_command?.payload?.items?.[0]?.unit).toBe('g');
   });
 
   it('Scenario 10: 方言量词与大数自动映射 (Dialect Measure Words)', async () => {
@@ -518,8 +515,8 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
       client_request_id: randomUUID(),
     });
     expect(res.status).toBe('AWAITING_CLARIFICATION');
-    expect(res.candidate_command?.payload.items[0].display_text).toBe('鸡蛋');
-    expect(res.candidate_command?.payload.items[0].quantity).toBe('12');
-    expect(res.candidate_command?.payload.items[0].unit).toBe('piece');
+    expect(res.candidate_command?.payload?.items?.[0]?.display_text).toBe('鸡蛋');
+    expect(res.candidate_command?.payload?.items?.[0]?.quantity).toBe('12');
+    expect(res.candidate_command?.payload?.items?.[0]?.unit).toBe('piece');
   });
 });

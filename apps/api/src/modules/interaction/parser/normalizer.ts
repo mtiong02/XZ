@@ -144,7 +144,7 @@ export function normalizeTranscript(raw: string): string {
 
   // 3. 方言量词归一化
   for (const [pattern, replacement] of DIALECT_MEASURE_WORDS) {
-    text = text.replace(pattern, replacement as any);
+    text = text.replace(pattern, replacement);
   }
 
   // 4. 数量范围表达归一化

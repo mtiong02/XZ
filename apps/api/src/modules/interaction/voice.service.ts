@@ -94,6 +94,16 @@ type CandidatePayload = {
   request_text?: string;
 };
 
+/**
+ * 候选命令。`_clarification_type` 记录本轮追问的维度（个数/重量），
+ * 用于在用户回答后决定如何回填单位；作为可选字段声明，避免散落的 `as any`。
+ */
+type Candidate = {
+  command_type: string;
+  payload: CandidatePayload;
+  _clarification_type?: 'weight' | 'count';
+};
+
 export interface DialogueTurn {
   role: 'user' | 'system';
   text: string;
@@ -109,6 +119,7 @@ interface VoiceJobRow {
   candidate_command_json: {
     command_type?: string;
     payload?: CandidatePayload;
+    _clarification_type?: 'weight' | 'count';
   } | null;
   confidence_json: unknown;
   requires_confirmation: boolean;
@@ -166,7 +177,7 @@ export class VoiceService {
   async createTextJob(
     userId: string,
     input: z.infer<typeof CreateTextVoiceJobSchema>,
-  ): Promise<any> {
+  ): ReturnType<VoiceService['getJob']> {
     const membership = await this.membership.assertMembership(input.household_id, userId);
 
     if (input.client_request_id) {
@@ -202,7 +213,7 @@ export class VoiceService {
         const interp = interpretReply(input.transcript_text, catalog);
         const isFragmentOrMatch =
           parsed.intent === 'UNKNOWN' ||
-          (pendingIntent as any) === 'AMBIGUOUS_COMMAND' ||
+          (pendingIntent as string) === 'AMBIGUOUS_COMMAND' ||
           (pendingIntent && parsed.intent === pendingIntent) ||
           interp.kind === 'CONFIRM' ||
           interp.kind === 'REJECT' ||
@@ -215,7 +226,7 @@ export class VoiceService {
           (interp.kind !== 'UNCLEAR' ||
             parsed.intent === pendingIntent ||
             parsed.intent === 'UNKNOWN' ||
-            (pendingIntent as any) === 'AMBIGUOUS_COMMAND' ||
+            (pendingIntent as string) === 'AMBIGUOUS_COMMAND' ||
             relativeInventoryFraction(input.transcript_text) !== null)
         ) {
           return this.reply(pendingJob.id, userId, {
@@ -321,7 +332,8 @@ export class VoiceService {
       outcome.candidate &&
       ['CONSUME_INVENTORY', 'DISCARD_INVENTORY'].includes(outcome.candidate.command_type)
     ) {
-      const items = (outcome.candidate.payload as any)?.items;
+      // outcome 是联合类型，部分 payload 分支的声明不含 items；定向收窄而非 any。
+      const items = (outcome.candidate.payload as { items?: CandidateItem[] } | undefined)?.items;
       if (items && items.length === 1 && items[0]) {
         const inventory = await this.queries.getInventoryView(input.household_id, userId);
         const matching = inventory.zones
@@ -341,7 +353,7 @@ export class VoiceService {
               ? `按当前库存计算，全部是${items[0].quantity}${unitSpokenLabel(items[0].unit)}。`
               : `按当前库存计算，一半是${items[0].quantity}${unitSpokenLabel(items[0].unit)}。`;
 
-          outcome.spokenPrompt = `${prefix}${correctedPrompt(outcome.candidate.command_type as any, toSpokenItems(items))}`;
+          outcome.spokenPrompt = `${prefix}${correctedPrompt(outcome.candidate.command_type, toSpokenItems(items))}`;
         }
       }
     }
@@ -461,7 +473,7 @@ export class VoiceService {
     normalized: string = '',
   ): {
     status: string;
-    candidate: { command_type: string; payload: CandidatePayload } | null;
+    candidate: Candidate | null;
     errorCode: string | null;
     spokenPrompt: string | null;
   } {
@@ -553,7 +565,7 @@ export class VoiceService {
         candidate: {
           command_type: 'AMBIGUOUS_COMMAND',
           payload: { items: parsed.items.map((it) => ({ ...toCandidateItem(it) })) },
-        } as any,
+        },
         errorCode: null,
         spokenPrompt: `我听到了${entitiesStr}，请问是要添加、用掉还是查询库存？`,
       };
@@ -602,7 +614,7 @@ export class VoiceService {
 
     const items = parsed.items.map(toCandidateItem);
     const payload = buildPayload(commandType, items);
-    const candidate = { command_type: commandType, payload };
+    const candidate: Candidate = { command_type: commandType, payload };
 
     // 追问：单食材且数量未显式（"加牛奶" 未说几盒）-> 先问清楚再确认
     const relFrac = relativeInventoryFraction(normalized);
@@ -649,16 +661,16 @@ export class VoiceService {
       const supportsCount = parsedItem.suggested_units.includes('piece');
       const supportsWeight = parsedItem.suggested_units.some((u) => ['jin', 'kg', 'g'].includes(u));
 
-      if (isWeight && supportsCount && !(candidate as any)._clarification_type) {
-        (candidate as any)._clarification_type = 'count';
+      if (isWeight && supportsCount && !candidate._clarification_type) {
+        candidate._clarification_type = 'count';
         return {
           status: 'AWAITING_CLARIFICATION',
           candidate,
           errorCode: null,
           spokenPrompt: `${parsedItem.quantity}${unitSpokenLabel(parsedItem.unit)}${parsedItem.food_name}大概包含几个呢？记录个数会更方便以后吃的时候直接扣减哦。（如果您没数，可以说“不知道”）`,
         };
-      } else if (isCount && supportsWeight && !(candidate as any)._clarification_type) {
-        (candidate as any)._clarification_type = 'weight';
+      } else if (isCount && supportsWeight && !candidate._clarification_type) {
+        candidate._clarification_type = 'weight';
         return {
           status: 'AWAITING_CLARIFICATION',
           candidate,
@@ -688,7 +700,7 @@ export class VoiceService {
     parsed: ParseResult,
   ): Promise<{
     status: string;
-    candidate: { command_type: string; payload: CandidatePayload } | null;
+    candidate: Candidate | null;
     errorCode: string | null;
     spokenPrompt: string | null;
   }> {
@@ -1162,7 +1174,7 @@ export class VoiceService {
     jobId: string,
     userId: string,
     input: z.infer<typeof ReplyVoiceJobSchema>,
-  ): Promise<any> {
+  ): ReturnType<VoiceService['getJob']> {
     const job = await this.loadJobRow(jobId);
     const replyMembership = await this.membership.assertMembership(job.household_id, userId);
     if (!REPLIABLE_STATUSES.has(job.status)) {
@@ -1194,7 +1206,10 @@ export class VoiceService {
     const catalog = await this.loadCatalog(job.household_id);
     const replacement = parseTranscript(normalizeTranscript(input.text), catalog);
     if (job.candidate_command_json?.command_type === 'AMBIGUOUS_COMMAND') {
-      if (replacement.intent !== 'UNKNOWN' && (replacement.intent as any) !== 'AMBIGUOUS_COMMAND') {
+      if (
+        replacement.intent !== 'UNKNOWN' &&
+        (replacement.intent as string) !== 'AMBIGUOUS_COMMAND'
+      ) {
         job.candidate_command_json.command_type = replacement.intent;
         if (replacement.items.length > 0) {
           if (job.candidate_command_json?.payload)
@@ -1271,7 +1286,7 @@ export class VoiceService {
     userId: string,
     requestText: string,
     turnId?: string,
-  ): Promise<any> {
+  ): ReturnType<VoiceService['getJob']> {
     await this.pool.query(
       `update voice_jobs
           set status='CANCELLED', completed_at=now(), error_code='MEAL_CONTEXT_REPLACED'
@@ -1423,8 +1438,8 @@ export class VoiceService {
         const negatedMatch = normalizedReply.match(
           /(?:不是|别|不要|错)[\s了]*([a-zA-Z\u4e00-\u9fa5]{1,4})/,
         );
-        if (negatedMatch) {
-          const negatedStr = negatedMatch[1]!;
+        const negatedStr = negatedMatch?.[1];
+        if (negatedStr) {
           const idx = items.findIndex(
             (i) =>
               i.display_text?.includes(negatedStr) ||
@@ -1509,7 +1524,7 @@ export class VoiceService {
     }
 
     if (interp.kind === 'SKIP' || interp.kind === 'CONFIRM') {
-      const isOptionalClarification = !!(candidate as any)?._clarification_type;
+      const isOptionalClarification = !!candidate?._clarification_type;
       if (isOptionalClarification) {
         // Skip optional clarification, we already have a valid quantity
       } else if (interp.kind === 'SKIP') {
@@ -1567,7 +1582,7 @@ export class VoiceService {
           filled = true;
         }
       } else if (interp.bareQuantity && items[0]) {
-        if ((candidate as any)?._clarification_type === 'weight') {
+        if (candidate?._clarification_type === 'weight') {
           // 只追加重量口播，不覆写原有的“个”单位以保护优质库存颗粒度
           optionalWeightAck = `好的，${items[0].quantity}${unitSpokenLabel(items[0].unit)}约重${interp.bareQuantity.quantity}${unitSpokenLabel(interp.bareQuantity.unit)}，`;
           filled = true;
@@ -1642,7 +1657,7 @@ export class VoiceService {
     turns: DialogueTurn[],
   ) {
     const candidate = job.candidate_command_json;
-    const interp = interpretReply(replyText, catalog);
+    let interp = interpretReply(replyText, catalog);
 
     // 如果纠正的内容实际上与当前待确认的意图/数量完全一致，则视作自然复述/确认
     if (interp.kind === 'CORRECTION' && candidate?.payload?.items) {
@@ -1668,7 +1683,7 @@ export class VoiceService {
         }
       }
       if (isIdentical) {
-        (interp as any).kind = 'CONFIRM';
+        interp = { kind: 'CONFIRM' };
       }
     }
 

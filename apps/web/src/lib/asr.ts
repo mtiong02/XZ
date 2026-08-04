@@ -55,7 +55,7 @@ function filterAsrNoise(text: string): string | null {
   // 如果整句都是噪声词，返回 null 表示应忽略
   if (/^(?:嗯+|啊+|呵+|呃+|那个)+$/.test(cleaned)) return null;
   // 重复单字超过 3 次（如"嘶嘶嘶嘶嘶"、"啊啊啊啊"）
-  if (/^(.)*$/u.test(cleaned) && cleaned.length > 3) return null;
+  if (/^(.)\1{3,}$/u.test(cleaned)) return null;
   return text;
 }
 

@@ -59,8 +59,7 @@ class TtsEngine {
           return;
         }
         this.processing = true;
-        while (this.queue.length > 0) {
-          const next = this.queue.shift()!;
+        for (let next = this.queue.shift(); next !== undefined; next = this.queue.shift()) {
           await this.speakSingle(next);
         }
         this.processing = false;

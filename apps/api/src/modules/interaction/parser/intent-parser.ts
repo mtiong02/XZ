@@ -62,12 +62,18 @@ export interface ParseResult {
 const INTENT_RULES: { intent: ParsedIntent; patterns: RegExp[]; weight: number }[] = [
   {
     intent: 'KITCHEN_NEXT_STEP',
-    patterns: [/^(?:下一步|下一个|继续(?:讲|读|说)?|然后呢|好了|做好了|完成|往前|下一项)$/i, /(?:说|读|讲)?下一步/i],
+    patterns: [
+      /^(?:下一步|下一个|继续(?:讲|读|说)?|然后呢|好了|做好了|完成|往前|下一项)$/i,
+      /(?:说|读|讲)?下一步/i,
+    ],
     weight: 0.98,
   },
   {
     intent: 'KITCHEN_PREV_STEP',
-    patterns: [/^(?:上一步|上一个|退回|回到上一步|刚才说的?|后退|上一项)$/i, /(?:说|读|讲)?上一步/i],
+    patterns: [
+      /^(?:上一步|上一个|退回|回到上一步|刚才说的?|后退|上一项)$/i,
+      /(?:说|读|讲)?上一步/i,
+    ],
     weight: 0.98,
   },
   {
