@@ -81,13 +81,10 @@ describe('interpretReply', () => {
     '我要结束对话了',
     '你先退下吧',
     '没有有的的退下吧',
-  ])(
-    'treats session exit as rejection: %s',
-    (text) => {
-      expect(isDialogueExit(text)).toBe(true);
-      expect(interpretReply(text, catalog).kind).toBe('REJECT');
-    },
-  );
+  ])('treats session exit as rejection: %s', (text) => {
+    expect(isDialogueExit(text)).toBe(true);
+    expect(interpretReply(text, catalog).kind).toBe('REJECT');
+  });
 
   it('does not treat a later reminder as session exit', () => {
     expect(isDialogueExit('结束后提醒我买牛奶')).toBe(false);

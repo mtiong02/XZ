@@ -1831,8 +1831,7 @@ select {
 }
 .family-beta-invite-card {
   background:
-    radial-gradient(circle at 92% 14%, rgb(206 247 226 / 76%), transparent 30%),
-    var(--white);
+    radial-gradient(circle at 92% 14%, rgb(206 247 226 / 76%), transparent 30%), var(--white);
 }
 .family-beta-invite-card > p {
   margin-bottom: 15px;
@@ -4260,6 +4259,342 @@ label {
   font-size: 13px;
   color: #666;
   margin: 0;
+}
+/* Recipe Search & Tutorial Modal Styles */
+.meal-search-and-tags {
+  margin: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.meal-search-input {
+  width: 100%;
+  padding: 10px 16px;
+  border: 1px solid var(--gray-200);
+  border-radius: 12px;
+  background: var(--white);
+  font-size: 14px;
+  color: var(--gray-800);
+  outline: none;
+  transition: border-color 0.2s;
+}
+.meal-search-input:focus {
+  border-color: var(--green);
+}
+.meal-tag-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tag-pill {
+  padding: 5px 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: 999px;
+  background: var(--gray-50);
+  color: var(--gray-600);
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tag-pill:hover {
+  background: var(--gray-100);
+  color: var(--gray-800);
+}
+.tag-pill.active {
+  background: var(--green-bg);
+  color: var(--green-dark);
+  border-color: var(--green-border);
+}
+
+.recipe-tutorial-dialog {
+  max-width: 680px;
+  max-height: 88vh;
+  overflow-y: auto;
+}
+.tutorial-header-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.tutorial-tag-chip {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--gray-100);
+  color: var(--gray-600);
+  font-size: 11px;
+}
+.tutorial-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 16px 0 8px 0;
+}
+.tutorial-section h3 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--gray-800);
+  margin-bottom: 10px;
+}
+.tutorial-ingredients-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+.tutorial-ingredient-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--gray-200);
+  font-size: 12px;
+}
+.tutorial-ingredient-chip.available {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+.tutorial-ingredient-chip.missing {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.tutorial-ingredient-chip .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.tutorial-ingredient-chip.available .dot {
+  color: #16a34a;
+}
+.tutorial-ingredient-chip.missing .dot {
+  color: #dc2626;
+}
+.tutorial-ingredient-chip .status {
+  margin-left: auto;
+  font-size: 10px;
+  opacity: 0.75;
+}
+.tutorial-add-missing-btn {
+  margin-top: 12px;
+  width: 100%;
+}
+.tutorial-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.tutorial-progress-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--gray-100);
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 8px 0 14px 0;
+}
+.tutorial-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #16a34a, #22c55e);
+  transition: width 0.3s ease;
+}
+.tutorial-steps-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tutorial-step-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--gray-200);
+  border-radius: 12px;
+  background: var(--white);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.tutorial-step-item:hover {
+  border-color: var(--green);
+  background: #fafdfb;
+}
+.tutorial-step-item.done {
+  opacity: 0.6;
+  background: var(--gray-50);
+  text-decoration: line-through;
+}
+.tutorial-step-item input[type='checkbox'] {
+  margin-top: 3px;
+  accent-color: #16a34a;
+  width: 16px;
+  height: 16px;
+}
+.tutorial-step-item .step-num {
+  font-weight: 700;
+  color: var(--green-dark);
+  font-size: 13px;
+  min-width: 18px;
+}
+.tutorial-step-item .step-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--gray-800);
+}
+.tutorial-external-links .hint {
+  font-size: 12px;
+  color: var(--gray-500);
+  margin-bottom: 10px;
+}
+.tutorial-external-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.external-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    transform 0.15s,
+    opacity 0.15s;
+}
+.external-link-btn:hover {
+  transform: translateY(-1px);
+  opacity: 0.9;
+}
+.external-link-btn.bilibili {
+  background: #e5f4ff;
+  color: #00a1d6;
+}
+.external-link-btn.xiachufang {
+  background: #fff1f0;
+  color: #f5222d;
+}
+.external-link-btn.meishij {
+  background: #fff7e6;
+  color: #fa8c16;
+}
+
+/* Kitchen Mode Overlay & Timer Styles */
+.tutorial-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.kitchen-mode-entry-btn {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 10px;
+}
+.kitchen-mode-dialog {
+  max-width: 620px;
+  border-radius: 20px;
+}
+.kitchen-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--gray-200);
+  padding-bottom: 14px;
+}
+.kitchen-dialog-header span {
+  font-size: 12px;
+  color: var(--green-dark);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.kitchen-dialog-header h2 {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--gray-900);
+  margin-top: 2px;
+}
+.kitchen-dialog-body {
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.kitchen-step-card {
+  padding: 24px;
+  background: var(--gray-50);
+  border: 2px solid var(--green-border);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.kitchen-step-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.speak-step-btn {
+  background: var(--white);
+}
+.kitchen-step-badge {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 4px 10px;
+  background: var(--green-bg);
+  color: var(--green-dark);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 750;
+}
+.kitchen-step-instruction {
+  font-size: 18px;
+  line-height: 1.6;
+  font-weight: 650;
+  color: var(--gray-900);
+}
+.kitchen-step-timer-box {
+  margin-top: 10px;
+  padding: 14px 16px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.timer-display {
+  font-size: 16px;
+  font-weight: 750;
+  color: #166534;
+}
+.timer-controls {
+  display: flex;
+  gap: 8px;
+}
+.timer-btn {
+  padding: 6px 14px;
+  font-size: 13px;
+}
+.kitchen-nav-row {
+  display: flex;
+  gap: 12px;
+}
+.kitchen-nav-btn {
+  flex: 1;
+  padding: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  border-radius: 12px;
+  text-align: center;
+}
+.kitchen-nav-btn.finish-btn {
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -188,7 +188,10 @@ describe('VoiceService relative inventory commands', () => {
           userId: string,
           parsedInput: ReturnType<typeof parseTranscript>,
           normalized: string,
-        ) => Promise<{ candidate: { payload: { items: Array<{ quantity: string; unit: string }> } } | null; spokenPrompt: string | null }>;
+        ) => Promise<{
+          candidate: { payload: { items: Array<{ quantity: string; unit: string }> } } | null;
+          spokenPrompt: string | null;
+        }>;
       }
     ).buildOutcome('household-1', 'user-1', parsed, normalizeTranscript('黄豆已经吃完了'));
 

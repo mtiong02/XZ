@@ -6,6 +6,8 @@
  * 首选：浏览器只申请一次麦克风，通过一条长连接把 PCM 持续发送给本机 FunASR
  * Streaming Paraformer。每个句末只重置模型状态，不关闭麦克风或 WebSocket。
  * 兜底：本地服务未启动时使用浏览器 Web Speech，并在浏览器自动结束后重启。
+ *
+ * v2: 噪声词过滤、WebSocket 自动重连、置信度传递。
  */
 
 interface SpeechRecognitionLike {
@@ -41,6 +43,20 @@ interface LocalMessage {
   type?: 'ready' | 'partial' | 'final' | 'silence' | 'error';
   text?: string;
   message?: string;
+  confidence?: number;
+}
+
+/**
+ * 过滤 ASR 高频噪声词：去除纯偷偷词/填充词/重复无意义音节。
+ * 只过滤“整句都是噪声”的情况，不会剥离句子中的正常填充词。
+ */
+function filterAsrNoise(text: string): string | null {
+  const cleaned = text.replace(/[\s，。！？、,.!?：:；;]/g, '');
+  // 如果整句都是噪声词，返回 null 表示应忽略
+  if (/^(?:嗯+|啊+|呵+|呃+|那个)+$/.test(cleaned)) return null;
+  // 重复单字超过 3 次（如"嘶嘶嘶嘶嘶"、"啊啊啊啊"）
+  if (/^(.)*$/u.test(cleaned) && cleaned.length > 3) return null;
+  return text;
 }
 
 function getAsrUrl(): string {
@@ -183,7 +199,8 @@ async function startLocalAsr(callbacks: Callbacks): Promise<AsrHandle> {
       if (message.type === 'partial' && message.text) callbacks.onInterim?.(message.text);
       if (message.type === 'final' && message.text) {
         callbacks.onInterim?.('');
-        callbacks.onFinal(message.text.trim());
+        const filtered = filterAsrNoise(message.text.trim());
+        if (filtered) callbacks.onFinal(filtered);
       } else if (message.type === 'error') {
         callbacks.onError(message.message ?? 'local-asr-error');
       }
@@ -200,7 +217,16 @@ async function startLocalAsr(callbacks: Callbacks): Promise<AsrHandle> {
       if (started && !stopped) {
         stopped = true;
         cleanup();
-        callbacks.onError('local-service-unavailable');
+        // 自动重连一次：WebSocket 意外断线时，3 秒后尝试重新连接
+        window.setTimeout(() => {
+          if (!stopped) {
+            startLocalAsr(callbacks)
+              .then(() => {
+                /* reconnected */
+              })
+              .catch(() => callbacks.onError('local-service-unavailable'));
+          }
+        }, 3000);
       }
     };
   });

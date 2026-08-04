@@ -15,6 +15,7 @@ import {
   type ShoppingListItemView,
 } from '../../../lib/api';
 import { unitLabel } from '../../../lib/format';
+import { getTts } from '../../../lib/tts';
 import { useHousehold } from '../../../lib/use-household';
 import { AppHeader } from '../../../components/app-header';
 
@@ -26,10 +27,25 @@ const groceryPlatforms: Array<{
   description: string;
   androidPackage: string;
 }> = [
-  { id: 'JD', name: '京东', description: '京东超市 / 京东秒送', androidPackage: 'com.jingdong.app.mall' },
+  {
+    id: 'JD',
+    name: '京东',
+    description: '京东超市 / 京东秒送',
+    androidPackage: 'com.jingdong.app.mall',
+  },
   { id: 'HEMA', name: '盒马', description: '盒马鲜生', androidPackage: 'com.wudaokou.hippo' },
-  { id: 'DINGDONG', name: '叮咚买菜', description: '附近生鲜配送', androidPackage: 'com.yaya.zone' },
-  { id: 'MEITUAN', name: '美团买菜', description: '美团闪购 / 买菜', androidPackage: 'com.baobaoaichi.imaicai' },
+  {
+    id: 'DINGDONG',
+    name: '叮咚买菜',
+    description: '附近生鲜配送',
+    androidPackage: 'com.yaya.zone',
+  },
+  {
+    id: 'MEITUAN',
+    name: '美团买菜',
+    description: '美团闪购 / 买菜',
+    androidPackage: 'com.baobaoaichi.imaicai',
+  },
 ];
 
 function foodShoppingWebUrl(platform: GroceryPlatform, foodName: string) {
@@ -97,6 +113,55 @@ export default function MealsPage() {
   const [selectedShoppingIds, setSelectedShoppingIds] = useState<Set<string>>(new Set());
   const [purchaseItems, setPurchaseItems] = useState<ShoppingListItemView[] | null>(null);
   const [purchaseStatus, setPurchaseStatus] = useState('');
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [tutorialRecipe, setTutorialRecipe] = useState<MealSuggestionView | null>(null);
+  const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
+  const [kitchenModeActive, setKitchenModeActive] = useState(false);
+  const [kitchenCurrentStep, setKitchenCurrentStep] = useState(0);
+  const [kitchenTimer, setKitchenTimer] = useState<number | null>(null);
+  const [kitchenTimerActive, setKitchenTimerActive] = useState(false);
+
+  // 厨房模式倒计时器
+  useEffect(() => {
+    if (!kitchenTimerActive || kitchenTimer === null || kitchenTimer <= 0) return;
+    const interval = setInterval(() => {
+      setKitchenTimer((prev) => {
+        if (prev === null || prev <= 1) {
+          setKitchenTimerActive(false);
+          try {
+            if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
+          } catch {
+            // vibration API fallback
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [kitchenTimerActive, kitchenTimer]);
+
+  // 厨房实操模式下自动锁定屏幕常亮，防止下厨过程中熄屏 (Screen Wake Lock API)
+  useEffect(() => {
+    if (!kitchenModeActive) return;
+    let wakeLock: unknown = null;
+    const requestWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await (navigator as any).wakeLock.request('screen');
+        }
+      } catch {
+        // Wake Lock API fallback
+      }
+    };
+    void requestWakeLock();
+    return () => {
+      if (wakeLock && typeof (wakeLock as any).release === 'function') {
+        void (wakeLock as any).release();
+      }
+    };
+  }, [kitchenModeActive]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -115,8 +180,9 @@ export default function MealsPage() {
       ]);
       setRecipes(nextRecipes);
       setShopping(nextShopping);
-      setSelectedShoppingIds((current) =>
-        new Set([...current].filter((id) => nextShopping.some((item) => item.id === id))),
+      setSelectedShoppingIds(
+        (current) =>
+          new Set([...current].filter((id) => nextShopping.some((item) => item.id === id))),
       );
       setNutrition(nextNutrition);
       setError('');
@@ -157,14 +223,31 @@ export default function MealsPage() {
       .filter((servings) => Number.isFinite(servings) && servings > 0)
       .sort((a, b) => a - b);
   }, [scopedRecipes]);
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const recipe of scopedRecipes) {
+      for (const tag of recipe.tags || []) set.add(tag);
+    }
+    return Array.from(set).sort();
+  }, [scopedRecipes]);
+
   const visibleRecipes = useMemo(
     () =>
-      scopedRecipes.filter(
-        (recipe) =>
-          (servingsFilter === null || recipe.servings === servingsFilter) &&
-          (!showMakeableOnly || recipe.can_make),
-      ),
-    [scopedRecipes, servingsFilter, showMakeableOnly],
+      scopedRecipes.filter((recipe) => {
+        const matchesServings = servingsFilter === null || recipe.servings === servingsFilter;
+        const matchesMakeable = !showMakeableOnly || recipe.can_make;
+        const matchesTag = selectedTag === null || (recipe.tags || []).includes(selectedTag);
+        const matchesKeyword =
+          !searchKeyword.trim() ||
+          recipe.name.toLowerCase().includes(searchKeyword.toLowerCase()) ||
+          recipe.description.toLowerCase().includes(searchKeyword.toLowerCase()) ||
+          (recipe.tags || []).some((t) => t.toLowerCase().includes(searchKeyword.toLowerCase())) ||
+          recipe.ingredients.some((i) =>
+            i.food_name.toLowerCase().includes(searchKeyword.toLowerCase()),
+          );
+        return matchesServings && matchesMakeable && matchesTag && matchesKeyword;
+      }),
+    [scopedRecipes, servingsFilter, showMakeableOnly, selectedTag, searchKeyword],
   );
   const attentionObservations =
     nutrition?.observations
@@ -185,14 +268,19 @@ export default function MealsPage() {
   const openGroceryPlatform = async (platform: GroceryPlatform, items: ShoppingListItemView[]) => {
     const foodName = items[0]?.food_name ?? '食材';
     const isBatchPurchase = items.length > 1;
-    const searchKeyword = isBatchPurchase ? items.map((item) => item.food_name).join(' ') : foodName;
+    const searchKeyword = isBatchPurchase
+      ? items.map((item) => item.food_name).join(' ')
+      : foodName;
     const shoppingText = items
       .map((item, index) => {
-        const quantity = item.quantity ? `${item.quantity} ${unitLabel(item.unit_code ?? '')}` : '数量待定';
+        const quantity = item.quantity
+          ? `${item.quantity} ${unitLabel(item.unit_code ?? '')}`
+          : '数量待定';
         return `${index + 1}. ${item.food_name} · ${quantity}`;
       })
       .join('\n');
-    const name = groceryPlatforms.find((candidate) => candidate.id === platform)?.name ?? '购物平台';
+    const name =
+      groceryPlatforms.find((candidate) => candidate.id === platform)?.name ?? '购物平台';
     const webUrl = foodShoppingWebUrl(platform, searchKeyword);
 
     if (isBatchPurchase) {
@@ -375,6 +463,37 @@ export default function MealsPage() {
                 })}
               </div>
             </div>
+
+            <div className="meal-search-and-tags">
+              <input
+                type="search"
+                className="meal-search-input"
+                placeholder="搜索菜谱名、食材或标签（如：鸡胸肉、川菜、减脂）…"
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
+              />
+              {allTags.length > 0 ? (
+                <div className="meal-tag-pills">
+                  <button
+                    type="button"
+                    className={`tag-pill ${selectedTag === null ? 'active' : ''}`}
+                    onClick={() => setSelectedTag(null)}
+                  >
+                    全部标签
+                  </button>
+                  {allTags.map((tag) => (
+                    <button
+                      type="button"
+                      key={tag}
+                      className={`tag-pill ${selectedTag === tag ? 'active' : ''}`}
+                      onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             <div className="meal-recipe-list">
               {visibleRecipes.length === 0 ? (
                 <p className="empty workspace-empty">
@@ -406,6 +525,16 @@ export default function MealsPage() {
                       </div>
                     </div>
                     <div className="meal-recipe-actions">
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => {
+                          setTutorialRecipe(recipe);
+                          setCompletedSteps(new Set());
+                        }}
+                      >
+                        查看制作教程
+                      </button>
                       <span className={`badge ${recipe.can_make ? 'normal' : 'unknown'}`}>
                         {recipe.can_make
                           ? '现有食材可做'
@@ -464,10 +593,14 @@ export default function MealsPage() {
                   <label>
                     <input
                       type="checkbox"
-                      checked={shopping.length > 0 && selectedShoppingItems.length === shopping.length}
+                      checked={
+                        shopping.length > 0 && selectedShoppingItems.length === shopping.length
+                      }
                       onChange={(event) =>
                         setSelectedShoppingIds(
-                          event.target.checked ? new Set(shopping.map((item) => item.id)) : new Set(),
+                          event.target.checked
+                            ? new Set(shopping.map((item) => item.id))
+                            : new Set(),
                         )
                       }
                     />
@@ -614,6 +747,349 @@ export default function MealsPage() {
                 : '会先复制完整采购清单，再打开所选平台；平台暂未授权跨食材直接写入购物车，因此请在平台内粘贴清单并确认商品。'}
               实际商品、价格与配送范围以平台显示为准。
             </p>
+          </section>
+        </div>
+      ) : null}
+
+      {tutorialRecipe ? (
+        <div className="grocery-platform-backdrop" onClick={() => setTutorialRecipe(null)}>
+          <section
+            className="grocery-platform-dialog recipe-tutorial-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tutorial-dialog-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="grocery-platform-dialog-header">
+              <div>
+                <div className="tutorial-header-badges">
+                  <span className={`badge ${tutorialRecipe.can_make ? 'normal' : 'unknown'}`}>
+                    {tutorialRecipe.can_make
+                      ? '现有食材可做'
+                      : `库存覆盖 ${Math.round(tutorialRecipe.coverage * 100)}%`}
+                  </span>
+                  {tutorialRecipe.tags?.map((t) => (
+                    <span key={t} className="tutorial-tag-chip">
+                      #{t}
+                    </span>
+                  ))}
+                </div>
+                <h2 id="tutorial-dialog-title">{tutorialRecipe.name}</h2>
+                <p>
+                  {tutorialRecipe.description} · {tutorialRecipe.servings} 人份
+                </p>
+              </div>
+              <div className="tutorial-header-actions">
+                <button
+                  type="button"
+                  className="primary kitchen-mode-entry-btn"
+                  onClick={() => {
+                    setKitchenModeActive(true);
+                    setKitchenCurrentStep(0);
+                    setKitchenTimer(null);
+                    setKitchenTimerActive(false);
+                  }}
+                >
+                  👨‍🍳 厨房实操模式
+                </button>
+                <button
+                  className="grocery-platform-close"
+                  type="button"
+                  onClick={() => setTutorialRecipe(null)}
+                >
+                  关闭
+                </button>
+              </div>
+            </div>
+
+            <div className="tutorial-dialog-body">
+              <section className="tutorial-section">
+                <h3>📦 食材核对</h3>
+                <div className="tutorial-ingredients-grid">
+                  {tutorialRecipe.ingredients.map((item) => (
+                    <div
+                      key={item.food_id}
+                      className={`tutorial-ingredient-chip ${item.available ? 'available' : 'missing'}`}
+                    >
+                      <span className="dot" />
+                      <strong>{item.food_name}</strong>
+                      <small>
+                        {item.quantity
+                          ? `${item.quantity}${unitLabel(item.unit_code ?? '')}`
+                          : '适量'}
+                      </small>
+                      <span className="status">{item.available ? '已有' : '缺少'}</span>
+                    </div>
+                  ))}
+                </div>
+                {tutorialRecipe.missing.length > 0 ? (
+                  <button
+                    type="button"
+                    className="primary tutorial-add-missing-btn"
+                    disabled={addingRecipeId === tutorialRecipe.id}
+                    onClick={async () => {
+                      setAddingRecipeId(tutorialRecipe.id);
+                      try {
+                        const result = await addMissingRecipeItems(household.id, tutorialRecipe.id);
+                        const nextShopping = await fetchShoppingList(household.id);
+                        setShopping(nextShopping);
+                        setMessage(`已把 ${result.items.length} 项缺少食材放入待购清单。`);
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : '加入失败');
+                      } finally {
+                        setAddingRecipeId(null);
+                      }
+                    }}
+                  >
+                    {addingRecipeId === tutorialRecipe.id
+                      ? '加入中…'
+                      : `把 ${tutorialRecipe.missing.length} 项缺料一键加入待购清单`}
+                  </button>
+                ) : null}
+              </section>
+
+              <section className="tutorial-section">
+                <div className="tutorial-section-title">
+                  <h3>🍳 制作步骤教程</h3>
+                  <small>
+                    进度：{completedSteps.size} / {tutorialRecipe.instructions.length} 步 (
+                    {Math.round(
+                      (completedSteps.size / Math.max(1, tutorialRecipe.instructions.length)) * 100,
+                    )}
+                    %)
+                  </small>
+                </div>
+                <div className="tutorial-progress-bar">
+                  <div
+                    className="tutorial-progress-fill"
+                    style={{
+                      width: `${(completedSteps.size / Math.max(1, tutorialRecipe.instructions.length)) * 100}%`,
+                    }}
+                  />
+                </div>
+                <ol className="tutorial-steps-list">
+                  {tutorialRecipe.instructions.map((step, idx) => {
+                    const isDone = completedSteps.has(idx);
+                    return (
+                      <li
+                        key={idx}
+                        className={`tutorial-step-item ${isDone ? 'done' : ''}`}
+                        onClick={() => {
+                          const next = new Set(completedSteps);
+                          if (isDone) next.delete(idx);
+                          else next.add(idx);
+                          setCompletedSteps(next);
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isDone}
+                          onChange={() => {}} // handled by li onClick
+                        />
+                        <span className="step-num">{idx + 1}</span>
+                        <span className="step-text">{step}</span>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </section>
+
+              <section className="tutorial-section tutorial-external-links">
+                <h3>🎥 外部视频与社区教程搜索</h3>
+                <p className="hint">如需观看主厨实操视频或查看社区讨论，可一键前往以下平台：</p>
+                <div className="tutorial-external-btns">
+                  <a
+                    href={`https://search.bilibili.com/all?keyword=${encodeURIComponent(tutorialRecipe.name + ' 教程')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="external-link-btn bilibili"
+                  >
+                    📺 Bilibili 视频教程
+                  </a>
+                  <a
+                    href={`https://www.xiachufang.com/search/?keyword=${encodeURIComponent(tutorialRecipe.name)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="external-link-btn xiachufang"
+                  >
+                    📖 下厨房 社区菜谱
+                  </a>
+                  <a
+                    href={`https://so.meishij.net/index.php?q=${encodeURIComponent(tutorialRecipe.name)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="external-link-btn meishij"
+                  >
+                    🔍 美食杰 做法搜寻
+                  </a>
+                </div>
+              </section>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {kitchenModeActive && tutorialRecipe ? (
+        <div className="grocery-platform-backdrop kitchen-mode-backdrop">
+          <section
+            className="grocery-platform-dialog kitchen-mode-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="厨房实操模式"
+          >
+            <div className="kitchen-dialog-header">
+              <div>
+                <span>
+                  厨房实操模式 · 步骤 {kitchenCurrentStep + 1} /{' '}
+                  {tutorialRecipe.instructions.length}
+                </span>
+                <h2>{tutorialRecipe.name}</h2>
+              </div>
+              <button
+                type="button"
+                className="grocery-platform-close"
+                onClick={() => {
+                  setKitchenModeActive(false);
+                  getTts().stop();
+                }}
+              >
+                退出厨房模式
+              </button>
+            </div>
+
+            <div className="kitchen-dialog-body">
+              <div className="kitchen-step-card">
+                <div className="kitchen-step-card-header">
+                  <div className="kitchen-step-badge">步骤 {kitchenCurrentStep + 1}</div>
+                  <button
+                    type="button"
+                    className="secondary timer-btn speak-step-btn"
+                    onClick={() => {
+                      const text = tutorialRecipe.instructions[kitchenCurrentStep];
+                      if (text) {
+                        getTts().stop();
+                        void getTts().speak(`步骤 ${kitchenCurrentStep + 1}：${text}`);
+                      }
+                    }}
+                  >
+                    🔊 朗读本步
+                  </button>
+                </div>
+                <p className="kitchen-step-instruction">
+                  {tutorialRecipe.instructions[kitchenCurrentStep]}
+                </p>
+
+                {/* 智能检测步骤中的时间词并提供倒计时器 */}
+                {(() => {
+                  const text = tutorialRecipe.instructions[kitchenCurrentStep] || '';
+                  const matchMin = text.match(/(\d+)\s*分钟/);
+                  const matchSec = text.match(/(\d+)\s*秒/);
+                  const parsedSec = matchMin
+                    ? Number(matchMin[1]) * 60
+                    : matchSec
+                      ? Number(matchSec[1])
+                      : null;
+
+                  return parsedSec ? (
+                    <div className="kitchen-step-timer-box">
+                      <div className="timer-display">
+                        ⏱ 计时：
+                        {kitchenTimer !== null
+                          ? `${Math.floor(kitchenTimer / 60)}:${String(kitchenTimer % 60).padStart(2, '0')}`
+                          : `${Math.floor(parsedSec / 60)}分${parsedSec % 60 ? (parsedSec % 60) + '秒' : ''}`}
+                      </div>
+                      <div className="timer-controls">
+                        {!kitchenTimerActive ? (
+                          <button
+                            type="button"
+                            className="primary timer-btn"
+                            onClick={() => {
+                              if (kitchenTimer === null || kitchenTimer <= 0)
+                                setKitchenTimer(parsedSec);
+                              setKitchenTimerActive(true);
+                            }}
+                          >
+                            {kitchenTimer === 0 ? '重新计时' : '开始计时'}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="secondary timer-btn"
+                            onClick={() => setKitchenTimerActive(false)}
+                          >
+                            暂停
+                          </button>
+                        )}
+                        {kitchenTimer !== null ? (
+                          <button
+                            type="button"
+                            className="secondary timer-btn"
+                            onClick={() => {
+                              setKitchenTimerActive(false);
+                              setKitchenTimer(null);
+                            }}
+                          >
+                            重置
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
+              </div>
+
+              <div className="kitchen-nav-row">
+                <button
+                  type="button"
+                  className="secondary kitchen-nav-btn"
+                  disabled={kitchenCurrentStep === 0}
+                  onClick={() => {
+                    const prevStep = Math.max(0, kitchenCurrentStep - 1);
+                    setKitchenCurrentStep(prevStep);
+                    setKitchenTimer(null);
+                    setKitchenTimerActive(false);
+                    const text = tutorialRecipe.instructions[prevStep];
+                    if (text) {
+                      getTts().stop();
+                      void getTts().speak(`步骤 ${prevStep + 1}：${text}`);
+                    }
+                  }}
+                >
+                  ← 上一步
+                </button>
+                {kitchenCurrentStep < tutorialRecipe.instructions.length - 1 ? (
+                  <button
+                    type="button"
+                    className="primary kitchen-nav-btn"
+                    onClick={() => {
+                      const nextStep = kitchenCurrentStep + 1;
+                      setCompletedSteps((prev) => new Set([...prev, kitchenCurrentStep]));
+                      setKitchenCurrentStep(nextStep);
+                      setKitchenTimer(null);
+                      setKitchenTimerActive(false);
+                    }}
+                  >
+                    完成本步，下一步 →
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="primary kitchen-nav-btn finish-btn"
+                    onClick={() => {
+                      setCompletedSteps(
+                        new Set(
+                          Array.from({ length: tutorialRecipe.instructions.length }, (_, i) => i),
+                        ),
+                      );
+                      setKitchenModeActive(false);
+                      setMessage(`🎉 恭喜完成【${tutorialRecipe.name}】的制作！`);
+                    }}
+                  >
+                    🎉 完成全套烹饪
+                  </button>
+                )}
+              </div>
+            </div>
           </section>
         </div>
       ) : null}

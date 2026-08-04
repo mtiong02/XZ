@@ -173,3 +173,30 @@ describe('P1 提醒时间按家庭时区解析（07/23 “九点变17:00”会�
     expect(parsed?.toISOString()).toBe('2026-07-24T01:00:00.000Z');
   });
 });
+
+describe('P0-8 方言量词与大数归一化', () => {
+  it('“一打酸奶” 识别为 12盒', () => {
+    const yogurt = parse('买了一打酸奶');
+    expect(yogurt.items[0]?.quantity).toBe('12');
+  });
+
+  it('“两扎香菇” 识别为 2把', () => {
+    const shiitake = parse('加两扎香菇');
+    expect(shiitake.items[0]?.unit).toBe('bunch');
+  });
+});
+
+describe('P0-9 增量修正与分数表达', () => {
+  it('“多加一个” 识别为增量修正', () => {
+    const result = interpretReply('多加一个西红柿', catalog);
+    expect(result.kind).toBe('CORRECTION');
+    if (result.kind === 'CORRECTION') {
+      expect(result.incremental).toBe(true);
+    }
+  });
+
+  it('“吃掉三分之一” 识别为 0.333 比例', () => {
+    expect(relativeInventoryFraction('把西兰花吃掉三分之一')).toBe('0.333');
+    expect(relativeInventoryFraction('吃掉四分之一')).toBe('0.250');
+  });
+});

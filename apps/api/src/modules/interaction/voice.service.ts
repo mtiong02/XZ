@@ -26,7 +26,11 @@ import {
   type FoodCatalogEntry,
   type ParseResult,
 } from './parser/intent-parser';
-import { interpretReply, relativeInventoryFraction, isDialogueExit } from './dialogue/reply-interpreter';
+import {
+  interpretReply,
+  relativeInventoryFraction,
+  isDialogueExit,
+} from './dialogue/reply-interpreter';
 import {
   CANCELLED_PROMPT,
   clarifyQuantityPrompt,
@@ -159,7 +163,10 @@ export class VoiceService {
    * 文本通道：Web Speech / 手动输入的文本进入同一解析流水线。
    * ASR 文本 -> Normalizer -> Parser -> 候选命令 -> 等待确认（docs/02 §10.2）。
    */
-  async createTextJob(userId: string, input: z.infer<typeof CreateTextVoiceJobSchema>): Promise<any> {
+  async createTextJob(
+    userId: string,
+    input: z.infer<typeof CreateTextVoiceJobSchema>,
+  ): Promise<any> {
     const membership = await this.membership.assertMembership(input.household_id, userId);
 
     if (input.client_request_id) {
@@ -203,7 +210,14 @@ export class VoiceService {
 
         // 如果明确判断为无意图废话，则忽略（返回提示重新说）。
         // 其他情况（即使是UNCLEAR，但意图匹配）都进入 reply 处理
-        if (isFragmentOrMatch && (interp.kind !== 'UNCLEAR' || parsed.intent === pendingIntent || parsed.intent === 'UNKNOWN' || (pendingIntent as any) === 'AMBIGUOUS_COMMAND' || relativeInventoryFraction(input.transcript_text) !== null)) {
+        if (
+          isFragmentOrMatch &&
+          (interp.kind !== 'UNCLEAR' ||
+            parsed.intent === pendingIntent ||
+            parsed.intent === 'UNKNOWN' ||
+            (pendingIntent as any) === 'AMBIGUOUS_COMMAND' ||
+            relativeInventoryFraction(input.transcript_text) !== null)
+        ) {
           return this.reply(pendingJob.id, userId, {
             text: input.transcript_text,
             turn_id: input.turn_id,
@@ -223,15 +237,14 @@ export class VoiceService {
     });
     // 结束语必须在任何业务路由之前拦截。会话中没有待确认任务时，用户仍可能说
     // “没有了，退下吧”；此时不能创建一个 UNKNOWN 任务后再报“没听懂”。
-    const outcome =
-      isExit
-        ? {
-            status: 'CANCELLED',
-            candidate: null,
-            errorCode: null,
-            spokenPrompt: '好的，我先退下。需要时喊“小知小知”。',
-          }
-        : parsed.intent === 'CREATE_REMINDER'
+    const outcome = isExit
+      ? {
+          status: 'CANCELLED',
+          candidate: null,
+          errorCode: null,
+          spokenPrompt: '好的，我先退下。需要时喊“小知小知”。',
+        }
+      : parsed.intent === 'CREATE_REMINDER'
         ? await this.buildReminderOutcome(
             input.household_id,
             userId,
@@ -322,11 +335,12 @@ export class VoiceService {
           items[0].quantity = quantity.toString();
           items[0].unit = matching[0]?.unit ?? items[0].unit;
           items[0].quantity_explicit = true;
-          
-          const prefix = relativeFraction === '1.0'
+
+          const prefix =
+            relativeFraction === '1.0'
               ? `按当前库存计算，全部是${items[0].quantity}${unitSpokenLabel(items[0].unit)}。`
               : `按当前库存计算，一半是${items[0].quantity}${unitSpokenLabel(items[0].unit)}。`;
-          
+
           outcome.spokenPrompt = `${prefix}${correctedPrompt(outcome.candidate.command_type as any, toSpokenItems(items))}`;
         }
       }
@@ -357,7 +371,9 @@ export class VoiceService {
         outcome.candidate ? JSON.stringify(outcome.candidate) : null,
         JSON.stringify(parsed.confidence),
         outcome.candidate !== null &&
-          !['QUERY_INVENTORY', 'MEAL_RECOMMENDATION'].includes(outcome.candidate.command_type ?? ''),
+          !['QUERY_INVENTORY', 'MEAL_RECOMMENDATION'].includes(
+            outcome.candidate.command_type ?? '',
+          ),
         outcome.errorCode,
         input.client_request_id ?? null,
         outcome.spokenPrompt,
@@ -380,7 +396,9 @@ export class VoiceService {
       metadata: {
         requires_confirmation:
           outcome.candidate !== null &&
-          !['QUERY_INVENTORY', 'MEAL_RECOMMENDATION'].includes(outcome.candidate.command_type ?? ''),
+          !['QUERY_INVENTORY', 'MEAL_RECOMMENDATION'].includes(
+            outcome.candidate.command_type ?? '',
+          ),
       },
     });
     void this.runtime?.recordEvent({
@@ -476,6 +494,46 @@ export class VoiceService {
           '我目前还不能代你向外部商家下单，也不会把尚未购买的商品记入库存。购物清单功能接通后，我可以先帮你加入清单。',
       };
     }
+    if (parsed.intent === 'KITCHEN_NEXT_STEP') {
+      return {
+        status: 'COMPLETED',
+        candidate: { command_type: 'KITCHEN_NEXT_STEP', payload: {} },
+        errorCode: null,
+        spokenPrompt: '好的，下一步。',
+      };
+    }
+    if (parsed.intent === 'KITCHEN_PREV_STEP') {
+      return {
+        status: 'COMPLETED',
+        candidate: { command_type: 'KITCHEN_PREV_STEP', payload: {} },
+        errorCode: null,
+        spokenPrompt: '好的，上一步。',
+      };
+    }
+    if (parsed.intent === 'KITCHEN_REPEAT_STEP') {
+      return {
+        status: 'COMPLETED',
+        candidate: { command_type: 'KITCHEN_REPEAT_STEP', payload: {} },
+        errorCode: null,
+        spokenPrompt: '好的，重复当前步骤。',
+      };
+    }
+    if (parsed.intent === 'KITCHEN_TIMER_QUERY') {
+      return {
+        status: 'COMPLETED',
+        candidate: { command_type: 'KITCHEN_TIMER_QUERY', payload: {} },
+        errorCode: null,
+        spokenPrompt: '当前烹饪步骤倒计时进行中。',
+      };
+    }
+    if (parsed.intent === 'KITCHEN_INGREDIENT_QUERY') {
+      return {
+        status: 'COMPLETED',
+        candidate: { command_type: 'KITCHEN_INGREDIENT_QUERY', payload: {} },
+        errorCode: null,
+        spokenPrompt: '请核对菜谱所需食材。',
+      };
+    }
     if (parsed.intent === 'QUERY_INVENTORY') {
       return {
         status: 'COMPLETED',
@@ -489,7 +547,7 @@ export class VoiceService {
     }
     if (parsed.intent === 'UNKNOWN' && parsed.items.length > 0) {
       const entities = toSpokenItems(parsed.items.map(toCandidateItem));
-      const entitiesStr = entities.map(e => e.food_name).join('、');
+      const entitiesStr = entities.map((e) => e.food_name).join('、');
       return {
         status: 'AWAITING_CLARIFICATION',
         candidate: {
@@ -580,7 +638,12 @@ export class VoiceService {
     // 新增：针对连续重量单位但支持离散个体的食材（如苹果、鸡蛋）：
     // 1. 若以重量录入，问包含几个。
     // 2. 若以个数录入，问大概有多重。
-    if (commandType === 'ADD_INVENTORY' && parsedItem && parsedItem.quantity_explicit && parsedItem.unit_reasonable) {
+    if (
+      commandType === 'ADD_INVENTORY' &&
+      parsedItem &&
+      parsedItem.quantity_explicit &&
+      parsedItem.unit_reasonable
+    ) {
       const isWeight = ['jin', 'kg', 'g', 'liang', 'l', 'ml'].includes(parsedItem.unit);
       const isCount = parsedItem.unit === 'piece';
       const supportsCount = parsedItem.suggested_units.includes('piece');
@@ -1095,7 +1158,11 @@ export class VoiceService {
    * - AWAITING_CONFIRMATION ：CONFIRM 执行 / REJECT 取消 / CORRECTION 改后重新确认 / UNCLEAR 追问
    * 全部确定性；执行走同一 Command 管道，库存事实仍由领域层把关（docs/07 §9）。
    */
-  async reply(jobId: string, userId: string, input: z.infer<typeof ReplyVoiceJobSchema>): Promise<any> {
+  async reply(
+    jobId: string,
+    userId: string,
+    input: z.infer<typeof ReplyVoiceJobSchema>,
+  ): Promise<any> {
     const job = await this.loadJobRow(jobId);
     const replyMembership = await this.membership.assertMembership(job.household_id, userId);
     if (!REPLIABLE_STATUSES.has(job.status)) {
@@ -1130,7 +1197,8 @@ export class VoiceService {
       if (replacement.intent !== 'UNKNOWN' && (replacement.intent as any) !== 'AMBIGUOUS_COMMAND') {
         job.candidate_command_json.command_type = replacement.intent;
         if (replacement.items.length > 0) {
-          if (job.candidate_command_json?.payload) job.candidate_command_json.payload.items = replacement.items.map(it => ({ ...it }));
+          if (job.candidate_command_json?.payload)
+            job.candidate_command_json.payload.items = replacement.items.map((it) => ({ ...it }));
         }
       } else {
         return this.persistTurn(job, {
@@ -1198,7 +1266,12 @@ export class VoiceService {
     return this.replaceWithMealRecommendation(job, userId, combined, turnId);
   }
 
-  private async replaceWithMealRecommendation(job: VoiceJobRow, userId: string, requestText: string, turnId?: string): Promise<any> {
+  private async replaceWithMealRecommendation(
+    job: VoiceJobRow,
+    userId: string,
+    requestText: string,
+    turnId?: string,
+  ): Promise<any> {
     await this.pool.query(
       `update voice_jobs
           set status='CANCELLED', completed_at=now(), error_code='MEAL_CONTEXT_REPLACED'
@@ -1227,7 +1300,7 @@ export class VoiceService {
   ) {
     const candidate = job.candidate_command_json;
     const payload = candidate?.payload ?? {};
-    const interp = interpretReply(replyText, catalog); 
+    const interp = interpretReply(replyText, catalog);
     const relativeFraction = relativeInventoryFraction(replyText);
 
     if (interp.kind === 'REJECT') {
@@ -1325,7 +1398,7 @@ export class VoiceService {
   ) {
     const candidate = job.candidate_command_json;
     const items = candidate?.payload?.items ?? [];
-    const interp = interpretReply(replyText, catalog); 
+    const interp = interpretReply(replyText, catalog);
     const normalizedReply = normalizeTranscript(replyText);
 
     if (interp.kind === 'REJECT') {
@@ -1343,16 +1416,26 @@ export class VoiceService {
     // 针对 ADD_INVENTORY 连续报菜名与暂存箱模式
     if (candidate?.command_type === 'ADD_INVENTORY') {
       const isCommit = BATCH_COMMIT_PATTERN.test(normalizedReply);
-      const parsedReply = parseTranscript(normalizedReply, catalog); 
+      const parsedReply = parseTranscript(normalizedReply, catalog);
       const isExplicitCorrection = /(?:不是|不对|错|别|不要|改|换)/.test(normalizedReply);
 
       if (interp.kind === 'CORRECTION' && isExplicitCorrection) {
-        const negatedMatch = normalizedReply.match(/(?:不是|别|不要|错)[\s了]*([a-zA-Z\u4e00-\u9fa5]{1,4})/);
+        const negatedMatch = normalizedReply.match(
+          /(?:不是|别|不要|错)[\s了]*([a-zA-Z\u4e00-\u9fa5]{1,4})/,
+        );
         if (negatedMatch) {
           const negatedStr = negatedMatch[1]!;
-          const idx = items.findIndex(i => i.display_text?.includes(negatedStr) || (i.display_text && negatedStr.includes(i.display_text)));
+          const idx = items.findIndex(
+            (i) =>
+              i.display_text?.includes(negatedStr) ||
+              (i.display_text && negatedStr.includes(i.display_text)),
+          );
           if (idx !== -1) items.splice(idx, 1);
-          const interpIdx = interp.items.findIndex(i => i.food_name?.includes(negatedStr) || (i.food_name && negatedStr.includes(i.food_name)));
+          const interpIdx = interp.items.findIndex(
+            (i) =>
+              i.food_name?.includes(negatedStr) ||
+              (i.food_name && negatedStr.includes(i.food_name)),
+          );
           if (interpIdx !== -1) interp.items.splice(interpIdx, 1);
         }
         const newCandidateItems = interp.items.map(toCandidateItem);
@@ -1361,7 +1444,9 @@ export class VoiceService {
           candidate.payload.items = items;
         }
         const spokenList = toSpokenItems(candidate.payload?.items ?? []);
-        const itemNames = spokenList.map((i) => `${i.food_name}${i.quantity}${unitSpokenLabel(i.unit)}`).join('、');
+        const itemNames = spokenList
+          .map((i) => `${i.food_name}${i.quantity}${unitSpokenLabel(i.unit)}`)
+          .join('、');
         const prompt = `已修改，目前有：${itemNames}。继续报或说“就这些”。`;
         return this.persistTurn(job, {
           status: 'AWAITING_CLARIFICATION',
@@ -1388,7 +1473,7 @@ export class VoiceService {
       }
 
       if (parsedReply.items.length > 0) {
-         const newCandidateItems = parsedReply.items.map(toCandidateItem);
+        const newCandidateItems = parsedReply.items.map(toCandidateItem);
         items.push(...newCandidateItems);
         if (candidate.payload) {
           candidate.payload.items = items;
@@ -1557,17 +1642,28 @@ export class VoiceService {
     turns: DialogueTurn[],
   ) {
     const candidate = job.candidate_command_json;
-    const interp = interpretReply(replyText, catalog); 
+    const interp = interpretReply(replyText, catalog);
 
     // 如果纠正的内容实际上与当前待确认的意图/数量完全一致，则视作自然复述/确认
     if (interp.kind === 'CORRECTION' && candidate?.payload?.items) {
       const prevItems = candidate.payload.items;
       let isIdentical = false;
-      if (interp.hasFood && !interp.bareQuantity && prevItems.length === 1 && interp.items.length === 1 && prevItems[0] && interp.items[0]) {
+      if (
+        interp.hasFood &&
+        !interp.bareQuantity &&
+        prevItems.length === 1 &&
+        interp.items.length === 1 &&
+        prevItems[0] &&
+        interp.items[0]
+      ) {
         const prev = prevItems[0];
         const ci = interp.items[0];
         const newQty = ci.quantity_explicit === false ? prev.quantity : ci.quantity;
-        if (prev.food_id === ci.food_id && prev.quantity === newQty && (!ci.unit || prev.unit === ci.unit)) {
+        if (
+          prev.food_id === ci.food_id &&
+          prev.quantity === newQty &&
+          (!ci.unit || prev.unit === ci.unit)
+        ) {
           isIdentical = true;
         }
       }

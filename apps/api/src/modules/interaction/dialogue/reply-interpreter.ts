@@ -27,15 +27,17 @@ export type ReplyInterpretation =
       hasFood: boolean;
       /** 无食材的裸数量修正（"改成三盒"），取修正目标（最后一个数量）。 */
       bareQuantity: { quantity: string; unit: string } | null;
+      /** 增量修正："多加一个"/"再来两个" 时为 true，数量应累加而非覆盖 */
+      incremental?: boolean;
     }
   | { kind: 'UNCLEAR' }
   | { kind: 'SKIP' };
 
-// 真实口语确认：除了单字"对/是的"，还支持"是的用掉了"、"是的用"、"对的是"、"是的是的"、"好的加了"等常见确认后缀。
+// 真实口语确认：除了单字"对/是的"，还支持"是的用掉了"、"是的用"、"对的是"、"是的是的"、"好的加了"、"就酱"、"没有意见"等常见确认后缀。
 const CONFIRM_PATTERN =
-  /^(?:是的?|对(?:对|的)?|确认(?:是)?|没错|好的?|可以(?:的)?|(?:没|没有)问题(?:的)?|嗯嗯?|行(?:的)?|ok|yes|correct|right|yep|sure|我说(?:的)?(?:是)?)(?:[\s,，.！!]*)(?:是|是的?|对|对的?|确认|好的?|用掉了?|用了?|用|吃了?|吃完(?:了)?|删了|删除了?|加了|添加了?|放了|移了|记录了|没问题|我吃完(?:了)?|帮我(?:添|添加|加|加上|用|用掉|记录|确认|执行)(?:一下)?|请帮我(?:添|添加|加|加上|用|用掉|记录|确认|执行)(?:一下)?|了|吧|呢|呀|啊|准|正确)*$/i;
+  /^(?:是的?|对(?:对|的)?|确认(?:是)?|没错|好的?|可以(?:的)?|行(?:行|的)?|(?:没|没有)问题(?:的)?|嘶嘶?嘿?嘶?|没有意见|就酱|就这样|可以执行|ok|yes|correct|right|yep|sure|我说(?:的)?(?:是)?)(?:[\s,，.！!]*)(?:是|是的?|对|对的?|确认|好的?|行|行的|没问题|用掉了?|用了?|用|吃了?|吃完(?:了)?|删了|删除了?|加了|添加了?|放了|移了|记录了|没问题|我吃完(?:了)?|帮我(?:添|添加|加|加上|用|用掉|记录|确认|执行)(?:一下)?|请帮我(?:添|添加|加|加上|用|用掉|记录|确认|执行)(?:一下)?|了|吧|呢|呀|啊|准|正确)*$/i;
 const REJECT_PATTERN =
-  /^(?:不对|不是(?:的)?|不要|不想(?:要)?|取消|算了|错了|不用(?:了)?|重来|结束|退出|不(?:加|用|买|做)(?:了)?|打断|停(?:止)?|都不是|no|cancel|wrong|nope)+(?:了|吧|啊|的|呀)?$/i;
+  /^(?:不对|不是(?:的)?|不要|不想(?:要)?|取消|算了|错了|不用(?:了)?|重来|结束|退出|不(?:加|用|买|做)(?:了)?|打断|停(?:止)?|都不是|不聊了|散了吧|差不多了|我先走了|我先忙了|no|cancel|wrong|nope)+(?:了|吧|啊|的|呀)?$/i;
 const SKIP_PATTERN =
   /^(?:不知道|不清楚|没看|没数|没称|忘了|忘记(?:了)?|无所谓|随便|直接(?:存|加|记|写|执行)|算(?:了)?吧|就这样(?:吧)?|(?:不|没)需要(?:补充)?)$/i;
 
@@ -49,11 +51,20 @@ function isFuzzyConfirmation(text: string): boolean {
   );
 }
 
-/** 相对库存数量：支持“一半”(0.5) 和 “全部/都/全吃了/吃完了/删除/清空”(1.0)。 */
+/** 相对库存数量：支持“一半”(0.5)、“全部/都/全吃了/吃完了/删除/清空”(1.0)、“三分之一”(0.333)、“四分之一”(0.25)。 */
 export function relativeInventoryFraction(rawReply: string): string | null {
   const normalized = normalizeTranscript(rawReply);
   if (/一半|半数|0\.5数?|百分之50|50%/.test(normalized)) return '0.5';
   if (/全部|都|全吃了|吃完了|用完了|所有.*删除|删掉|清空|全用掉/.test(normalized)) return '1.0';
+  // 分数表达：三分之一 / 四分之一 / 四分之三
+  const fractionMatch = normalized.match(/(\d+)分之(\d+)/);
+  if (fractionMatch) {
+    const denominator = Number(fractionMatch[1]);
+    const numerator = Number(fractionMatch[2]);
+    if (denominator > 0 && numerator > 0 && numerator <= denominator) {
+      return (numerator / denominator).toFixed(3);
+    }
+  }
   return null;
 }
 
@@ -133,11 +144,14 @@ export function interpretReply(rawReply: string, catalog: FoodCatalogEntry[]): R
       }
     }
     // 纯确认词误伤保护：如果整句其实是"对"，parseTranscript 不会出食材，也无裸数量，走不到这里
+    // 检测增量修正："多加一个"/"再来两个" -> 标记为增量
+    const isIncremental = /(?:多加|再加|再来|多来|追加)/.test(normalized);
     return {
       kind: 'CORRECTION',
       items: parsed.items,
       hasFood: hasNewFood,
       bareQuantity: hasNewFood ? null : bareQty,
+      incremental: isIncremental,
     };
   }
 

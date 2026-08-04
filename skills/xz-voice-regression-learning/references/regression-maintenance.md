@@ -4,14 +4,14 @@ Use one fixture per concrete failure. Keep the raw phrase in the test name or ne
 
 ## Fixture Matrix
 
-| Failure family | Minimum variants | Expected invariant |
-| --- | --- | --- |
-| Quantity and units | normal, Chinese numeral, ASR truncation | Retain the spoken quantity/unit; never silently fall back to 1. |
-| All / half inventory | “吃完”, “全部”, “一半” | Resolve against the current household stock before confirmation. |
-| Correction | old→new quantity, food replacement, multi-item correction | Replace the pending item rather than appending or retaining the old value. |
-| Confirmation | 对, 是的, 可以, 没问题, action suffix | Execute once only after affirmative confirmation. |
-| Exit | normal phrase, polite prefix, ASR repetition | Cancel active work and return to wake-only standby. |
-| Read-only request | inventory, recipe gap, meal recommendation | Never create a destructive candidate or ask a quantity without an identified food. |
+| Failure family       | Minimum variants                                          | Expected invariant                                                                 |
+| -------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Quantity and units   | normal, Chinese numeral, ASR truncation                   | Retain the spoken quantity/unit; never silently fall back to 1.                    |
+| All / half inventory | “吃完”, “全部”, “一半”                                    | Resolve against the current household stock before confirmation.                   |
+| Correction           | old→new quantity, food replacement, multi-item correction | Replace the pending item rather than appending or retaining the old value.         |
+| Confirmation         | 对, 是的, 可以, 没问题, action suffix                     | Execute once only after affirmative confirmation.                                  |
+| Exit                 | normal phrase, polite prefix, ASR repetition              | Cancel active work and return to wake-only standby.                                |
+| Read-only request    | inventory, recipe gap, meal recommendation                | Never create a destructive candidate or ask a quantity without an identified food. |
 
 ## Test Locations
 

@@ -29,7 +29,14 @@ function loadPosterImage(src: string) {
   });
 }
 
-function roundedRect(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+function roundedRect(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) {
   context.beginPath();
   context.roundRect(x, y, width, height, radius);
   context.fill();
@@ -48,7 +55,7 @@ export default function HouseholdPage() {
   const [shareMessage, setShareMessage] = useState('');
 
   const shareIsHouseholdInvite = sharePosterKind === 'HOUSEHOLD';
-  const sharedInviteCode = shareIsHouseholdInvite ? invite?.code ?? '' : BETA_INVITE_CODE;
+  const sharedInviteCode = shareIsHouseholdInvite ? (invite?.code ?? '') : BETA_INVITE_CODE;
   const shareInviteUrl = useMemo(() => {
     if (typeof window === 'undefined' || !sharePosterKind) return '';
     const params = new URLSearchParams({ mode: 'signup', invite: BETA_INVITE_CODE });
@@ -132,7 +139,9 @@ export default function HouseholdPage() {
     try {
       if (navigator.share) {
         await navigator.share({
-          title: shareIsHouseholdInvite ? `邀请加入${household?.name ?? '我的家'}` : '邀请你体验鲜知',
+          title: shareIsHouseholdInvite
+            ? `邀请加入${household?.name ?? '我的家'}`
+            : '邀请你体验鲜知',
           text,
           url: shareInviteUrl,
         });
@@ -179,7 +188,9 @@ export default function HouseholdPage() {
       context.fillStyle = '#5c7468';
       context.font = '400 32px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
       context.fillText(
-        shareIsHouseholdInvite ? `邀请加入“${household?.name ?? '我的家'}”，共享库存与餐食安排。` : '管理食材、减少浪费，也把每一餐安排得更轻松。',
+        shareIsHouseholdInvite
+          ? `邀请加入“${household?.name ?? '我的家'}”，共享库存与餐食安排。`
+          : '管理食材、减少浪费，也把每一餐安排得更轻松。',
         130,
         482,
       );
@@ -194,17 +205,29 @@ export default function HouseholdPage() {
       context.drawImage(qr, 192, 777, 270, 270);
       context.fillStyle = '#123c2c';
       context.font = '700 43px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
-      context.fillText(shareIsHouseholdInvite ? '扫码注册并加入家庭' : '扫码注册，即可体验', 520, 855);
+      context.fillText(
+        shareIsHouseholdInvite ? '扫码注册并加入家庭' : '扫码注册，即可体验',
+        520,
+        855,
+      );
       context.fillStyle = '#5c7468';
       context.font = '400 30px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
-      context.fillText(shareIsHouseholdInvite ? '内测码与家庭邀请码已自动带入' : '内测邀请码已自动填入', 520, 913);
+      context.fillText(
+        shareIsHouseholdInvite ? '内测码与家庭邀请码已自动带入' : '内测邀请码已自动填入',
+        520,
+        913,
+      );
       context.fillStyle = '#287a5b';
       context.font = '700 29px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
       context.fillText(`内测邀请码 · ${BETA_INVITE_CODE}`, 130, 1245);
 
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
       if (!blob) throw new Error('Poster export failed');
-      const file = new File([blob], `鲜知-${shareIsHouseholdInvite ? '家庭邀请' : '内测邀请'}海报.png`, { type: 'image/png' });
+      const file = new File(
+        [blob],
+        `鲜知-${shareIsHouseholdInvite ? '家庭邀请' : '内测邀请'}海报.png`,
+        { type: 'image/png' },
+      );
       if (navigator.share && navigator.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file], title: '鲜知邀请海报' });
         setShareMessage('已打开系统分享，可保存或发送这张海报。');
@@ -348,9 +371,7 @@ export default function HouseholdPage() {
                 <h2>把小知分享给朋友</h2>
               </div>
             </div>
-            <p>
-              生成一张内测邀请海报。朋友扫码后会打开注册页，并自动填入邀请码，无需手动输入。
-            </p>
+            <p>生成一张内测邀请海报。朋友扫码后会打开注册页，并自动填入邀请码，无需手动输入。</p>
             <button
               className="primary"
               type="button"
@@ -387,12 +408,24 @@ export default function HouseholdPage() {
             </button>
             <div className="beta-invite-poster">
               <div className="beta-invite-poster-topline">鲜知 · 家庭饮食小管家</div>
-              <img src="/mascot/xiaozhi.webp?v=20260729" alt="小知" className="beta-invite-mascot" />
+              <img
+                src="/mascot/xiaozhi.webp?v=20260729"
+                alt="小知"
+                className="beta-invite-mascot"
+              />
               <h2 id="beta-invite-title">
                 {shareIsHouseholdInvite ? (
-                  <>一起把这个家，<br />照顾得更好。</>
+                  <>
+                    一起把这个家，
+                    <br />
+                    照顾得更好。
+                  </>
                 ) : (
-                  <>今天吃什么，<br />让小知和你一起想。</>
+                  <>
+                    今天吃什么，
+                    <br />
+                    让小知和你一起想。
+                  </>
                 )}
               </h2>
               <p>
@@ -407,17 +440,32 @@ export default function HouseholdPage() {
                   <span>正在生成二维码…</span>
                 )}
                 <div>
-                  <strong>{shareIsHouseholdInvite ? '扫码注册并加入家庭' : '扫码注册，即可体验'}</strong>
-                  <span>{shareIsHouseholdInvite ? '内测码与家庭邀请码已自动带入' : '内测邀请码已自动填入'}</span>
+                  <strong>
+                    {shareIsHouseholdInvite ? '扫码注册并加入家庭' : '扫码注册，即可体验'}
+                  </strong>
+                  <span>
+                    {shareIsHouseholdInvite
+                      ? '内测码与家庭邀请码已自动带入'
+                      : '内测邀请码已自动填入'}
+                  </span>
                 </div>
               </div>
               <div className="beta-invite-code">内测邀请码 · {BETA_INVITE_CODE}</div>
             </div>
             <div className="beta-invite-actions">
-              <button className="primary" type="button" onClick={() => void shareInvite()} disabled={shareBusy}>
+              <button
+                className="primary"
+                type="button"
+                onClick={() => void shareInvite()}
+                disabled={shareBusy}
+              >
                 {shareBusy ? '打开分享中…' : '转发给朋友'}
               </button>
-              <button type="button" onClick={() => void downloadPoster()} disabled={!shareQrCode || shareBusy}>
+              <button
+                type="button"
+                onClick={() => void downloadPoster()}
+                disabled={!shareQrCode || shareBusy}
+              >
                 下载海报
               </button>
               <button type="button" onClick={() => void copyInviteUrl()}>
@@ -429,7 +477,11 @@ export default function HouseholdPage() {
                 </a>
               ) : null}
             </div>
-            {shareMessage ? <p className="beta-invite-status" role="status">{shareMessage}</p> : null}
+            {shareMessage ? (
+              <p className="beta-invite-status" role="status">
+                {shareMessage}
+              </p>
+            ) : null}
           </section>
         </div>
       ) : null}

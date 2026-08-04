@@ -7,10 +7,16 @@ const SPOKEN: Record<string, string> = {
   bag: '袋',
   bunch: '把',
   jin: '斤',
+  liang: '两',
   g: '克',
   kg: '千克',
   ml: '毫升',
   l: '升',
+  can: '罐',
+  bowl: '碗',
+  spoon: '勺',
+  cup: '杯',
+  bucket: '桶',
 };
 
 export function unitSpokenLabel(code: string): string {

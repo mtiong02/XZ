@@ -17,7 +17,10 @@ function getRealtimeUrl(): string {
 }
 
 const CONNECT_TIMEOUT_MS = 12000;
-const SPEECH_THRESHOLD = 0.011;
+const BASE_SPEECH_THRESHOLD = 0.011;
+// 自适应 VAD：基于最近 2 秒背景噪声动态调整门槛
+const NOISE_HISTORY_SIZE = 100; // ~2s at 50Hz chunk rate
+const NOISE_FLOOR_MULTIPLIER = 2.5; // threshold = max(BASE, noiseFloor * multiplier)
 // 中文口语在补充数量、思考或说话顿音时常有自然停顿；
 // 1.2 秒给足短暂停顿，同时避免用户说完后还要等两秒才提交。
 // 这一处是实时链路唯一的 turn commit 判定，Paraformer 不再另行 endpoint 提交。
@@ -163,11 +166,15 @@ export async function startRealtimeVoice(
   let armed = false;
   let speechMs = 0;
   let silenceMs = 0;
+  let isFirstTurn = true;
   const voiceStartedAt = performance.now();
   let committedAt: number | null = null;
   let heartbeat: number | null = null;
   let commitWatchdog: number | null = null;
   const preRoll: ArrayBuffer[] = [];
+  // 自适应 VAD 背景噪声跟踪
+  const noiseHistory: number[] = [];
+  let adaptiveThreshold = BASE_SPEECH_THRESHOLD;
 
   const sendControl = (value: object): void => {
     if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value));
@@ -219,8 +226,22 @@ export async function startRealtimeVoice(
               const samples = new Float32Array(data);
               const chunkMs = (samples.length / context.sampleRate) * 1000;
               socket.send(data);
+              const level = rms(samples);
+              // 更新背景噪声历史（只在非说话时采集）
+              if (!speechActive) {
+                noiseHistory.push(level);
+                if (noiseHistory.length > NOISE_HISTORY_SIZE) noiseHistory.shift();
+                // 自适应门槛 = max(基础门槛, 噪声均值 * 倍数)
+                if (noiseHistory.length >= 10) {
+                  const avgNoise = noiseHistory.reduce((s, v) => s + v, 0) / noiseHistory.length;
+                  adaptiveThreshold = Math.max(
+                    BASE_SPEECH_THRESHOLD,
+                    avgNoise * NOISE_FLOOR_MULTIPLIER,
+                  );
+                }
+              }
               // 播音期间提高门槛，避免扬声器回声把模型自己的声音误判成用户打断。
-              const voiced = rms(samples) >= (responsePlaying ? 0.032 : SPEECH_THRESHOLD);
+              const voiced = level >= (responsePlaying ? 0.032 : adaptiveThreshold);
 
               if (!speechActive) {
                 if (turnPending && !responsePlaying) return;
@@ -238,7 +259,9 @@ export async function startRealtimeVoice(
 
               speechMs += chunkMs;
               silenceMs = voiced ? 0 : silenceMs + chunkMs;
-              if (silenceMs >= END_SILENCE_MS && speechMs >= MIN_SPEECH_MS) {
+              // 首次发言用宽松的 1.8s 静音判定；后续对话用 1.2s
+              const currentEndSilence = isFirstTurn ? 1800 : END_SILENCE_MS;
+              if (silenceMs >= currentEndSilence && speechMs >= MIN_SPEECH_MS) {
                 if (armed && !responsePlaying) {
                   committedAt = performance.now();
                   sendControl({ type: 'commit' });
@@ -256,6 +279,7 @@ export async function startRealtimeVoice(
                 speechActive = false;
                 speechMs = 0;
                 silenceMs = 0;
+                isFirstTurn = false;
                 preRoll.length = 0;
                 callbacks.onListening?.();
               }

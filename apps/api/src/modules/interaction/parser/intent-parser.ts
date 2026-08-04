@@ -2,7 +2,12 @@
  * 规则版 Intent Parser（docs/02 §10.2）。
  * 确定性、可测试、可回归；LLM Provider 未来可作为增强插入同一接口。
  * 输出结构化候选命令；不直接调用任何 Repository（docs/02 §10.2 规则）。
+ *
+ * v2: 扩充量词表（碗/勺/杯等容器量词）、增加量词距离容忍度（3→5）、
+ *     grammar fallback 拼音模糊匹配。
  */
+
+import { phoneticFoodMatch } from '../dialogue/phonetic-matcher';
 
 export interface FoodCatalogEntry {
   id: string;
@@ -26,6 +31,11 @@ export type ParsedIntent =
   | 'REMOVE_SHOPPING_ITEM'
   | 'MARK_SHOPPING_PURCHASED'
   | 'QUERY_SHOPPING_LIST'
+  | 'KITCHEN_NEXT_STEP'
+  | 'KITCHEN_PREV_STEP'
+  | 'KITCHEN_REPEAT_STEP'
+  | 'KITCHEN_TIMER_QUERY'
+  | 'KITCHEN_INGREDIENT_QUERY'
   | 'UNKNOWN';
 
 export interface ParsedItem {
@@ -50,6 +60,31 @@ export interface ParseResult {
 }
 
 const INTENT_RULES: { intent: ParsedIntent; patterns: RegExp[]; weight: number }[] = [
+  {
+    intent: 'KITCHEN_NEXT_STEP',
+    patterns: [/^(?:下一步|下一个|继续(?:讲|读|说)?|然后呢|好了|做好了|完成|往前|下一项)$/i, /(?:说|读|讲)?下一步/i],
+    weight: 0.98,
+  },
+  {
+    intent: 'KITCHEN_PREV_STEP',
+    patterns: [/^(?:上一步|上一个|退回|回到上一步|刚才说的?|后退|上一项)$/i, /(?:说|读|讲)?上一步/i],
+    weight: 0.98,
+  },
+  {
+    intent: 'KITCHEN_REPEAT_STEP',
+    patterns: [/^(?:重读|再说一遍|没听清|重复(?:一遍)?|再读一遍)$/i, /(?:重复|重读)当前步骤/i],
+    weight: 0.98,
+  },
+  {
+    intent: 'KITCHEN_TIMER_QUERY',
+    patterns: [/还有多久|倒计时|好了没有|还剩多少时间|还要炖多久|还要炒多久/i],
+    weight: 0.95,
+  },
+  {
+    intent: 'KITCHEN_INGREDIENT_QUERY',
+    patterns: [/需要什么食材|用什么配料|配方|准备什么食材|要哪些配料/i],
+    weight: 0.95,
+  },
   {
     intent: 'DISCARD_INVENTORY',
     patterns: [/扔了|扔掉|丢了|丢掉|倒掉|倒了|坏了|变质|过期了.*扔|threw away|discard/i],
@@ -77,7 +112,6 @@ const INTENT_RULES: { intent: ParsedIntent; patterns: RegExp[]; weight: number }
 ];
 
 /** 单位词 -> 单位码（与 units 表一致） */
-/** 单位词 -> 单位码（与 units 表一致） */
 const UNIT_WORDS: Record<string, string> = {
   个: 'piece',
   只: 'piece',
@@ -97,6 +131,14 @@ const UNIT_WORDS: Record<string, string> = {
   份: 'pack',
   把: 'bunch',
   串: 'bunch',
+  碗: 'bowl',
+  勺: 'spoon',
+  杯: 'cup',
+  碟: 'piece',
+  筐: 'box',
+  篮: 'box',
+  听: 'can',
+  桶: 'bucket',
   克: 'g',
   g: 'g',
   千克: 'kg',
@@ -111,7 +153,7 @@ const UNIT_WORDS: Record<string, string> = {
 };
 
 const QUANTITY_PATTERN =
-  /(\d+(?:\.\d+)?)\s*(千克|公斤|毫升|克|盒|瓶|罐|包|袋|把|个|只|颗|枚|根|片|块|段|支|条|份|串|斤|两|升|kg|ml|g|l)/gi;
+  /(\d+(?:\.\d+)?)\s*(千克|公斤|毫升|克|盒|瓶|罐|包|袋|把|个|只|颗|枚|根|片|块|段|支|条|份|串|斤|两|升|碗|勺|杯|碟|筐|篮|听|桶|kg|ml|g|l)/gi;
 
 export const BATCH_COMMIT_PATTERN =
   /(?:以上全部|前面说的|就这些|全部入库|就这么多|记录完毕|好了|完事|没了|够了|全部添加)/i;
@@ -122,9 +164,23 @@ export function isReasonableUnitForFood(entry: FoodCatalogEntry, unit: string): 
   const suggested = suggestedUnitsForFood(entry);
   if (suggested.includes(unit)) return true;
   if (
-    ['box', 'bag', 'pack', 'bottle', 'can', 'piece', 'jin', 'liang', 'bunch', 'g', 'kg'].includes(
-      unit,
-    )
+    [
+      'box',
+      'bag',
+      'pack',
+      'bottle',
+      'can',
+      'piece',
+      'jin',
+      'liang',
+      'bunch',
+      'g',
+      'kg',
+      'bowl',
+      'spoon',
+      'cup',
+      'bucket',
+    ].includes(unit)
   ) {
     return true;
   }
@@ -396,9 +452,9 @@ function assignQuantities(
     const foodEnd = match.index + match.matchedText.length;
     const defaultUnit = match.entry.defaultUnitCode;
 
-    // 1. 前置紧邻（间隔 <= 3，容忍 "的"、空格）
+    // 1. 前置紧邻（间隔 <= 5，容忍 "的"、"那个"、空格等口语填充词）
     const before = quantityMatches
-      .filter((q) => !q.used && q.end <= foodStart && foodStart - q.end <= 3)
+      .filter((q) => !q.used && q.end <= foodStart && foodStart - q.end <= 5)
       .sort((a, b) => b.end - a.end)[0];
     if (before) {
       before.used = true;
@@ -464,11 +520,11 @@ export function extractSlots(normalized: string, catalog: FoodCatalogEntry[]): E
   const foodMatches = matchFoods(normalized, catalog);
   const quantityMatches = collectQuantityMatches(normalized);
   const items = assignQuantities(normalized, foodMatches, quantityMatches);
-  
+
   const standaloneQuantities = quantityMatches
     .filter((q) => !q.used)
     .map((q) => ({ quantity: q.quantity, unit: q.unit ?? '' }));
-    
+
   return { items, standaloneQuantities };
 }
 
@@ -489,7 +545,10 @@ export function parseTranscript(normalized: string, catalog: FoodCatalogEntry[])
       if (m && m[1]) {
         const rawName = m[1]
           .replace(/^(?:然后|接着|再|帮我|入库|添加|放进|买|买了|是|改成|换成|变成)+/, '')
-          .replace(/(?:帮我|帮忙|记录|添加|入库|放进|买|买下|买来|然后|接着|再|用掉|吃掉|的|了|把).*$/, '')
+          .replace(
+            /(?:帮我|帮忙|记录|添加|入库|放进|买|买下|买来|然后|接着|再|用掉|吃掉|的|了|把).*$/,
+            '',
+          )
           .trim();
         if (
           rawName &&
@@ -497,12 +556,24 @@ export function parseTranscript(normalized: string, catalog: FoodCatalogEntry[])
           !/^(?:的|了|一下|看看|吧|啊|呢|吗|对|不对|取消|算了)$/.test(rawName) &&
           // 修正话术残片（"不是2盒是3盒" 里的 "是3盒"→剥掉"是"后是纯数量），不是食材名
           !/^\d/.test(rawName) &&
-          // 量词性名词（"两个人"的"人"、"三位"的"位"）不是食材
-          !/^(?:人|人份|位|口|天|次|小时|分钟)/.test(rawName)
+          // 量词性名词（"两个人"的"人"、"三位"的"位"）和泛指代词（"东西"、"物品"）不是食材
+          !/^(?:人|人份|位|口|天|次|小时|分钟|东西|物品|其它|其他)/.test(rawName)
         ) {
-          const catalogHit = catalog.find(
+          // 先精确匹配，再拼音模糊匹配
+          let catalogHit = catalog.find(
             (c) => c.canonicalName.includes(rawName) || rawName.includes(c.canonicalName),
           );
+          // 拼音模糊匹配 fallback：当精确匹配失败时，用拼音相似度查找最佳候选
+          if (!catalogHit && rawName.length >= 2) {
+            const catalogNames = catalog.flatMap((c) => [
+              { name: c.canonicalName, id: c.id, canonicalName: c.canonicalName },
+              ...c.aliases.map((a) => ({ name: a, id: c.id, canonicalName: c.canonicalName })),
+            ]);
+            const phoneticHit = phoneticFoodMatch(rawName, catalogNames, 0.8);
+            if (phoneticHit) {
+              catalogHit = catalog.find((c) => c.id === phoneticHit.id);
+            }
+          }
           items.push({
             food_id: catalogHit ? catalogHit.id : `custom_${rawName}`,
             food_name: catalogHit ? catalogHit.canonicalName : rawName,
@@ -537,7 +608,8 @@ export function parseTranscript(normalized: string, catalog: FoodCatalogEntry[])
   }
   items = deduplicated;
 
-  const foodConfidence = items.length > 0 ? 0.95 : 0;
+  const catalogMatched = items.some((item) => !item.food_id.startsWith('custom_'));
+  const foodConfidence = catalogMatched ? 0.95 : items.length > 0 ? 0.4 : 0;
   const quantityConfidence =
     items.length === 0 ? 0 : items.every((item) => item.quantity_explicit) ? 0.9 : 0.5;
   const overall =

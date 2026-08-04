@@ -404,3 +404,74 @@ describe('household custom food catalog', () => {
     ).toBe('household-sprite');
   });
 });
+
+describe('v2 voice upgrade enhancements', () => {
+  const egg: FoodCatalogEntry = {
+    id: 'f-egg',
+    canonicalName: '鸡蛋',
+    category: 'EGG',
+    defaultUnitCode: 'piece',
+    preferredUnitCodes: ['piece', 'box'],
+    aliases: [],
+  };
+  const chickenBreast: FoodCatalogEntry = {
+    id: 'f-chicken',
+    canonicalName: '鸡胸肉',
+    category: 'MEAT',
+    defaultUnitCode: 'g',
+    preferredUnitCodes: ['g', 'kg'],
+    aliases: ['鸡胸'],
+  };
+  const apple: FoodCatalogEntry = {
+    id: 'f-apple',
+    canonicalName: '苹果',
+    category: 'FRUIT',
+    defaultUnitCode: 'piece',
+    preferredUnitCodes: ['piece', 'jin'],
+    aliases: [],
+  };
+
+  it('normalizes dialect measure words (一打鸡蛋 -> 12个鸡蛋)', () => {
+    const result = parseTranscript(normalizeTranscript('买了一打鸡蛋'), [egg]);
+    expect(result.items[0]).toMatchObject({
+      food_id: 'f-egg',
+      quantity: '12',
+      unit: 'piece',
+    });
+  });
+
+  it('pre-fixes ASR typos (机胸肉 -> 鸡胸肉)', () => {
+    const result = parseTranscript(normalizeTranscript('用掉两百克机胸肉'), [chickenBreast]);
+    expect(result.items[0]).toMatchObject({
+      food_id: 'f-chicken',
+      quantity: '200',
+      unit: 'g',
+    });
+  });
+
+  it('normalizes range expressions (两三个苹果 -> 2个苹果)', () => {
+    const result = parseTranscript(normalizeTranscript('吃了两三个苹果'), [apple]);
+    expect(result.items[0]).toMatchObject({
+      food_id: 'f-apple',
+      quantity: '2',
+      unit: 'piece',
+    });
+  });
+
+  it('supports new container units (碗/勺/杯)', () => {
+    const milk: FoodCatalogEntry = {
+      id: 'f-milk',
+      canonicalName: '牛奶',
+      category: 'DAIRY',
+      defaultUnitCode: 'box',
+      preferredUnitCodes: ['box', 'bottle', 'cup'],
+      aliases: [],
+    };
+    const result = parseTranscript(normalizeTranscript('喝了两杯牛奶'), [milk]);
+    expect(result.items[0]).toMatchObject({
+      food_id: 'f-milk',
+      quantity: '2',
+      unit: 'cup',
+    });
+  });
+});
