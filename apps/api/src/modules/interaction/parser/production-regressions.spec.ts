@@ -145,6 +145,14 @@ describe('P0-6 追问“几个人吃”后裸数字回答必须被接受（07/23
     expect(parseMealContext(combined).dinerCount).toBe(2);
   });
 
+  it('当唯一人数线索来自归一化的“2个人”时也必须解析（07/22 段2 真·死循环根因）', () => {
+    // 原始请求不含任何人数词，仅靠回答“两个”补出“2个人”——旧正则被中间的“个”挡住
+    const combined = `今天晚上想吃点什么你帮我推荐一下，${normalizeBareDinerReply('两个')}`;
+    expect(normalizeBareDinerReply('两个')).toBe('2个人');
+    expect(parseMealContext(combined).dinerCount).toBe(2);
+    expect(parseMealContext('推荐一下，3个人吃').dinerCount).toBe(3);
+  });
+
   it('带食材数量的正常语句不被误改', () => {
     expect(normalizeBareDinerReply('用了2个鸡蛋')).toBe('用了2个鸡蛋');
     expect(normalizeBareDinerReply('加两盒牛奶')).toBe('加两盒牛奶');

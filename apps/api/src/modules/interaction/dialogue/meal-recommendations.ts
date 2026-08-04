@@ -73,7 +73,9 @@ export function parseMealContext(text: string): MealContext {
       : /今天|今早|今早上|今晚/.test(compact)
         ? 'TODAY'
         : 'UNSPECIFIED';
-  const numeric = /(\d{1,2})\s*(?:人份?|位|口)/.exec(compact)?.[1];
+  // 允许"个"出现在数字与"人"之间：normalizeBareDinerReply 会把"两个"补成"2个人"，
+  // 若正则不接受"2个人"，dinerCount 会为 null 导致反复追问人数（07/22 段2 死循环实证）。
+  const numeric = /(\d{1,2})\s*个?\s*(?:人份?|位|口)/.exec(compact)?.[1];
   const chinese = /([一二两三四五六七八九十])(?:个)?(?:人|位|口)/.exec(compact)?.[1];
   const dinerCount = numeric
     ? Number(numeric)
