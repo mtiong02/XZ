@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildAfternoonTeaRecommendation,
   buildMealContextRecommendation,
+  normalizeBareDinerReply,
   parseMealContext,
 } from './meal-recommendations';
 
@@ -76,5 +77,40 @@ describe('buildAfternoonTeaRecommendation', () => {
       dinerCount: 1,
       diningMode: 'SOLO',
     });
+    expect(parseMealContext('嗯我想一个人吃的就可以了')).toMatchObject({
+      dinerCount: 1,
+      diningMode: 'SOLO',
+    });
+    expect(parseMealContext('呃我一个人吃然后我对口味没有什么要求也没有忌口')).toMatchObject({
+      dinerCount: 1,
+      diningMode: 'SOLO',
+    });
+    expect(parseMealContext('1个人')).toMatchObject({
+      dinerCount: 1,
+      diningMode: 'SOLO',
+    });
+    expect(parseMealContext('就我一个人吃就可以了就我一个人吃')).toMatchObject({
+      dinerCount: 1,
+      diningMode: 'SOLO',
+    });
+  });
+
+  it('normalizes various solo and bare diner spoken replies', () => {
+    expect(normalizeBareDinerReply('就我一个人吃就可以了就我一个人吃')).toBe('1个人');
+    expect(normalizeBareDinerReply('就我一个')).toBe('1个人');
+    expect(normalizeBareDinerReply('单人')).toBe('1个人');
+    expect(normalizeBareDinerReply('一个人')).toBe('1个人');
+  });
+
+  it('provides safe stock-based fallback for simple pantry ingredients like eggs and potatoes', () => {
+    const answer = buildMealContextRecommendation(
+      parseMealContext('就我一个人吃'),
+      [{ name: '鸡蛋' }, { name: '土豆' }, { name: '鸭蛋' }],
+      [],
+      1,
+    );
+    expect(answer).toContain('土豆炒蛋');
+    expect(answer).toContain('不会自动扣减');
   });
 });
+

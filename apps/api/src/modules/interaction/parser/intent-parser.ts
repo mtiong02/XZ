@@ -31,6 +31,7 @@ export type ParsedIntent =
   | 'REMOVE_SHOPPING_ITEM'
   | 'MARK_SHOPPING_PURCHASED'
   | 'QUERY_SHOPPING_LIST'
+  | 'KITCHEN_START_TUTORIAL'
   | 'KITCHEN_NEXT_STEP'
   | 'KITCHEN_PREV_STEP'
   | 'KITCHEN_REPEAT_STEP'
@@ -61,24 +62,25 @@ export interface ParseResult {
 
 const INTENT_RULES: { intent: ParsedIntent; patterns: RegExp[]; weight: number }[] = [
   {
-    intent: 'KITCHEN_NEXT_STEP',
+    intent: 'KITCHEN_START_TUTORIAL',
     patterns: [
-      /^(?:下一步|下一个|继续(?:讲|读|说)?|然后呢|好了|做好了|完成|往前|下一项)$/i,
-      /(?:说|读|讲)?下一步/i,
+      /(?:教我做|怎么做|教教我做|开始做|带我做|制作教程|烹饪教程|做菜步骤|第[一1]步怎么做|怎么炒|怎么煮|怎么蒸|做法|具体怎么做)/i,
     ],
+    weight: 0.99,
+  },
+  {
+    intent: 'KITCHEN_NEXT_STEP',
+    patterns: [/^(?:下[一1]步|下[一1]个|继续(?:讲|读|说)?|然后呢|好了|做好了|完成|往前|下[一1]项)$/i, /(?:说|读|讲)?下[一1]步/i],
     weight: 0.98,
   },
   {
     intent: 'KITCHEN_PREV_STEP',
-    patterns: [
-      /^(?:上一步|上一个|退回|回到上一步|刚才说的?|后退|上一项)$/i,
-      /(?:说|读|讲)?上一步/i,
-    ],
+    patterns: [/^(?:上[一1]步|上[一1]个|退回|回到上[一1]步|刚才说的?|后退|上[一1]项)$/i, /(?:说|读|讲)?上[一1]步/i],
     weight: 0.98,
   },
   {
     intent: 'KITCHEN_REPEAT_STEP',
-    patterns: [/^(?:重读|再说一遍|没听清|重复(?:一遍)?|再读一遍)$/i, /(?:重复|重读)当前步骤/i],
+    patterns: [/^(?:重读|再说[一1]遍|没听清|重复(?:[一1]遍)?|再读[一1]遍)$/i, /(?:重复|重读)当前步骤/i],
     weight: 0.98,
   },
   {
@@ -330,6 +332,13 @@ export function detectIntent(normalized: string): { intent: ParsedIntent; confid
   }
   if (MOVE_INVENTORY_REQUEST.test(normalized) && requestedStorageZoneCode(normalized)) {
     return { intent: 'MOVE_INVENTORY', confidence: 0.96 };
+  }
+  if (
+    /(?:教我做|怎么做|教教我做|开始做|带我做|制作教程|烹饪教程|做菜步骤|第[一1]步怎么做|怎么炒|怎么煮|怎么蒸|具体怎么做)/.test(
+      normalized,
+    )
+  ) {
+    return { intent: 'KITCHEN_START_TUTORIAL', confidence: 0.99 };
   }
   if (SNACK_RECOMMENDATION_REQUEST.test(normalized)) {
     return { intent: 'QUERY_INVENTORY', confidence: 0.92 };

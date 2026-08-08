@@ -56,6 +56,7 @@ export const CreateTextVoiceJobSchema = z.object({
   client_request_id: z.string().max(100).optional(),
   session_id: z.string().uuid().optional(),
   turn_id: z.string().uuid().optional(),
+  skip_clarification: z.boolean().optional(),
 });
 
 export const ConfirmVoiceJobSchema = z.object({
@@ -92,6 +93,11 @@ type CandidatePayload = {
   target_storage_zone_id?: string;
   reason?: string;
   request_text?: string;
+  recipe_id?: string;
+  recipe_name?: string;
+  current_step?: number;
+  total_steps?: number;
+  instructions?: string[];
 };
 
 /**
@@ -248,7 +254,12 @@ export class VoiceService {
     });
     // 结束语必须在任何业务路由之前拦截。会话中没有待确认任务时，用户仍可能说
     // “没有了，退下吧”；此时不能创建一个 UNKNOWN 任务后再报“没听懂”。
-    const outcome = isExit
+    const outcome: {
+      status: string;
+      candidate: { command_type: string; payload?: CandidatePayload } | null;
+      errorCode: string | null;
+      spokenPrompt: string | null;
+    } = isExit
       ? {
           status: 'CANCELLED',
           candidate: null,
@@ -301,9 +312,26 @@ export class VoiceService {
     }
     await this.applyRequestedStorageZone(input.household_id, normalized, outcome.candidate);
     if (parsed.intent === 'QUERY_INVENTORY' && !superseded) {
-      const mealClarification = isMealDecisionRequest(normalized)
-        ? await this.meals.getMealContextClarification(input.household_id, userId, normalized)
-        : null;
+      let effectiveNormalized = normalized;
+      if (input.session_id && isMealDecisionRequest(normalized)) {
+        const sessionHistory = await this.pool.query<{
+          transcript_raw: string | null;
+          transcript_normalized: string | null;
+        }>(
+          `select transcript_raw, transcript_normalized from voice_jobs where household_id=$1 and session_id=$2 and id != $3 order by created_at desc limit 5`,
+          [input.household_id, input.session_id, taskId ?? '00000000-0000-0000-0000-000000000000'],
+        );
+        const priorContextTexts = sessionHistory.rows
+          .map((r) => r.transcript_normalized || r.transcript_raw || '')
+          .filter(Boolean);
+        if (priorContextTexts.length > 0) {
+          effectiveNormalized = `${priorContextTexts.join('，')}，${normalized}`;
+        }
+      }
+      const mealClarification =
+        isMealDecisionRequest(normalized) && !input.skip_clarification
+          ? await this.meals.getMealContextClarification(input.household_id, userId, effectiveNormalized)
+          : null;
       if (mealClarification) {
         outcome.status = 'AWAITING_CLARIFICATION';
         outcome.candidate = {
@@ -316,10 +344,115 @@ export class VoiceService {
         outcome.spokenPrompt = await this.buildInventoryQueryPrompt(
           input.household_id,
           userId,
-          normalized,
+          effectiveNormalized,
           parsed,
           { taskId, signal: task ? this.coordinator?.getSignal(taskId) : undefined },
         );
+      }
+    }
+
+    if (parsed.intent === 'KITCHEN_START_TUTORIAL' && !superseded) {
+      const recipe = await this.meals.findSuggestedRecipeForVoiceRequest(
+        input.household_id,
+        userId,
+        normalized,
+      );
+      if (recipe && recipe.instructions.length > 0) {
+        outcome.status = 'COMPLETED';
+        outcome.candidate = {
+          command_type: 'KITCHEN_START_TUTORIAL',
+          payload: {
+            recipe_id: recipe.id,
+            recipe_name: recipe.name,
+            current_step: 0,
+            total_steps: recipe.instructions.length,
+            instructions: recipe.instructions,
+          },
+        };
+        outcome.spokenPrompt = `【${recipe.name}】第一步：${recipe.instructions[0]}。准备好后对我说“下一步”。`;
+      }
+    }
+
+    if (parsed.intent === 'KITCHEN_NEXT_STEP' && !superseded) {
+      let activeTutorial: any = null;
+      if (input.session_id) {
+        const sessionHistory = await this.pool.query<{
+          candidate_command_json: any;
+        }>(
+          `select candidate_command_json from voice_jobs where household_id=$1 and session_id=$2 and candidate_command_json->>'command_type' in ('KITCHEN_START_TUTORIAL', 'KITCHEN_NEXT_STEP', 'KITCHEN_PREV_STEP', 'KITCHEN_REPEAT_STEP') order by created_at desc limit 1`,
+          [input.household_id, input.session_id],
+        );
+        activeTutorial = sessionHistory.rows[0]?.candidate_command_json?.payload;
+      }
+      if (activeTutorial?.instructions?.length > 0) {
+        const nextStep = (activeTutorial.current_step ?? 0) + 1;
+        const total = activeTutorial.instructions.length;
+        if (nextStep < total - 1) {
+          outcome.status = 'COMPLETED';
+          outcome.candidate = {
+            command_type: 'KITCHEN_NEXT_STEP',
+            payload: { ...activeTutorial, current_step: nextStep },
+          };
+          outcome.spokenPrompt = `第${nextStep + 1}步：${activeTutorial.instructions[nextStep]}。做好了对我说“下一步”。`;
+        } else if (nextStep === total - 1) {
+          outcome.status = 'COMPLETED';
+          outcome.candidate = {
+            command_type: 'KITCHEN_NEXT_STEP',
+            payload: { ...activeTutorial, current_step: nextStep },
+          };
+          outcome.spokenPrompt = `最后一步：${activeTutorial.instructions[nextStep]}。全部做好了，趁热享用吧～`;
+        } else {
+          outcome.status = 'COMPLETED';
+          outcome.candidate = {
+            command_type: 'KITCHEN_NEXT_STEP',
+            payload: { ...activeTutorial, current_step: total },
+          };
+          outcome.spokenPrompt = '全部烹饪步骤已完成，祝你用餐愉快！还有其他想做的吗？';
+        }
+      }
+    }
+
+    if (parsed.intent === 'KITCHEN_REPEAT_STEP' && !superseded) {
+      let activeTutorial: any = null;
+      if (input.session_id) {
+        const sessionHistory = await this.pool.query<{
+          candidate_command_json: any;
+        }>(
+          `select candidate_command_json from voice_jobs where household_id=$1 and session_id=$2 and candidate_command_json->>'command_type' in ('KITCHEN_START_TUTORIAL', 'KITCHEN_NEXT_STEP', 'KITCHEN_PREV_STEP', 'KITCHEN_REPEAT_STEP') order by created_at desc limit 1`,
+          [input.household_id, input.session_id],
+        );
+        activeTutorial = sessionHistory.rows[0]?.candidate_command_json?.payload;
+      }
+      if (activeTutorial?.instructions?.length > 0) {
+        const curr = Math.min(activeTutorial.current_step ?? 0, activeTutorial.instructions.length - 1);
+        outcome.status = 'COMPLETED';
+        outcome.candidate = {
+          command_type: 'KITCHEN_REPEAT_STEP',
+          payload: { ...activeTutorial, current_step: curr },
+        };
+        outcome.spokenPrompt = `重复第${curr + 1}步：${activeTutorial.instructions[curr]}`;
+      }
+    }
+
+    if (parsed.intent === 'KITCHEN_PREV_STEP' && !superseded) {
+      let activeTutorial: any = null;
+      if (input.session_id) {
+        const sessionHistory = await this.pool.query<{
+          candidate_command_json: any;
+        }>(
+          `select candidate_command_json from voice_jobs where household_id=$1 and session_id=$2 and candidate_command_json->>'command_type' in ('KITCHEN_START_TUTORIAL', 'KITCHEN_NEXT_STEP', 'KITCHEN_PREV_STEP', 'KITCHEN_REPEAT_STEP') order by created_at desc limit 1`,
+          [input.household_id, input.session_id],
+        );
+        activeTutorial = sessionHistory.rows[0]?.candidate_command_json?.payload;
+      }
+      if (activeTutorial?.instructions?.length > 0) {
+        const prevStep = Math.max(0, (activeTutorial.current_step ?? 0) - 1);
+        outcome.status = 'COMPLETED';
+        outcome.candidate = {
+          command_type: 'KITCHEN_PREV_STEP',
+          payload: { ...activeTutorial, current_step: prevStep },
+        };
+        outcome.spokenPrompt = `回到第${prevStep + 1}步：${activeTutorial.instructions[prevStep]}。准备好后对我说“下一步”。`;
       }
     }
 
@@ -504,6 +637,14 @@ export class VoiceService {
         errorCode: null,
         spokenPrompt:
           '我目前还不能代你向外部商家下单，也不会把尚未购买的商品记入库存。购物清单功能接通后，我可以先帮你加入清单。',
+      };
+    }
+    if (parsed.intent === 'KITCHEN_START_TUTORIAL') {
+      return {
+        status: 'COMPLETED',
+        candidate: { command_type: 'KITCHEN_START_TUTORIAL', payload: {} },
+        errorCode: null,
+        spokenPrompt: '好的，开始制作教程。',
       };
     }
     if (parsed.intent === 'KITCHEN_NEXT_STEP') {
@@ -1057,6 +1198,15 @@ export class VoiceService {
     const asksExpiryDate = /什么时候|哪天/.test(normalized) && /到期|过期/.test(normalized);
     const asksExpiry = asksExpiryDate || /快过期|临期|过期/.test(normalized);
     const asksMealIdea = isMealDecisionRequest(normalized);
+    if (asksMealIdea) {
+      return this.meals.buildVoiceMealRecommendation(
+        householdId,
+        userId,
+        normalized,
+        items,
+        options,
+      );
+    }
     // “什么时候到期”是查询具体日期，不能像“哪些快过期”一样先过滤掉正常批次。
     if (asksExpiry && !asksExpiryDate) {
       items = items.filter(
@@ -1077,16 +1227,6 @@ export class VoiceService {
           : `目前库存里没有${categoryRequest.label}。`;
       if (requestedZone) return `${requestedZone.name}目前是空的。`;
       return asksExpiry ? '目前没有临期或已经过期的食材。' : '目前库存还是空的。';
-    }
-
-    if (asksMealIdea) {
-      return this.meals.buildVoiceMealRecommendation(
-        householdId,
-        userId,
-        normalized,
-        items,
-        options,
-      );
     }
 
     const descriptions = items.slice(0, 8).map((item) => {
@@ -1299,6 +1439,7 @@ export class VoiceService {
       transcript_text: requestText,
       locale: 'zh',
       channel: ChannelSchema.parse(job.source_channel),
+      skip_clarification: true,
       ...(job.session_id ? { session_id: job.session_id } : {}),
       ...(turnId ? { turn_id: turnId } : {}),
     } satisfies z.infer<typeof CreateTextVoiceJobSchema>;

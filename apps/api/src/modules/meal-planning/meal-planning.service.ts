@@ -169,21 +169,64 @@ export class MealPlanningService {
     );
   }
 
-  /** 将用户口语菜名映射到已审核菜谱；只用于只读的“缺什么”问答，不会自动写购物清单。 */
+  /** 将用户口语菜名映射到已审核菜谱或家常教程；支持语音分步烹饪模式。 */
   async findSuggestedRecipeForVoiceRequest(
     householdId: string,
     userId: string,
     normalizedText: string,
   ): Promise<MealSuggestion | null> {
-    const canonicalName = /土豆.*(?:牛腩|牛肉)|(?:牛腩|牛肉).*土豆/.test(normalizedText)
-      ? '土豆炖牛腩'
-      : null;
-    if (!canonicalName) return null;
-    return (
-      (await this.suggestions(householdId, userId)).find(
-        (recipe) => recipe.name === canonicalName,
-      ) ?? null
-    );
+    const suggestions = await this.suggestions(householdId, userId);
+    const cleaned = normalizedText
+      .replace(/[\s，。！？、,.!?：:；;]/g, '')
+      .replace(/教我做|怎么做|教教我做|开始做|带我做|制作教程|烹饪教程|做菜步骤|第一步怎么做|怎么炒|怎么煮|怎么蒸|做法|具体怎么做/g, '');
+
+    for (const recipe of suggestions) {
+      if (cleaned.includes(recipe.name) || recipe.name.includes(cleaned)) {
+        return recipe;
+      }
+    }
+    if (/土豆.*(?:蛋|鸡蛋|炒蛋)|(?:蛋|鸡蛋).*土豆/.test(normalizedText)) {
+      return {
+        id: '11111111-2222-3333-4444-555555550099',
+        name: '家常土豆炒蛋',
+        description: '家常快手菜，土豆粉糯，鸡蛋香嫩。',
+        servings: 1,
+        instructions: [
+          '土豆去皮切成薄片或细丝用清水浸泡，鸡蛋打散加少许盐拌匀。准备好后对我说“下一步”。',
+          '热锅倒油，先下鸡蛋液炒至金黄凝固盛出，留底油下土豆丝大火翻炒至变软。炒好后对我说“下一步”。',
+          '倒入炒好的鸡蛋，加少许生抽和盐大火翻炒均匀即可出锅！全部完成了，趁热享用吧～',
+        ],
+        tags: ['家常菜', '快手菜'],
+        ingredients: [],
+        coverage: 1,
+        can_make: true,
+        missing: [],
+        expiring_ingredient_count: 0,
+      };
+    }
+    if (/水煮蛋|蒸蛋|煎蛋/.test(normalizedText)) {
+      return {
+        id: '11111111-2222-3333-4444-555555550098',
+        name: '快手水煮蛋',
+        description: '营养早餐，简单快捷，补充优质蛋白。',
+        servings: 1,
+        instructions: [
+          '鸡蛋洗净，冷水下锅，水要完全没过鸡蛋。准备好后对我说“下一步”。',
+          '大火烧开后转中火煮8分钟（溏心蛋煮6分钟）。煮好后对我说“下一步”。',
+          '捞出放入冷水中浸泡1分钟，剥壳即可享用！全部完成了～',
+        ],
+        tags: ['快手', '高蛋白'],
+        ingredients: [],
+        coverage: 1,
+        can_make: true,
+        missing: [],
+        expiring_ingredient_count: 0,
+      };
+    }
+    if (/土豆.*(?:牛腩|牛肉)|(?:牛腩|牛肉).*土豆/.test(normalizedText)) {
+      return suggestions.find((r) => r.name === '土豆炖牛腩') ?? null;
+    }
+    return suggestions.find((r) => r.can_make) ?? suggestions[0] ?? null;
   }
 
   /**
@@ -273,14 +316,19 @@ export class MealPlanningService {
   async getMealContextClarification(householdId: string, userId: string, text: string) {
     const parsed = parseMealContext(text);
     const hasDiners = parsed.dinerCount !== null || parsed.diningMode !== 'UNSPECIFIED';
-    const hasPreference =
+    const hasNegativePreference =
+      /没(?:有)?(?:特别|什么)?(?:要求|偏好|讲究|忌口)|随便|都行|都可以|正常|常规|无忌口|不用忌口|不挑/.test(
+        text,
+      );
+    const hasPositivePreference =
       /清淡|少油|少盐|低脂|减脂|减肥|辣|不辣|口味|忌口|过敏|不吃|喜欢|偏好/.test(text);
+    const hasPreference = hasNegativePreference || hasPositivePreference;
     if (hasDiners && hasPreference) return null;
 
-    const missing: string[] = [];
-    if (!hasDiners) missing.push('今天几个人吃');
-    if (!hasPreference) missing.push('想清淡、少油，还是有忌口');
-    return `我先结合你家的库存来分析。为了推荐得更合适，请告诉我${missing.join('，以及')}。`;
+    if (!hasDiners) {
+      return '好嘞！看了下冰箱。为了推荐更合适，请告诉我今天几个人吃，以及想清淡、少油，还是有忌口。';
+    }
+    return '好嘞！今天想清淡、少油，还是有忌口？';
   }
 
   /** 手动页面与语音复用同一套按需 Agent；调用只生成建议，不产生库存副作用。 */

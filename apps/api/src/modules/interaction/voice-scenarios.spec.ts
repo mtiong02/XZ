@@ -41,8 +41,8 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
   beforeEach(() => {
     jobsDb = new Map();
     executeCommandMock = vi.fn().mockResolvedValue({ transaction_id: 'txn-1' });
-
-    const queryMock = vi.fn(async (sql: string, params?: unknown[]) => {
+    let jobSeq = 0;
+    const queryMock = vi.fn(async (sql: string, params?: any[]) => {
       // Mock catalog
       if (sql.includes('from food_catalog fc')) {
         return {
@@ -56,9 +56,15 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
         };
       }
 
+      // Voice job by ID
+      if (sql.includes('from voice_jobs where id = $1')) {
+        const job = jobsDb.get(params?.[0] as string);
+        return { rows: job ? [job] : [] };
+      }
+
       // Voice jobs pending read
       if (
-        sql.includes('select id, candidate_command_json') &&
+        sql.includes('from voice_jobs') &&
         sql.includes('where household_id = $1 and session_id = $2')
       ) {
         const householdId = params?.[0];
@@ -72,10 +78,18 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
         return { rows: pending ? [pending] : [] };
       }
 
-      // Voice job by ID
-      if (sql.includes('from voice_jobs where id = $1')) {
-        const job = jobsDb.get(params?.[0] as string);
-        return { rows: job ? [job] : [] };
+      // Voice jobs session history / tutorial read
+      if (
+        sql.includes('from voice_jobs') &&
+        sql.includes('household_id=$1') &&
+        sql.includes('session_id=$2')
+      ) {
+        const householdId = params?.[0];
+        const sessionId = params?.[1];
+        const matching = Array.from(jobsDb.values())
+          .filter((j) => j.household_id === householdId && j.session_id === sessionId)
+          .sort((a, b) => ((b as any).seq ?? 0) - ((a as any).seq ?? 0));
+        return { rows: matching };
       }
 
       // Update
@@ -121,6 +135,7 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
           session_id: params?.[15],
           turn_id: params?.[16],
           turn_count: 1,
+          seq: ++jobSeq,
           created_at: new Date(),
           completed_at: null,
           executed_transaction_id: null,
@@ -519,4 +534,108 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
     expect(res.candidate_command?.payload?.items?.[0]?.quantity).toBe('12');
     expect(res.candidate_command?.payload?.items?.[0]?.unit).toBe('piece');
   });
+
+  it('Scenario 11: 餐食推荐多轮对话（单人+无忌口+单轮追问契约）', async () => {
+    (service as any).meals = {
+      getMealContextClarification: vi
+        .fn()
+        .mockResolvedValue('我先结合你家的库存来分析。为了推荐得更合适，请告诉我今天几个人吃，以及想清淡、少油，还是有忌口。'),
+      buildVoiceMealRecommendation: vi
+        .fn()
+        .mockResolvedValue('这一餐推荐做家常土豆炒蛋。这是建议，不会自动扣减库存。'),
+      findSuggestedRecipeForVoiceRequest: vi.fn().mockResolvedValue(null),
+    };
+
+    // 轮次 1: 提出想吃东西
+    const initialJob = await service.createTextJob(userId, {
+      household_id: householdId,
+      session_id: sessionId,
+      transcript_text: '嗯我现在想吃点东西你看一下我们现在冰箱里面的食物可以做哪些菜呢',
+      channel: 'WEB_VOICE',
+      locale: 'zh-CN',
+      client_request_id: randomUUID(),
+    });
+    expect(initialJob.status).toBe('AWAITING_CLARIFICATION');
+    expect(initialJob.spoken_prompt).toContain('今天几个人吃');
+
+    // 轮次 2: 回复一个人吃，无忌口要求
+    const replyRes = await service.reply(initialJob.voice_job_id, userId, {
+      text: '嗯我想一个人吃的就可以了，口味没有什么要求也没有忌口',
+    });
+    // 应该直接推进到推荐输出，而不会陷入二次追问
+    expect(replyRes.status).toBe('COMPLETED');
+    expect(replyRes.spoken_prompt).toContain('不会自动扣减库存');
+  });
+
+  it('Scenario 12: 烹饪制作教程有机联动与分步语音带做 (Step-by-Step Cooking Guide)', async () => {
+    (service as any).meals = {
+      getMealContextClarification: vi.fn(),
+      buildVoiceMealRecommendation: vi.fn(),
+      findSuggestedRecipeForVoiceRequest: vi.fn().mockResolvedValue({
+        id: 'recipe-potato-egg',
+        name: '家常土豆炒蛋',
+        description: '家常快手菜',
+        servings: 1,
+        instructions: [
+          '土豆去皮切成薄片或细丝用清水浸泡，鸡蛋打散加少许盐拌匀。准备好后对我说“下一步”。',
+          '热锅倒油，先下鸡蛋液炒至金黄凝固盛出，留底油下土豆丝大火翻炒至变软。炒好后对我说“下一步”。',
+          '倒入炒好的鸡蛋，加少许生抽和盐大火翻炒均匀即可出锅！全部完成了，趁热享用吧～',
+        ],
+      }),
+    };
+
+    // 1. 用户说: "教我做土豆炒蛋"
+    const step1 = await service.createTextJob(userId, {
+      household_id: householdId,
+      session_id: sessionId,
+      transcript_text: '教我做土豆炒蛋',
+      channel: 'WEB_VOICE',
+      locale: 'zh-CN',
+      client_request_id: randomUUID(),
+    });
+    expect(step1.status).toBe('COMPLETED');
+    expect(step1.candidate_command?.command_type).toBe('KITCHEN_START_TUTORIAL');
+    expect(step1.spoken_prompt).toContain('【家常土豆炒蛋】第一步');
+    expect(step1.spoken_prompt).toContain('对我说“下一步”');
+
+    // 2. 用户说: "下一步"
+    const step2 = await service.createTextJob(userId, {
+      household_id: householdId,
+      session_id: sessionId,
+      transcript_text: '下一步',
+      channel: 'WEB_VOICE',
+      locale: 'zh-CN',
+      client_request_id: randomUUID(),
+    });
+    expect(step2.status).toBe('COMPLETED');
+    expect(step2.candidate_command?.command_type).toBe('KITCHEN_NEXT_STEP');
+    expect(step2.spoken_prompt).toContain('第2步');
+
+    // 3. 用户说: "再说一遍"
+    const repeatStep = await service.createTextJob(userId, {
+      household_id: householdId,
+      session_id: sessionId,
+      transcript_text: '再说一遍',
+      channel: 'WEB_VOICE',
+      locale: 'zh-CN',
+      client_request_id: randomUUID(),
+    });
+    expect(repeatStep.status).toBe('COMPLETED');
+    expect(repeatStep.candidate_command?.command_type).toBe('KITCHEN_REPEAT_STEP');
+    expect(repeatStep.spoken_prompt).toContain('重复第2步');
+
+    // 4. 用户说: "上一步"
+    const prevStep = await service.createTextJob(userId, {
+      household_id: householdId,
+      session_id: sessionId,
+      transcript_text: '上一步',
+      channel: 'WEB_VOICE',
+      locale: 'zh-CN',
+      client_request_id: randomUUID(),
+    });
+    expect(prevStep.status).toBe('COMPLETED');
+    expect(prevStep.candidate_command?.command_type).toBe('KITCHEN_PREV_STEP');
+    expect(prevStep.spoken_prompt).toContain('回到第1步');
+  });
 });
+

@@ -132,17 +132,44 @@ describe('P0-5 “全部/都吃完了” 语义', () => {
   });
 });
 
-describe('P0-6 追问“几个人吃”后裸数字回答必须被接受（07/23 死循环会话）', () => {
-  it('“两个”补全为可识别的人数', () => {
+describe('P0-6 追问“几个人吃”后裸数字与单人口语回答必须被接受（防止死循环会话）', () => {
+  it('“两个”/“一个人”/“单人”补全为可识别的人数', () => {
     expect(normalizeBareDinerReply('两个')).toBe('2个人');
     expect(normalizeBareDinerReply('俩')).toBe('2个人');
     expect(normalizeBareDinerReply('就2个')).toBe('2个人');
     expect(normalizeBareDinerReply('三个人吃')).toBe('3个人');
+    expect(normalizeBareDinerReply('一个人')).toBe('1个人');
+    expect(normalizeBareDinerReply('就我一个人吃就可以了就我一个人吃')).toBe('1个人');
+    expect(normalizeBareDinerReply('单人')).toBe('1个人');
   });
 
-  it('补全后 parseMealContext 能取到人数（原句合并场景）', () => {
-    const combined = `想吃两人份下午茶要清淡少油，${normalizeBareDinerReply('两个')}`;
-    expect(parseMealContext(combined).dinerCount).toBe(2);
+  it('补全后 parseMealContext 能取到人数与单人模式（原句合并与真实会话实证）', () => {
+    expect(
+      parseMealContext(
+        normalizeTranscript('嗯我现在想吃点东西你看一下我们现在冰箱里面的食物可以做哪些菜呢，嗯我想一个人吃的就可以了'),
+      ),
+    ).toMatchObject({
+      dinerCount: 1,
+      diningMode: 'SOLO',
+    });
+    expect(
+      parseMealContext(
+        normalizeTranscript('呃我一个人吃然后我对口味没有什么要求也没有忌口'),
+      ),
+    ).toMatchObject({
+      dinerCount: 1,
+      diningMode: 'SOLO',
+    });
+    expect(parseMealContext(normalizeTranscript('1个人'))).toMatchObject({
+      dinerCount: 1,
+      diningMode: 'SOLO',
+    });
+    expect(
+      parseMealContext(normalizeTranscript('就我一个人吃就可以了就我一个人吃')),
+    ).toMatchObject({
+      dinerCount: 1,
+      diningMode: 'SOLO',
+    });
   });
 
   it('当唯一人数线索来自归一化的“2个人”时也必须解析（07/22 段2 真·死循环根因）', () => {

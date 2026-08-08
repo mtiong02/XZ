@@ -41,8 +41,15 @@ const DINER_CN_NUMBERS: Record<string, number> = {
  */
 export function normalizeBareDinerReply(reply: string): string {
   const compact = reply.replace(/[\s，。！？、,.!?：:；;]/g, '');
+  if (
+    /^(?:就我|我自己|就我一个|就我一人|单人|自己吃|独自|一个人|1个人|就我1个|就我1人|就1个人|就一个人|自己一个人|就一个人吃|就我一个人吃|就我一个人吃就可以了|就我一个人吃就可以了就我一个人吃)$/.test(
+      compact,
+    )
+  ) {
+    return '1个人';
+  }
   const match =
-    /^(?:就|大概|约|差不多)?([一二两三四五六七八九十\d]{1,2}|俩)(?:个|位|口)?(?:人)?(?:吃|用餐|一起吃)?$/.exec(
+    /^(?:就|大概|约|差不多|只要|一共|就我|只要)?([一二两三四五六七八九十\d]{1,2}|俩)(?:个|位|口)?(?:人)?(?:吃|用餐|一起吃|做饭|份)?(?:就可以了)?$/.exec(
       compact,
     );
   if (!match?.[1]) return reply;
@@ -73,19 +80,21 @@ export function parseMealContext(text: string): MealContext {
       : /今天|今早|今早上|今晚/.test(compact)
         ? 'TODAY'
         : 'UNSPECIFIED';
-  // 允许"个"出现在数字与"人"之间：normalizeBareDinerReply 会把"两个"补成"2个人"，
-  // 若正则不接受"2个人"，dinerCount 会为 null 导致反复追问人数（07/22 段2 死循环实证）。
-  const numeric = /(\d{1,2})\s*个?\s*(?:人份?|位|口)/.exec(compact)?.[1];
-  const chinese = /([一二两三四五六七八九十])(?:个)?(?:人|位|口)/.exec(compact)?.[1];
+  const numeric = /(\d{1,2})\s*(?:个)?(?:人份?|位|口|人)/.exec(compact)?.[1];
+  const chinese = /([一二两三四五六七八九十])\s*(?:个)?(?:人份?|位|口|人)/.exec(compact)?.[1];
+  const isSolo =
+    /1个人|一个人|自己吃|独自|就我|单人|就我一个|就我一人|我自己|就我1个|就我1人|就1个人|就一个人|自己一个人/.test(
+      compact,
+    );
   const dinerCount = numeric
     ? Number(numeric)
     : chinese
       ? (DINER_CN_NUMBERS[chinese] ?? null)
-      : /一个人|自己吃|独自/.test(compact)
+      : isSolo
         ? 1
         : null;
   const diningMode: DiningMode =
-    dinerCount === 1
+    dinerCount === 1 || isSolo
       ? 'SOLO'
       : /聚会|朋友来|客人|宴请|一起吃|一起用餐|跟.*吃/.test(compact)
         ? 'GATHERING'
@@ -161,6 +170,14 @@ export function buildMealContextRecommendation(
   const quickNote = context.wantsQuick ? '我优先选了准备步骤较少的候选。' : '';
 
   if (!best) {
+    if (available.has('鸡蛋') && available.has('土豆')) {
+      const extra = available.has('鸭蛋') ? '或水煮蛋配土豆泥' : '';
+      return `今天${peopleLabel || '1人'}用餐，用冰箱里的鸡蛋和土豆，推荐做家常土豆炒蛋${extra}。${quickNote}${goalNote}这是根据当前库存的建议，不会自动扣减食材。想做的话直接对我说“教我做土豆炒蛋”，我一步步带你做～`;
+    }
+    if (available.has('鸡蛋') || available.has('鸭蛋')) {
+      const eggName = available.has('鸡蛋') ? '鸡蛋' : '鸭蛋';
+      return `${occasionLabel[context.occasion]}当前有${eggName}，可以做一份水煮蛋或蒸蛋羹；如果想吃更丰富的菜肴，可以补充蔬菜和肉类到待购清单。这是建议，不会自动扣减库存。想做的话跟我说“教我做水煮蛋”，我带你做～`;
+    }
     return `${occasionLabel[context.occasion]}目前没有足够的库存菜谱候选。可以补充蔬菜和一种主食后，我再按${peopleLabel || '用餐人数'}给你搭配。`;
   }
   if (context.diningMode === 'GATHERING' || (requestedPeople ?? 0) >= 4) {
@@ -170,18 +187,18 @@ export function buildMealContextRecommendation(
       const servingNote = requestedPeople
         ? `按${requestedPeople}人准备时，请按各菜谱基准人份同比例放大，并在下锅前复核库存。`
         : '请按实际到场人数同比例放大，并在下锅前复核库存。';
-      return `${occasionLabel[context.occasion]}可以安排一桌${menu.length}道菜：${dishList}。${servingNote}${goalNote}这是根据当前库存的菜单建议，不会自动扣减食材。`;
+      return `${occasionLabel[context.occasion]}可以安排一桌${menu.length}道菜：${dishList}！${servingNote}${goalNote}这是根据当前库存的菜单建议，不会自动扣减食材。想做哪道直接对我说“教我做${menu[0]?.name}”，我一步步带你做～`;
     }
   }
   if (!best.can_make) {
     const missing = best.missing
       .map((item) => `${item.food_name}${item.quantity ?? ''}${item.unit_code ?? ''}`)
       .join('、');
-    return `${occasionLabel[context.occasion]}可以考虑${best.name}，但当前还缺${missing || '部分食材'}。${quickNote}${goalNote}如果你明确说“加入购物清单”，我再帮你创建待购项。`;
+    return `${occasionLabel[context.occasion]}可以考虑${best.name}，但当前还缺${missing || '部分食材'}。${quickNote}${goalNote}如果想加入待购清单，对我说“把${missing || '缺少的食材'}加入清单”即可。`;
   }
   const servingNote =
     requestedPeople && requestedPeople !== best.servings
       ? `菜谱基准是${best.servings}人份；${peopleLabel}用餐建议按约${(requestedPeople / best.servings).toFixed(1)}倍备料，并在下锅前再核对库存。`
       : `${peopleLabel || `${best.servings}人`}份可做。`;
-  return `${occasionLabel[context.occasion]}推荐${best.name}。${servingNote}${quickNote}${goalNote}这是建议，不会自动扣减库存。`;
+  return `${occasionLabel[context.occasion]}推荐【${best.name}】。${servingNote}${quickNote}${goalNote}这是建议，不会自动扣减库存。想做的话跟我说“教我做${best.name}”，我一步步带你做～`;
 }
