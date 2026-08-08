@@ -104,10 +104,10 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
           } else if (sql.includes("status = 'COMPLETED'")) {
             job.status = 'COMPLETED';
             job.spoken_prompt = params?.[2];
-          } else if (sql.includes("status = 'CANCELLED'")) {
+          } else if (sql.includes("status = 'CANCELLED'") || sql.includes("status='CANCELLED'")) {
             job.status = 'CANCELLED';
             job.spoken_prompt = params?.[1];
-          } else if (sql.includes("status='FAILED'")) {
+          } else if (sql.includes("status = 'FAILED'") || sql.includes("status='FAILED'")) {
             job.status = 'FAILED';
             job.spoken_prompt = params?.[1];
           }
@@ -636,6 +636,55 @@ describe('Voice Engine - Multi-turn Scenarios', () => {
     expect(prevStep.status).toBe('COMPLETED');
     expect(prevStep.candidate_command?.command_type).toBe('KITCHEN_PREV_STEP');
     expect(prevStep.spoken_prompt).toContain('回到第1步');
+  });
+
+  it('Scenario 13: 语音体验与老人慢速关怀对话 (Speech Experience & Elderly Care Meta-Feedback)', async () => {
+    // 1. 用户反馈：说我是老人的话我怎么跟你大声说呢
+    const elderRes = await service.createTextJob(userId, {
+      household_id: householdId,
+      session_id: sessionId,
+      transcript_text: '说我是老人的话我怎么跟你大声说呢',
+      channel: 'WEB_VOICE',
+      locale: 'zh-CN',
+      client_request_id: randomUUID(),
+    });
+    expect(elderRes.status).toBe('COMPLETED');
+    expect(elderRes.spoken_prompt).toContain('慢慢说');
+
+    // 2. 用户反馈模型断句与停顿标点问题，不应误识别为食材或死循环追问
+    const pauseFeedbackRes = await service.createTextJob(userId, {
+      household_id: householdId,
+      session_id: sessionId,
+      transcript_text:
+        '嗯还有就是我觉得我们在这个模型在识别到我的语音的时候然后他没有做一个停顿比如说我这个句子应该有个逗号或者一个句号然后这个都没有',
+      channel: 'WEB_VOICE',
+      locale: 'zh-CN',
+      client_request_id: randomUUID(),
+    });
+    expect(pauseFeedbackRes.status).toBe('COMPLETED');
+    expect(pauseFeedbackRes.spoken_prompt).toContain('停顿');
+    expect((pauseFeedbackRes.candidate_command?.payload as any)?.items ?? []).toHaveLength(0);
+  });
+
+  it('Scenario 14: 歧义追问时用户说“不对”优雅退出不陷入死循环 (Rejection on Clarification Breaks Loop)', async () => {
+    // 1. 产生歧义追问
+    const clarifyJob = await service.createTextJob(userId, {
+      household_id: householdId,
+      session_id: sessionId,
+      transcript_text: '苹果',
+      channel: 'WEB_VOICE',
+      locale: 'zh-CN',
+      client_request_id: randomUUID(),
+    });
+    expect(clarifyJob.status).toBe('AWAITING_CLARIFICATION');
+    expect(clarifyJob.spoken_prompt).toContain('是要添加、用掉还是查询库存');
+
+    // 2. 用户说: "不对" -> 立即取消并退出，而不是再次复读死循环
+    const rejectRes = await service.reply(clarifyJob.voice_job_id, userId, {
+      text: '不对',
+    });
+    expect(rejectRes.status).toBe('CANCELLED');
+    expect(rejectRes.spoken_prompt).not.toContain('抱歉我没听清');
   });
 });
 

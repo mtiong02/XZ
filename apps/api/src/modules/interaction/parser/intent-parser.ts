@@ -37,6 +37,7 @@ export type ParsedIntent =
   | 'KITCHEN_REPEAT_STEP'
   | 'KITCHEN_TIMER_QUERY'
   | 'KITCHEN_INGREDIENT_QUERY'
+  | 'SYSTEM_FEEDBACK'
   | 'UNKNOWN';
 
 export interface ParsedItem {
@@ -117,6 +118,13 @@ const INTENT_RULES: { intent: ParsedIntent; patterns: RegExp[]; weight: number }
     patterns: [/还有多少|有没有|还剩|查一下|看看|库存|how (much|many)|do we have/i],
     weight: 0.9,
   },
+  {
+    intent: 'SYSTEM_FEEDBACK',
+    patterns: [
+      /(?:大声|小声|停顿|标点|逗号|句号|分号|问号|感叹号|模型|识别|语音|语速|说话|声音|麦克风|听得清|听不清|听不懂|听得懂|老人|老年人|年纪大|慢点说|慢慢说|说话太快|句子|断句|你是谁|你叫什么|在吗|你好|早安|晚安|聊天|讲个笑话|谢谢|多谢|辛苦)/i,
+    ],
+    weight: 0.98,
+  },
 ];
 
 /** 单位词 -> 单位码（与 units 表一致） */
@@ -195,6 +203,8 @@ export function isReasonableUnitForFood(entry: FoodCatalogEntry, unit: string): 
   return false;
 }
 
+const SYSTEM_FEEDBACK_OR_CHAT =
+  /(?:大声|小声|停顿|标点|逗号|句号|分号|问号|感叹号|模型|识别|语音|语速|说话|声音|麦克风|听得清|听不清|听不懂|听得懂|老人|老年人|年纪大|慢点说|慢慢说|说话太快|句子|断句|你是谁|你叫什么|在吗|你好|早安|晚安|聊天|讲个笑话|谢谢|多谢|辛苦)/i;
 const INFORMATION_REQUEST = /请用\d+句|怎么|怎样|如何|做什么|介绍|告诉我|能否|能不能|是否|可以.+吗/;
 const INVENTORY_CATEGORY_QUERY =
   /(?:有|剩)(?:哪些|什么)(?:肉类?|荤菜|蔬菜|青菜|菜类|水果|海鲜|水产|鱼虾|龙虾|贝类|蛋奶|奶制品|乳制品|蛋类|豆制品|主食|粮食|谷物|菌菇|蘑菇|调味料|调料|佐料)|(?:肉类?|荤菜|蔬菜|青菜|菜类|水果|海鲜|水产|鱼虾|龙虾|贝类|蛋奶|奶制品|乳制品|蛋类|豆制品|主食|粮食|谷物|菌菇|蘑菇|调味料|调料|佐料)(?:有|剩)(?:哪些|什么|多少)/;
@@ -358,6 +368,9 @@ export function detectIntent(normalized: string): { intent: ParsedIntent; confid
     SIMPLE_CATEGORY_QUERY.test(normalized)
   ) {
     return { intent: 'QUERY_INVENTORY', confidence: 0.95 };
+  }
+  if (SYSTEM_FEEDBACK_OR_CHAT.test(normalized)) {
+    return { intent: 'SYSTEM_FEEDBACK', confidence: 0.98 };
   }
   // “请用三句话介绍…”、“怎么用鸡蛋做菜”属于知识/闲聊请求，不是库存扣减。
   // 只有同时出现明确的已完成动作（如“用了两个鸡蛋”）才允许进入写操作解析。
@@ -573,6 +586,10 @@ export function parseTranscript(normalized: string, catalog: FoodCatalogEntry[])
           !/^(?:的|了|一下|看看|吧|啊|呢|吗|对|不对|取消|算了)$/.test(rawName) &&
           // 修正话术残片（"不是2盒是3盒" 里的 "是3盒"→剥掉"是"后是纯数量），不是食材名
           !/^\d/.test(rawName) &&
+          // 标点符号、断句、语音术语、反馈词汇不是食材名！
+          !/^(?:停顿|标点|逗号|句号|分号|问号|感叹号|句子|段落|模型|识别|语音|话术|词语|字|声音|老人|老年人)/.test(
+            rawName,
+          ) &&
           // 量词性名词（"两个人"的"人"、"三位"的"位"）和泛指代词（"东西"、"物品"）不是食材
           !/^(?:人|人份|位|口|天|次|小时|分钟|东西|物品|其它|其他)/.test(rawName)
         ) {
@@ -624,6 +641,10 @@ export function parseTranscript(normalized: string, catalog: FoodCatalogEntry[])
     }
   }
   items = deduplicated;
+
+  if (intent === 'SYSTEM_FEEDBACK') {
+    items = [];
+  }
 
   // 裸声明默认入库：用户列货时常省略动词（"薏米一盒"、"两盒南乳"、"6斤腊肉"）。
   // 当没有识别到动作意图、但已解析出【带明确数量单位的目录食材】时，默认按添加候选处理，

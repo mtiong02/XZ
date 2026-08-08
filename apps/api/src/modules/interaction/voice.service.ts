@@ -157,6 +157,7 @@ const INTENT_TO_COMMAND: Record<string, string> = {
   ADD_INVENTORY: 'ADD_INVENTORY',
   CONSUME_INVENTORY: 'CONSUME_INVENTORY',
   DISCARD_INVENTORY: 'DISCARD_INVENTORY',
+  SYSTEM_FEEDBACK: 'SYSTEM_FEEDBACK',
 };
 
 @Injectable()
@@ -685,6 +686,21 @@ export class VoiceService {
         candidate: { command_type: 'KITCHEN_INGREDIENT_QUERY', payload: {} },
         errorCode: null,
         spokenPrompt: '请核对菜谱所需食材。',
+      };
+    }
+    if (parsed.intent === 'SYSTEM_FEEDBACK') {
+      const isVolumeOrElder = /大声|小声|老人|老年人|年纪大|慢点说|慢慢说|说话太快|声音/.test(normalized);
+      const isPauseOrPunctuation = /停顿|标点|逗号|句号|分号|断句|模型|识别|语音|句子/.test(normalized);
+      const prompt = isVolumeOrElder
+        ? '没关系的，您慢慢说、放轻松说就好，哪怕声音小一点我也会认真听～'
+        : isPauseOrPunctuation
+          ? '收到您的建议啦！我会更注意倾听您的停顿和断句。您正常自然地说话就可以，有什么想查或想记的随时告诉我～'
+          : '您好呀！我是鲜知厨房小助手，随时可以帮您查库存、记食材、推荐菜谱或分步带您做菜～';
+      return {
+        status: 'COMPLETED',
+        candidate: { command_type: 'SYSTEM_FEEDBACK', payload: {} },
+        errorCode: null,
+        spokenPrompt: prompt,
       };
     }
     if (parsed.intent === 'QUERY_INVENTORY') {
@@ -1346,6 +1362,19 @@ export class VoiceService {
     const catalog = await this.loadCatalog(job.household_id);
     const replacement = parseTranscript(normalizeTranscript(input.text), catalog);
     if (job.candidate_command_json?.command_type === 'AMBIGUOUS_COMMAND') {
+      const interp = interpretReply(input.text, catalog);
+      if (interp.kind === 'REJECT') {
+        const cancelTurns = [
+          ...job.dialogue_turns,
+          { role: 'user' as const, text: input.text, at: nowIso() },
+          { role: 'system' as const, text: CANCELLED_PROMPT, at: nowIso() },
+        ];
+        await this.pool.query(
+          `update voice_jobs set status='CANCELLED',spoken_prompt=$2,turn_count=turn_count+1,dialogue_turns=$3,completed_at=now() where id=$1`,
+          [job.id, CANCELLED_PROMPT, JSON.stringify(cancelTurns)],
+        );
+        return this.getJob(job.id, userId);
+      }
       if (
         replacement.intent !== 'UNKNOWN' &&
         (replacement.intent as string) !== 'AMBIGUOUS_COMMAND'

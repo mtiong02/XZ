@@ -478,4 +478,22 @@ describe('v2 voice upgrade enhancements', () => {
       unit: 'cup',
     });
   });
+
+  it('recognizes speech meta-feedback without extracting punctuation as food entities', () => {
+    const feedback1 = parseTranscript(
+      normalizeTranscript('说我是老人的话我怎么跟你大声说呢'),
+      [apple],
+    );
+    expect(feedback1.intent).toBe('SYSTEM_FEEDBACK');
+    expect(feedback1.items).toHaveLength(0);
+
+    const feedback2 = parseTranscript(
+      normalizeTranscript(
+        '嗯还有就是我觉得我们在这个模型在识别到我的语音的时候然后他没有做一个停顿比如说我这个句子应该有个逗号或者一个句号然后这个都没有',
+      ),
+      [apple],
+    );
+    expect(feedback2.intent).toBe('SYSTEM_FEEDBACK');
+    expect(feedback2.items).toHaveLength(0);
+  });
 });
